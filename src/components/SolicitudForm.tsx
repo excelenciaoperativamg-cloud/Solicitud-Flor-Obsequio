@@ -6,16 +6,13 @@ import {
   UserCheck,
   AlertTriangle,
   CheckCircle2,
-  Building2,
   Send,
   Printer,
   Copy,
   Info,
   Clock,
-  Search,
   ExternalLink,
   Cloud,
-  Check,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import {
@@ -85,8 +82,6 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
   const [remitente, setRemitente] = useState('');
 
   // Estados UI de búsqueda de trabajador
-  const [codigoSearch, setCodigoSearch] = useState('');
-  const [showAutocomplete, setShowAutocomplete] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errores, setErrores] = useState<Record<string, string>>({});
   const [solicitudExitosa, setSolicitudExitosa] = useState<SolicitudFlor | null>(null);
@@ -103,27 +98,12 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
     return `SFO-${year}-${String(count).padStart(3, '0')}`;
   }, [solicitudes.length]);
 
-  // Autocomplete reactivo y robusto
-  const trabajadoresFiltrados = useMemo(() => {
-    if (!codigoSearch.trim()) return [];
-    const query = codigoSearch.toLowerCase().trim();
-    return maestro
-      .filter(
-        (t) =>
-          t.activo &&
-          (t.codigo.toLowerCase().includes(query) || t.nombre.toLowerCase().includes(query))
-      )
-      .slice(0, 10);
-  }, [codigoSearch, maestro]);
-
   // Función para seleccionar o auto-aplicar trabajador
   const aplicarTrabajador = (trabajador: TrabajadorMaestro) => {
     setCodigo(trabajador.codigo);
     setNombre(trabajador.nombre);
     setSede(trabajador.sede); // Se asigna automáticamente de la hoja maestro
     setTrabajadorEncontrado(trabajador);
-    setCodigoSearch(`${trabajador.codigo} - ${trabajador.nombre}`);
-    setShowAutocomplete(false);
     setErrores((prev) => {
       const next = { ...prev };
       delete next.codigo;
@@ -157,23 +137,6 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
       if (matchPrefijo) {
         aplicarTrabajador(matchPrefijo);
       }
-    }
-  };
-
-  // Manejo de cambio en el campo de búsqueda rápida
-  const handleSearchChange = (val: string) => {
-    setCodigoSearch(val);
-    setShowAutocomplete(true);
-
-    const match = maestro.find(
-      (m) => m.codigo.trim().toLowerCase() === val.trim().toLowerCase()
-    );
-    if (match) {
-      aplicarTrabajador(match);
-    } else if (val.trim()) {
-      setCodigo(val.trim());
-      // Buscar si hay coincidencia inmediata
-      buscarYVincularCodigo(val);
     }
   };
 
@@ -340,7 +303,7 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
     setSolicitudExitosa(null);
     setCodigo('');
     setNombre('');
-    setCodigoSearch('');
+    setSede('Sede MG');
     setTrabajadorEncontrado(null);
     setMotivo(MOTIVOS_SOLICITUD[0]);
     setMotivoPersonalizado('');
@@ -481,7 +444,7 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
         {/* CABECERA SUPERIOR: MOSTRAR SEDE, SEMANA, FECHA Y RADICADO ARRIBA (SIN TEXTO 'FORMULARIO OFICIAL') */}
         <div className="p-4 sm:p-5 border-b border-slate-200 bg-slate-50/80">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
             {/* 1. Fecha de Registro */}
             <div className="p-3 rounded-xl bg-white border border-slate-200/80 shadow-2xs">
               <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
@@ -504,23 +467,7 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
               </span>
             </div>
 
-            {/* 3. Sede (Tomada del Maestro) */}
-            <div className="p-3 rounded-xl bg-white border border-[#0a2958]/20 shadow-2xs">
-              <span className="text-[10px] uppercase font-bold text-[#0a2958] block tracking-wider">
-                Sede Poscosecha
-              </span>
-              <div className="flex items-center gap-1.5 mt-0.5">
-                <Building2 className="w-3.5 h-3.5 text-[#0a2958]" />
-                <span className="text-xs sm:text-sm font-extrabold text-[#0a2958]">
-                  {sede}
-                </span>
-                {trabajadorEncontrado && (
-                  <Check className="w-3 h-3 text-emerald-600 stroke-[3]" />
-                )}
-              </div>
-            </div>
-
-            {/* 4. Radicado */}
+            {/* 3. Radicado */}
             <div className="p-3 rounded-xl bg-white border border-slate-200/80 shadow-2xs">
               <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
                 Radicado
@@ -573,7 +520,7 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
               <div className="flex items-center gap-2">
                 <UserCheck className="w-4 h-4 text-[#0a2958]" />
                 <h3 className="text-sm font-extrabold text-[#0a2958] uppercase tracking-wider">
-                  1. Datos del Trabajador (Hoja Maestro)
+                  1. Datos del Trabajador
                 </h3>
               </div>
               {trabajadorEncontrado ? (
@@ -584,72 +531,6 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
                 <span className="text-[11px] text-slate-500 font-medium">
                   {maestro.length} trabajadores vinculados de la hoja
                 </span>
-              )}
-            </div>
-
-            {/* Búsqueda rápida por Maestro */}
-            <div className="relative">
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Buscar en Maestro por Código o Nombre{' '}
-                <span className="text-slate-400 font-normal">
-                  (Escriba código como 5705 o nombre para autocompletar de inmediato)
-                </span>
-              </label>
-              <div className="relative">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  value={codigoSearch}
-                  onChange={(e) => handleSearchChange(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      if (trabajadoresFiltrados.length > 0) {
-                        aplicarTrabajador(trabajadoresFiltrados[0]);
-                      } else {
-                        buscarYVincularCodigo(codigoSearch);
-                        setShowAutocomplete(false);
-                      }
-                    }
-                  }}
-                  onBlur={() => {
-                    setTimeout(() => setShowAutocomplete(false), 250);
-                    buscarYVincularCodigo(codigoSearch);
-                  }}
-                  onFocus={() => setShowAutocomplete(true)}
-                  placeholder="Escriba código (ej: 5705) o nombre del trabajador..."
-                  className="w-full pl-9 pr-4 py-2.5 text-xs rounded-xl border border-slate-300 focus:border-[#0a2958] focus:ring-2 focus:ring-[#0a2958]/20 outline-hidden transition font-medium"
-                />
-              </div>
-
-              {/* Lista desplegable autocomplete */}
-              {showAutocomplete && trabajadoresFiltrados.length > 0 && (
-                <div className="absolute z-20 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden max-h-56 overflow-y-auto">
-                  {trabajadoresFiltrados.map((item) => (
-                    <button
-                      type="button"
-                      key={item.codigo}
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        aplicarTrabajador(item);
-                      }}
-                      className="w-full text-left px-4 py-2.5 hover:bg-[#0a2958]/5 flex items-center justify-between border-b border-slate-100 last:border-b-0 text-xs transition cursor-pointer"
-                    >
-                      <div>
-                        <span className="font-bold text-[#0a2958] font-mono">
-                          {item.codigo}
-                        </span>{' '}
-                        — <span className="font-bold text-slate-800">{item.nombre}</span>
-                        <span className="text-slate-500 text-[11px] block">
-                          {item.cargo} • Sede: <strong className="text-[#0a2958]">{item.sede}</strong>
-                        </span>
-                      </div>
-                      <span className="text-[10px] px-2.5 py-1 rounded-lg bg-[#0a2958] text-white font-bold">
-                        Seleccionar
-                      </span>
-                    </button>
-                  ))}
-                </div>
               )}
             </div>
 
@@ -667,6 +548,7 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
                     setCodigo(val);
                     buscarYVincularCodigo(val);
                   }}
+                  onBlur={() => buscarYVincularCodigo(codigo)}
                   placeholder="Ej: 5705, MG-101"
                   className={`w-full px-3.5 py-2.5 text-xs rounded-xl border ${
                     errores.codigo ? 'border-rose-400 bg-rose-50/40' : 'border-slate-300'
@@ -677,41 +559,44 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
                 )}
               </div>
 
-              {/* Nombre */}
-              <div className="sm:col-span-2">
+              {/* Nombre (extraído del Maestro) */}
+              <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Nombre Completo del Trabajador <span className="text-[#E60000]">*</span>
+                  Nombre Completo <span className="text-[#E60000]">*</span>
                 </label>
                 <input
                   type="text"
                   value={nombre}
-                  onChange={(e) => setNombre(e.target.value)}
-                  placeholder="Nombre y apellidos del trabajador"
+                  readOnly
+                  placeholder="Se completa al ingresar el código"
                   className={`w-full px-3.5 py-2.5 text-xs rounded-xl border ${
                     errores.nombre ? 'border-rose-400 bg-rose-50/40' : 'border-slate-300'
-                  } focus:border-[#0a2958] focus:ring-2 focus:ring-[#0a2958]/20 outline-hidden font-bold text-slate-900`}
+                  } bg-slate-50 text-slate-800 font-bold outline-hidden cursor-default`}
                 />
                 {errores.nombre && (
                   <p className="text-[11px] text-[#E60000] font-semibold mt-1">{errores.nombre}</p>
                 )}
               </div>
-            </div>
 
-            {/* Confirmación visual de la Sede asignada desde el Maestro */}
-            {trabajadorEncontrado && (
-              <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl text-xs flex items-center justify-between text-emerald-900">
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>
-                    Trabajador verificado: <strong>{trabajadorEncontrado.nombre}</strong> — Sede asignada automáticamente:{' '}
-                    <strong className="text-[#0a2958] uppercase">{trabajadorEncontrado.sede}</strong>
-                  </span>
-                </div>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-[#0a2958] text-white">
-                  {trabajadorEncontrado.sede}
-                </span>
+              {/* Sede (extraída del Maestro) */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Sede <span className="text-[#E60000]">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={sede}
+                  readOnly
+                  placeholder="Se completa al ingresar el código"
+                  className={`w-full px-3.5 py-2.5 text-xs rounded-xl border ${
+                    errores.sede ? 'border-rose-400 bg-rose-50/40' : 'border-slate-300'
+                  } bg-slate-50 text-[#0a2958] font-extrabold outline-hidden cursor-default`}
+                />
+                {errores.sede && (
+                  <p className="text-[11px] text-[#E60000] font-semibold mt-1">{errores.sede}</p>
+                )}
               </div>
-            )}
+            </div>
 
             {/* ALERTA REGLA 15 DÍAS */}
             {!validacion15Dias.puedeSolicitar && (
