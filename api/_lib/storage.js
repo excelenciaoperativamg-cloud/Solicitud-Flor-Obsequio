@@ -1,8 +1,6 @@
 import fs from 'fs';
 import path from 'path';
 
-// No importar desde src/: en Vercel esas rutas .ts no se resuelven y la función muere al iniciar.
-
 export const DEFAULT_CONFIG = {
   webhookUrl:
     process.env.GOOGLE_APPS_SCRIPT_WEBHOOK_URL ||
@@ -15,29 +13,27 @@ export const DEFAULT_CONFIG = {
   syncEnabled: true,
 };
 
-let cacheSolicitudes: any[] | null = null;
-let cacheMaestro: any[] | null = null;
-let cacheConfig: any | null = null;
+let cacheSolicitudes = null;
+let cacheMaestro = null;
+let cacheConfig = null;
 
-function resolvePath(filename: string): string {
+function resolvePath(filename) {
   const tmpPath = path.join('/tmp', filename);
   if (fs.existsSync(tmpPath)) return tmpPath;
   return path.join(process.cwd(), 'data', filename);
 }
 
-export function safeRead<T>(filename: string, fallback: T): T {
+export function safeRead(filename, fallback) {
   try {
     const p = resolvePath(filename);
-    if (fs.existsSync(p)) {
-      return JSON.parse(fs.readFileSync(p, 'utf-8')) as T;
-    }
+    if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, 'utf-8'));
   } catch (err) {
     console.warn(`[Storage] Aviso leyendo ${filename}:`, err);
   }
   return fallback;
 }
 
-export function safeWrite(filename: string, data: any): void {
+export function safeWrite(filename, data) {
   const content = JSON.stringify(data);
   try {
     fs.writeFileSync(path.join('/tmp', filename), content, 'utf-8');
@@ -55,31 +51,31 @@ export function safeWrite(filename: string, data: any): void {
   }
 }
 
-export function getSolicitudesStorage(): any[] {
+export function getSolicitudesStorage() {
   if (cacheSolicitudes) return cacheSolicitudes;
   cacheSolicitudes = safeRead('solicitudes.json', []);
   return cacheSolicitudes;
 }
 
-export function saveSolicitudesStorage(data: any[]): void {
+export function saveSolicitudesStorage(data) {
   cacheSolicitudes = data;
   safeWrite('solicitudes.json', data);
 }
 
-export function getMaestroStorage(): any[] {
+export function getMaestroStorage() {
   if (cacheMaestro && cacheMaestro.length > 0) return cacheMaestro;
   cacheMaestro = safeRead('maestro.json', []);
   return cacheMaestro;
 }
 
-export function saveMaestroStorage(data: any[]): void {
+export function saveMaestroStorage(data) {
   cacheMaestro = data;
   safeWrite('maestro.json', data);
 }
 
-export function getDriveConfigStorage(): any {
+export function getDriveConfigStorage() {
   if (cacheConfig) return cacheConfig;
-  const saved = safeRead<any>('drive-config.json', DEFAULT_CONFIG);
+  const saved = safeRead('drive-config.json', DEFAULT_CONFIG);
   cacheConfig = {
     ...DEFAULT_CONFIG,
     ...saved,
@@ -89,13 +85,12 @@ export function getDriveConfigStorage(): any {
   return cacheConfig;
 }
 
-export function saveDriveConfigStorage(data: any): void {
+export function saveDriveConfigStorage(data) {
   cacheConfig = data;
   safeWrite('drive-config.json', data);
 }
 
-/** Llama al Web App de Apps Script. El POST debe ir como text/plain para que Google no pierda el cuerpo en el redirect. */
-export async function callAppsScript(webhookUrl: string, payload?: Record<string, unknown>): Promise<any> {
+export async function callAppsScript(webhookUrl, payload) {
   const url = (webhookUrl || '').trim();
   if (!url) throw new Error('No hay URL de Apps Script configurada.');
 
@@ -111,7 +106,7 @@ export async function callAppsScript(webhookUrl: string, payload?: Record<string
       : { method: 'GET', redirect: 'follow' }
   );
   const text = await res.text();
-  let data: any;
+  let data;
   try {
     data = JSON.parse(text);
   } catch {

@@ -3,12 +3,12 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
 
-import indexHandler from './api/index';
-import driveConfigHandler from './api/drive-config';
-import driveTestHandler from './api/drive-test';
-import maestroHandler from './api/maestro';
-import solicitudesHandler from './api/solicitudes';
-import maestroSyncHandler from './api/maestro/sync-from-drive';
+import indexHandler from './api/index.js';
+import driveConfigHandler from './api/drive-config.js';
+import driveTestHandler from './api/drive-test.js';
+import maestroHandler from './api/maestro.js';
+import solicitudesHandler from './api/solicitudes.js';
+import maestroSyncHandler from './api/maestro/sync-from-drive.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
