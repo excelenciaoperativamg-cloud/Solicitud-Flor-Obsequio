@@ -1,0 +1,6 @@
+{
+  "name": "Solicitud Flor de Obsequio",
+  "description": "Formulario y gestión de solicitudes de flor de obsequio con control de cupos semanales por sede y registro en Google Drive.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

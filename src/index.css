@@ -1,0 +1,38 @@
+@import "tailwindcss";
+
+:root {
+  --brand-blue: #0a2958;
+  --brand-red: #E60000;
+}
+
+.bg-brand-blue {
+  background-color: #0a2958;
+}
+
+.text-brand-blue {
+  color: #0a2958;
+}
+
+.border-brand-blue {
+  border-color: #0a2958;
+}
+
+.bg-brand-red {
+  background-color: #E60000;
+}
+
+.text-brand-red {
+  color: #E60000;
+}
+
+.border-brand-red {
+  border-color: #E60000;
+}
+
+.ring-brand-blue {
+  --tw-ring-color: #0a2958;
+}
+
+.ring-brand-red {
+  --tw-ring-color: #E60000;
+}
