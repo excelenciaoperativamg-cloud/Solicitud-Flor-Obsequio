@@ -51,7 +51,7 @@ export default function App() {
   // Configuración de Google Drive automática (Webhook sin pedir correo)
   const [driveConfig, setDriveConfig] = useState<DriveConfig>({
     webhookUrl: 'https://script.google.com/macros/s/AKfycbyombeZp7panywXAoIq8Q0cSjliwnOoPt3lUlH4R-h8YAoOvsCZNZrW7shziRJl92E7/exec',
-    spreadsheetUrl: 'https://docs.google.com/spreadsheets/d/1ecAKLTKJ-qrIWMGl5Rk1SpxhlTpfY6k5Gkyl4b5efzA/edit',
+    spreadsheetUrl: 'https://docs.google.com/spreadsheets/d/1ecAKLTKJ-qrIWMGI5Rk1SpxhlTpfY6k5Gkyl4b5efzA/edit',
     syncEnabled: true,
   });
   const [isDriveModalOpen, setIsDriveModalOpen] = useState(false);

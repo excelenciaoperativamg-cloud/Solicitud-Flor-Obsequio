@@ -19,7 +19,7 @@ export const DriveConfigModal: React.FC<DriveConfigModalProps> = ({
 }) => {
   const [webhookUrl, setWebhookUrl] = useState(config.webhookUrl || '');
   const [spreadsheetUrl, setSpreadsheetUrl] = useState(
-    config.spreadsheetUrl || 'https://docs.google.com/spreadsheets/d/1ecAKLTKJ-qrIWMGl5Rk1SpxhlTpfY6k5Gkyl4b5efzA/edit'
+    config.spreadsheetUrl || 'https://docs.google.com/spreadsheets/d/1ecAKLTKJ-qrIWMGI5Rk1SpxhlTpfY6k5Gkyl4b5efzA/edit'
   );
   const [copiadoCodigo, setCopiadoCodigo] = useState(false);
   const [probando, setProbando] = useState(false);
@@ -28,12 +28,12 @@ export const DriveConfigModal: React.FC<DriveConfigModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Código optimizado específicamente para el archivo oficial "Solicitud Flor Obsequio" (ID: 1ecAKLTKJ-qrIWMGl5Rk1SpxhlTpfY6k5Gkyl4b5efzA)
+  // Código optimizado específicamente para el archivo oficial "Solicitud Flor Obsequio" (ID: 1ecAKLTKJ-qrIWMGI5Rk1SpxhlTpfY6k5Gkyl4b5efzA)
   const codigoAppsScript = `// ==============================================================
 // CONECTOR OFICIAL: MG CONSULTORES - FLOR DE OBSEQUIO
 // Hoja vinculada: Solicitud Flor Obsequio
 // ==============================================================
-var SPREADSHEET_ID = "1ecAKLTKJ-qrIWMGl5Rk1SpxhlTpfY6k5Gkyl4b5efzA";
+var SPREADSHEET_ID = "1ecAKLTKJ-qrIWMGI5Rk1SpxhlTpfY6k5Gkyl4b5efzA";
 
 function getSpreadsheet() {
   try {

@@ -31,7 +31,7 @@ El proyecto ya está completamente configurado y optimizado para desplegarse en 
    - **Install Command:** `npm install`
 6. *(Opcional)* En la sección **Environment Variables**, puede configurar:
    - `GOOGLE_APPS_SCRIPT_WEBHOOK_URL`: `https://script.google.com/macros/s/AKfycbyombeZp7panywXAoIq8Q0cSjliwnOoPt3lUlH4R-h8YAoOvsCZNZrW7shziRJl92E7/exec`
-   - `SPREADSHEET_URL`: `https://docs.google.com/spreadsheets/d/1ecAKLTKJ-qrIWMGl5Rk1SpxhlTpfY6k5Gkyl4b5efzA/edit`
+   - `SPREADSHEET_URL`: `https://docs.google.com/spreadsheets/d/1ecAKLTKJ-qrIWMGI5Rk1SpxhlTpfY6k5Gkyl4b5efzA/edit`
 7. Haga clic en **"Deploy"**. En menos de 1 minuto su aplicación estará publicada con dominio HTTPS `.vercel.app`.
 
 ### Opción 2: Usando Vercel CLI

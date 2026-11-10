@@ -1,11 +1,7 @@
 import fs from 'fs';
 import path from 'path';
-import { TRABAJADORES_INICIALES, SOLICITUDES_INICIALES } from '../../src/data/initialData';
 
-// Memoria compartida en el contenedor
-let cacheSolicitudes: any[] | null = null;
-let cacheMaestro: any[] | null = null;
-let cacheConfig: any | null = null;
+// No importar desde src/: en Vercel esas rutas .ts no se resuelven y la función muere al iniciar.
 
 export const DEFAULT_CONFIG = {
   webhookUrl:
@@ -15,32 +11,25 @@ export const DEFAULT_CONFIG = {
   spreadsheetUrl:
     process.env.SPREADSHEET_URL ||
     process.env.VITE_SPREADSHEET_URL ||
-    'https://docs.google.com/spreadsheets/d/1ecAKLTKJ-qrIWMGl5Rk1SpxhlTpfY6k5Gkyl4b5efzA/edit',
+    'https://docs.google.com/spreadsheets/d/1ecAKLTKJ-qrIWMGI5Rk1SpxhlTpfY6k5Gkyl4b5efzA/edit?gid=1512106769#gid=1512106769',
   syncEnabled: true,
 };
 
+let cacheSolicitudes: any[] | null = null;
+let cacheMaestro: any[] | null = null;
+let cacheConfig: any | null = null;
+
 function resolvePath(filename: string): string {
-  // 1. Revisar si ya existe en /tmp (escrito previamente en esta lambda)
   const tmpPath = path.join('/tmp', filename);
-  if (fs.existsSync(tmpPath)) {
-    return tmpPath;
-  }
-
-  // 2. Revisar en data/ del proyecto
-  const localDataPath = path.join(process.cwd(), 'data', filename);
-  if (fs.existsSync(localDataPath)) {
-    return localDataPath;
-  }
-
-  return localDataPath;
+  if (fs.existsSync(tmpPath)) return tmpPath;
+  return path.join(process.cwd(), 'data', filename);
 }
 
 export function safeRead<T>(filename: string, fallback: T): T {
   try {
     const p = resolvePath(filename);
     if (fs.existsSync(p)) {
-      const data = fs.readFileSync(p, 'utf-8');
-      return JSON.parse(data) as T;
+      return JSON.parse(fs.readFileSync(p, 'utf-8')) as T;
     }
   } catch (err) {
     console.warn(`[Storage] Aviso leyendo ${filename}:`, err);
@@ -49,36 +38,26 @@ export function safeRead<T>(filename: string, fallback: T): T {
 }
 
 export function safeWrite(filename: string, data: any): void {
-  const content = JSON.stringify(data, null, 2);
-
-  // En Vercel Serverless Function, la carpeta del proyecto es read-only.
-  // Intentar escribir en /tmp de forma segura
+  const content = JSON.stringify(data);
   try {
-    const tmpPath = path.join('/tmp', filename);
-    fs.writeFileSync(tmpPath, content, 'utf-8');
+    fs.writeFileSync(path.join('/tmp', filename), content, 'utf-8');
   } catch (e) {
     console.warn(`[Storage] Aviso escribiendo en /tmp/${filename}:`, e);
   }
-
-  // Si estamos en un entorno tradicional (local AI Studio), también escribir en data/
   if (!process.env.VERCEL) {
     try {
       const localDir = path.join(process.cwd(), 'data');
-      if (!fs.existsSync(localDir)) {
-        fs.mkdirSync(localDir, { recursive: true });
-      }
+      if (!fs.existsSync(localDir)) fs.mkdirSync(localDir, { recursive: true });
       fs.writeFileSync(path.join(localDir, filename), content, 'utf-8');
     } catch {
-      // Ignorar si el sistema de archivos es de solo lectura
+      // filesystem de solo lectura
     }
   }
 }
 
 export function getSolicitudesStorage(): any[] {
-  if (cacheSolicitudes && cacheSolicitudes.length > 0) {
-    return cacheSolicitudes;
-  }
-  cacheSolicitudes = safeRead('solicitudes.json', SOLICITUDES_INICIALES);
+  if (cacheSolicitudes) return cacheSolicitudes;
+  cacheSolicitudes = safeRead('solicitudes.json', []);
   return cacheSolicitudes;
 }
 
@@ -88,10 +67,8 @@ export function saveSolicitudesStorage(data: any[]): void {
 }
 
 export function getMaestroStorage(): any[] {
-  if (cacheMaestro && cacheMaestro.length > 0) {
-    return cacheMaestro;
-  }
-  cacheMaestro = safeRead('maestro.json', TRABAJADORES_INICIALES);
+  if (cacheMaestro && cacheMaestro.length > 0) return cacheMaestro;
+  cacheMaestro = safeRead('maestro.json', []);
   return cacheMaestro;
 }
 
@@ -101,14 +78,13 @@ export function saveMaestroStorage(data: any[]): void {
 }
 
 export function getDriveConfigStorage(): any {
-  if (cacheConfig) {
-    return cacheConfig;
-  }
-  const saved = safeRead('drive-config.json', DEFAULT_CONFIG);
+  if (cacheConfig) return cacheConfig;
+  const saved = safeRead<any>('drive-config.json', DEFAULT_CONFIG);
   cacheConfig = {
     ...DEFAULT_CONFIG,
     ...saved,
     webhookUrl: process.env.GOOGLE_APPS_SCRIPT_WEBHOOK_URL || saved.webhookUrl || DEFAULT_CONFIG.webhookUrl,
+    spreadsheetUrl: saved.spreadsheetUrl || DEFAULT_CONFIG.spreadsheetUrl,
   };
   return cacheConfig;
 }
@@ -116,4 +92,34 @@ export function getDriveConfigStorage(): any {
 export function saveDriveConfigStorage(data: any): void {
   cacheConfig = data;
   safeWrite('drive-config.json', data);
+}
+
+/** Llama al Web App de Apps Script. El POST debe ir como text/plain para que Google no pierda el cuerpo en el redirect. */
+export async function callAppsScript(webhookUrl: string, payload?: Record<string, unknown>): Promise<any> {
+  const url = (webhookUrl || '').trim();
+  if (!url) throw new Error('No hay URL de Apps Script configurada.');
+
+  const res = await fetch(
+    url,
+    payload
+      ? {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify(payload),
+          redirect: 'follow',
+        }
+      : { method: 'GET', redirect: 'follow' }
+  );
+  const text = await res.text();
+  let data: any;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    const limpio = text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    throw new Error(limpio.slice(0, 220) || `Google respondió HTTP ${res.status} sin JSON`);
+  }
+  if (data.status && data.status !== 'success') {
+    throw new Error(data.message || 'Google Sheets rechazó la operación');
+  }
+  return data;
 }

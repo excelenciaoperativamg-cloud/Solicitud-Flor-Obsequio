@@ -1,4 +1,4 @@
-import { getSolicitudesStorage, saveSolicitudesStorage, getDriveConfigStorage } from './_lib/storage';
+import { getSolicitudesStorage, saveSolicitudesStorage, getDriveConfigStorage, callAppsScript } from './_lib/storage';
 
 export default async function handler(req: any, res: any) {
   try {
@@ -8,43 +8,36 @@ export default async function handler(req: any, res: any) {
         return res.status(400).json({ success: false, error: 'Faltan datos obligatorios' });
       }
 
-      const solicitudes = getSolicitudesStorage();
-      const filtradas = solicitudes.filter((s: any) => s.id !== nueva.id);
-
-      // Intentar envío automático al Webhook de Drive
       const driveCfg = getDriveConfigStorage();
-      let driveSynced = false;
-
-      if (driveCfg.webhookUrl && driveCfg.syncEnabled) {
-        try {
-          const fetchRes = await fetch(driveCfg.webhookUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(nueva),
-            redirect: 'follow',
-          });
-          const resText = await fetchRes.text().catch(() => '');
-          if (fetchRes.ok || resText.includes('success')) {
-            driveSynced = true;
-          }
-        } catch (driveErr) {
-          console.warn('Aviso: no se pudo enviar a Webhook de Drive:', driveErr);
-        }
+      if (!driveCfg.webhookUrl) {
+        return res.status(400).json({
+          success: false,
+          error: 'No hay webhook de Google Sheets. Abra Conexión con Drive y guarde la URL /exec.',
+        });
       }
 
-      const finalNueva = {
-        ...nueva,
-        syncedToDrive: driveSynced,
-        guardadoEnServidor: true,
-      };
+      await callAppsScript(driveCfg.webhookUrl, {
+        id: nueva.id,
+        fecha: nueva.fecha,
+        semana: nueva.semana,
+        codigo: nueva.codigo,
+        nombre: nueva.nombre,
+        producto: nueva.producto,
+        sede: nueva.sede,
+        motivo: nueva.motivo,
+        fechaEntrega: nueva.fechaEntrega,
+        remitente: nueva.remitente,
+        estado: nueva.estado || 'Registrada',
+      });
 
-      filtradas.unshift(finalNueva);
-      saveSolicitudesStorage(filtradas);
+      const finalNueva = { ...nueva, syncedToDrive: true, guardadoEnServidor: true };
+      const solicitudes = getSolicitudesStorage().filter((s: any) => s.id !== nueva.id);
+      solicitudes.unshift(finalNueva);
+      saveSolicitudesStorage(solicitudes);
 
       return res.status(200).json({ success: true, solicitud: finalNueva });
     }
 
-    // GET
     const data = getSolicitudesStorage();
     return res.status(200).json({ success: true, solicitudes: data });
   } catch (err: any) {

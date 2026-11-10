@@ -11,7 +11,7 @@ export default async function handler(req: any, res: any) {
         spreadsheetUrl: (
           spreadsheetUrl !== undefined
             ? spreadsheetUrl
-            : current.spreadsheetUrl || 'https://docs.google.com/spreadsheets/d/1ecAKLTKJ-qrIWMGl5Rk1SpxhlTpfY6k5Gkyl4b5efzA/edit'
+            : current.spreadsheetUrl || 'https://docs.google.com/spreadsheets/d/1ecAKLTKJ-qrIWMGI5Rk1SpxhlTpfY6k5Gkyl4b5efzA/edit'
         ).trim(),
         syncEnabled: true,
         lastUpdated: new Date().toISOString(),

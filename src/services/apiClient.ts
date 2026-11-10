@@ -32,14 +32,12 @@ export const createSolicitudApi = async (solicitud: SolicitudFlor): Promise<Soli
       throw new Error(err.error || 'Error al guardar en el servidor');
     }
     const data = await res.json();
+    if (!data.solicitud?.syncedToDrive) {
+      throw new Error('La solicitud no quedó registrada en la hoja Solicitudes.');
+    }
     return data.solicitud;
   } catch (error: any) {
-    console.warn('Error en API al registrar solicitud, guardando localmente:', error);
-    // Retornar la solicitud con marca local
-    return {
-      ...solicitud,
-      syncedToDrive: false,
-    };
+    throw error instanceof Error ? error : new Error('Error al guardar la solicitud');
   }
 };
 
