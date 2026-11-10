@@ -37,11 +37,11 @@ export const Navbar: React.FC<NavbarProps> = ({
           <div className="flex items-center gap-4">
             <div className="flex items-center bg-white p-1 rounded-xl shadow-xs border border-slate-200">
               <img
-                src="/public/assets/aistudio/logo_639f00ab.png"
+                src="/assets/aistudio/logo_639f00ab.png"
                 alt="MG Consultores S.A.S."
                 className="h-10 sm:h-12 w-auto object-contain"
                 onError={(e) => {
-                  (e.target as HTMLImageElement).src = '/assets/aistudio/logo_639f00ab.png';
+                  (e.target as HTMLImageElement).src = '/public/assets/aistudio/logo_639f00ab.png';
                 }}
               />
             </div>
