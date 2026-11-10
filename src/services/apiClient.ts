@@ -93,10 +93,22 @@ export const updateDriveConfigApi = async (config: { webhookUrl: string; spreads
   return data.config;
 };
 
-export const testDriveWebhookApi = async (): Promise<{ success: boolean; error?: string; response?: string }> => {
+export const testDriveWebhookApi = async (webhookUrl?: string): Promise<{ success: boolean; error?: string; response?: string }> => {
   try {
-    const res = await fetch('/api/drive-test', { method: 'POST' });
-    return await res.json();
+    const res = await fetch('/api/drive-test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ webhookUrl }),
+    });
+    const text = await res.text();
+    try {
+      return JSON.parse(text);
+    } catch {
+      return {
+        success: false,
+        error: text.length > 250 ? `Error del servidor HTTP ${res.status}` : text || `Error HTTP ${res.status}`,
+      };
+    }
   } catch (err: any) {
     return { success: false, error: err.message };
   }
@@ -105,7 +117,12 @@ export const testDriveWebhookApi = async (): Promise<{ success: boolean; error?:
 export const syncMaestroFromDriveApi = async (): Promise<{ success: boolean; count?: number; maestro?: TrabajadorMaestro[]; error?: string }> => {
   try {
     const res = await fetch('/api/maestro/sync-from-drive', { method: 'POST' });
-    return await res.json();
+    const text = await res.text();
+    try {
+      return JSON.parse(text);
+    } catch {
+      return { success: false, error: text || `Error HTTP ${res.status}` };
+    }
   } catch (err: any) {
     return { success: false, error: err.message };
   }

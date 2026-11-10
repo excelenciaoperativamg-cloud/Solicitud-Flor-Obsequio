@@ -7,7 +7,7 @@ interface DriveConfigModalProps {
   onClose: () => void;
   config: DriveConfig;
   onGuardarConfig: (webhookUrl: string, spreadsheetUrl: string) => Promise<void>;
-  onProbarConexion: () => Promise<{ success: boolean; error?: string; response?: string }>;
+  onProbarConexion: (targetUrl?: string) => Promise<{ success: boolean; error?: string; response?: string }>;
 }
 
 export const DriveConfigModal: React.FC<DriveConfigModalProps> = ({
@@ -195,7 +195,7 @@ function doPost(e) {
     setResultadoPrueba(null);
     try {
       await onGuardarConfig(webhookUrl, spreadsheetUrl);
-      const res = await onProbarConexion();
+      const res = await onProbarConexion(webhookUrl);
       if (res.success) {
         setResultadoPrueba({
           success: true,

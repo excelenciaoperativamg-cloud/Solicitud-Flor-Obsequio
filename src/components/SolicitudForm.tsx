@@ -362,32 +362,6 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
 
   return (
     <div className="max-w-4xl mx-auto py-6 px-4 sm:px-6">
-      {/* Banner Informativo Institucional */}
-      <div className="mb-6 rounded-2xl bg-gradient-to-r from-[#0a2958] via-[#0d346e] to-[#0a2958] text-white p-5 shadow-sm border border-[#0a2958]/30 relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-32 h-32 bg-[#E60000]/10 rounded-full blur-2xl -mr-10 -mt-10 pointer-events-none" />
-        <div className="flex items-start gap-4 relative z-10">
-          <div className="w-10 h-10 rounded-xl bg-white/10 backdrop-blur-xs flex items-center justify-center shrink-0 border border-white/20">
-            <Clock className="w-5 h-5 text-red-200" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-base font-bold tracking-tight text-white">
-                Condiciones y Logística de Entrega
-              </h2>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#E60000] text-white">
-                MG Consultores
-              </span>
-            </div>
-            <p className="text-xs sm:text-sm text-slate-200 mt-1 leading-relaxed">
-              La entrega de flor de obsequio se realizará exclusivamente en el área de{' '}
-              <strong className="text-white font-bold underline decoration-[#E60000] decoration-2">
-                Poscosecha los viernes, al finalizar la jornada laboral
-              </strong>
-              . Cada trabajador podrá solicitar flor de obsequio una vez cada 15 días (1 unidad por solicitud).
-            </p>
-          </div>
-        </div>
-      </div>
 
       {/* MODAL DE ÉXITO EXACTO */}
       {solicitudExitosa && (

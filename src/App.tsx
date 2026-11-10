@@ -201,8 +201,8 @@ export default function App() {
   };
 
   // Probar conexión automática con Drive
-  const handleProbarConexionDrive = async () => {
-    return await testDriveWebhookApi();
+  const handleProbarConexionDrive = async (targetUrl?: string) => {
+    return await testDriveWebhookApi(targetUrl);
   };
 
   // Recargar datos desde la hoja Google Sheets "Maestro"
@@ -323,9 +323,6 @@ export default function App() {
             <span>•</span>
             <span>Sistema de Flor de Obsequio (Sedes MG, HA, SC)</span>
           </div>
-          <p className="text-[11px] text-slate-400">
-            Entrega: Viernes en Poscosecha al finalizar la jornada laboral • Conexión Segura
-          </p>
         </div>
       </footer>
     </div>

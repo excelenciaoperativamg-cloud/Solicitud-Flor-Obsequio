@@ -55,7 +55,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </span>
               </div>
               <p className="text-xs text-slate-500 font-medium">
-                Gestión de solicitudes y cupos semanales • Entrega viernes al fin de jornada
+                Gestión de solicitudes y cupos semanales
               </p>
             </div>
           </div>
