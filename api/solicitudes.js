@@ -20,6 +20,8 @@ export default async function handler(req, res) {
         semana: nueva.semana,
         codigo: nueva.codigo,
         nombre: nueva.nombre,
+        cargo: nueva.cargo || '',
+        cantidad: nueva.cantidad || 1,
         producto: nueva.producto,
         sede: nueva.sede,
         motivo: nueva.motivo,
