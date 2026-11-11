@@ -12,15 +12,19 @@ export interface SolicitudFlor {
   semana: string; // e.g. "Semana 46"
   codigo: string; // Código de trabajador
   nombre: string; // Nombre del trabajador
+  cargo?: string; // Cargo del trabajador (desde Maestro)
+  cantidad: number; // 1 o 2 según cargo / autorización
   producto: string; // e.g. "Ramo de Rosa (Rojo) (1 unidad)" o "Bouquet de Rosas (1 unidad)"
   tipoProducto: ProductType; // 'ramo' | 'bouquet'
   florPrincipal: FlowerType; // 'Rosa' | 'Clavel' | 'Alstroemeria'
-  opcionFlor?: string; // 'Rojo' | 'Color' | 'Según color disponible'
+  opcionFlor?: string; // 'Rojo' | 'Color' | 'Bouquet' | 'Según color disponible'
   sede: Sede; // 'Sede MG' | 'Sede HA' | 'Sede SC' (proveniente del Maestro)
   motivo: string;
   fechaEntrega: string; // YYYY-MM-DD (fecha del viernes de entrega)
   remitente: string;
   estado: SolicitudEstado;
+  requiereAutorizacion?: boolean; // true si cantidad > límite por cargo
+  autorizacionPoscosecha?: string; // nombre o código de quien autoriza
   syncedToDrive?: boolean;
   driveSpreadsheetId?: string;
   driveRowIndex?: number;
