@@ -69,11 +69,15 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
   // Si Clavel: opción fija 'Según color disponible'
   // Si Alstroemeria: opción fija 'Según color disponible'
   const [florRamo, setFlorRamo] = useState<FlowerType>('Rosa');
-  const [opcionRosa, setOpcionRosa] = useState<'Rojo' | 'Color'>('Rojo');
+  const [opcionRosa, setOpcionRosa] = useState<'Rojo' | 'Color' | 'Bouquet'>('Rojo');
 
-  // En Bouquet Mixto:
-  // Solo se escoge UNA opción: flor que predomina ('Rosa' | 'Clavel' | 'Alstroemeria')
+  // En Bouquet Mixto (legacy, ahora se maneja vía opción Bouquet en Rosa o selección)
   const [florBouquet, setFlorBouquet] = useState<FlowerType>('Rosa');
+
+  // Cantidad y autorización según cargo
+  const [cantidad, setCantidad] = useState(1);
+  const [autorizacionPoscosecha, setAutorizacionPoscosecha] = useState('');
+  const [requiereAutorizacion, setRequiereAutorizacion] = useState(false);
 
   // Motivo, Entrega y Remitente
   const [motivo, setMotivo] = useState(MOTIVOS_SOLICITUD[0]);
@@ -98,20 +102,36 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
     return `SFO-${year}-${String(count).padStart(3, '0')}`;
   }, [solicitudes.length]);
 
-  // Función para seleccionar o auto-aplicar trabajador
+  // Función para seleccionar o auto-aplicar trabajador (login por código)
   const aplicarTrabajador = (trabajador: TrabajadorMaestro) => {
     setCodigo(trabajador.codigo);
     setNombre(trabajador.nombre);
     setSede(trabajador.sede); // Se asigna automáticamente de la hoja maestro
     setTrabajadorEncontrado(trabajador);
+    // Límite según cargo: si contiene "operario" → 1 ramo; si no → 2
+    const cargoLower = (trabajador.cargo || '').toLowerCase();
+    const esOperario = cargoLower.includes('operario');
+    const maxPermitido = esOperario ? 1 : 2;
+    setCantidad(1); // por defecto 1
+    setRequiereAutorizacion(false);
+    setAutorizacionPoscosecha('');
     setErrores((prev) => {
       const next = { ...prev };
       delete next.codigo;
       delete next.nombre;
       delete next.sede;
+      delete next.cantidad;
+      delete next.autorizacion;
       return next;
     });
   };
+
+  // Máximo de ramos según cargo del trabajador logueado
+  const maxCantidadPorCargo = useMemo(() => {
+    if (!trabajadorEncontrado) return 1;
+    const cargoLower = (trabajadorEncontrado.cargo || '').toLowerCase();
+    return cargoLower.includes('operario') ? 1 : 2;
+  }, [trabajadorEncontrado]);
 
   // Buscar y vincular automáticamente cuando el usuario escribe código
   const buscarYVincularCodigo = (valorInput: string) => {
@@ -187,21 +207,30 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
     };
   }, [sede, fechaEntrega, solicitudes, tipoProducto]);
 
+  // Determinar tipoProducto a partir de la selección (si Rosa + Bouquet → bouquet, sino ramo)
+  useEffect(() => {
+    if (florRamo === 'Rosa' && opcionRosa === 'Bouquet') {
+      setTipoProducto('bouquet');
+      setFlorBouquet('Rosa');
+    } else {
+      setTipoProducto('ramo');
+    }
+  }, [florRamo, opcionRosa]);
+
   // Descripción exacta del producto según requerimiento del usuario
   const descripcionProducto = useMemo(() => {
-    if (tipoProducto === 'ramo') {
-      if (florRamo === 'Rosa') {
-        return `Ramo de Rosa (${opcionRosa}) (1 unidad)`;
-      } else if (florRamo === 'Clavel') {
-        return 'Ramo de Clavel (Según color disponible) (1 unidad)';
-      } else {
-        return 'Ramo de Alstroemeria (Según color disponible) (1 unidad)';
-      }
-    } else {
-      // Bouquet Mixto: prevaleciendo la flor que seleccione
-      return `Bouquet de ${florBouquet === 'Rosa' ? 'Rosas' : florBouquet} (1 unidad)`;
+    const unidadTxt = cantidad === 1 ? '1 unidad' : `${cantidad} unidades`;
+    if (florRamo === 'Rosa' && opcionRosa === 'Bouquet') {
+      return `Bouquet de Rosas (${unidadTxt})`;
     }
-  }, [tipoProducto, florRamo, opcionRosa, florBouquet]);
+    if (florRamo === 'Rosa') {
+      return `Ramo de Rosa (${opcionRosa}) (${unidadTxt})`;
+    } else if (florRamo === 'Clavel') {
+      return `Ramo de Clavel (Según color disponible) (${unidadTxt})`;
+    } else {
+      return `Ramo de Alstroemeria (Según color disponible) (${unidadTxt})`;
+    }
+  }, [florRamo, opcionRosa, cantidad]);
 
   // Validación de campos obligatorios
   const validarFormulario = (): boolean => {
@@ -236,6 +265,22 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
       nuevosErrores.cupo = `El cupo de ${tipoProducto === 'ramo' ? 'ramos' : 'bouquets'} para ${sede} en la ${semanaEntrega} está agotado.`;
     }
 
+    // Regla de cantidad según cargo
+    if (!trabajadorEncontrado) {
+      nuevosErrores.codigo = 'Debe iniciar sesión ingresando un código de trabajador válido';
+    }
+    if (cantidad < 1) {
+      nuevosErrores.cantidad = 'La cantidad mínima es 1';
+    }
+    if (cantidad > maxCantidadPorCargo) {
+      if (!autorizacionPoscosecha.trim()) {
+        nuevosErrores.autorizacion = `Para pedir ${cantidad} ramos (límite por cargo: ${maxCantidadPorCargo}) se requiere autorización de la Dirección de Poscosecha`;
+      }
+      setRequiereAutorizacion(true);
+    } else {
+      setRequiereAutorizacion(false);
+    }
+
     setErrores(nuevosErrores);
     return Object.keys(nuevosErrores).length === 0;
   };
@@ -258,20 +303,22 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
       semana: semanaEntrega,
       codigo: codigo.trim(),
       nombre: nombre.trim(),
+      cargo: trabajadorEncontrado?.cargo || '',
+      cantidad,
       producto: descripcionProducto,
       tipoProducto,
-      florPrincipal: tipoProducto === 'ramo' ? florRamo : florBouquet,
+      florPrincipal: florRamo,
       opcionFlor:
-        tipoProducto === 'ramo'
-          ? florRamo === 'Rosa'
-            ? opcionRosa
-            : 'Según color disponible'
-          : `Variado con predominancia de ${florBouquet}`,
+        florRamo === 'Rosa'
+          ? opcionRosa
+          : 'Según color disponible',
       sede, // Tomada del Maestro
       motivo: motivoFinal,
       fechaEntrega,
       remitente: remitente.trim(),
       estado: 'Registrada',
+      requiereAutorizacion: cantidad > maxCantidadPorCargo,
+      autorizacionPoscosecha: cantidad > maxCantidadPorCargo ? autorizacionPoscosecha.trim() : undefined,
       creadoEn: Date.now(),
     };
 
@@ -312,6 +359,9 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
     setOpcionRosa('Rojo');
     setFlorBouquet('Rosa');
     setTipoProducto('ramo');
+    setCantidad(1);
+    setAutorizacionPoscosecha('');
+    setRequiereAutorizacion(false);
     setErrores({});
   };
 
@@ -623,79 +673,24 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
             )}
           </div>
 
-          {/* SECCIÓN 2: PRODUCTO: RAMO O BOUQUET MIXTO (REORGANIZADO LIMPIO SIN TARJETAS DE SEDE) */}
+          {/* SECCIÓN 2: PRODUCTO (tarjetas de flor, sin selector Ramo/Bouquet superior) */}
           <div className="space-y-4">
             <div className="flex items-center justify-between pb-2 border-b border-slate-100">
               <div className="flex items-center gap-2">
                 <Flower className="w-4 h-4 text-[#0a2958]" />
                 <h3 className="text-sm font-extrabold text-[#0a2958] uppercase tracking-wider">
-                  2. Producto: Ramo o Bouquet Mixto <span className="text-[#E60000]">*</span>
+                  2. Producto <span className="text-[#E60000]">*</span>
                 </h3>
               </div>
               <span className="text-[11px] font-bold text-[#E60000] bg-[#E60000]/10 px-2.5 py-0.5 rounded-full">
-                Límite: 1 unidad por solicitud
+                {trabajadorEncontrado
+                  ? `Límite por cargo: ${maxCantidadPorCargo} unidad${maxCantidadPorCargo > 1 ? 'es' : ''}`
+                  : 'Inicie sesión con código'}
               </span>
             </div>
 
-            {/* Alternador: Ramo Monovarietal vs Bouquet Mixto */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <button
-                type="button"
-                onClick={() => setTipoProducto('ramo')}
-                className={`p-4 rounded-xl border text-left transition cursor-pointer ${
-                  tipoProducto === 'ramo'
-                    ? 'border-[#0a2958] bg-[#0a2958]/5 ring-2 ring-[#0a2958]/20'
-                    : 'border-slate-200 bg-white hover:bg-slate-50'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h4 className="font-extrabold text-sm text-[#0a2958]">
-                      Ramo de un solo Producto
-                    </h4>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      Un solo tipo de flor (Rosa, Clavel o Alstroemeria)
-                    </p>
-                  </div>
-                  {tipoProducto === 'ramo' && (
-                    <CheckCircle2 className="w-5 h-5 text-[#0a2958] shrink-0" />
-                  )}
-                </div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setTipoProducto('bouquet')}
-                className={`p-4 rounded-xl border text-left transition cursor-pointer ${
-                  tipoProducto === 'bouquet'
-                    ? 'border-[#0a2958] bg-[#0a2958]/5 ring-2 ring-[#0a2958]/20'
-                    : 'border-slate-200 bg-white hover:bg-slate-50'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h4 className="font-extrabold text-sm text-[#0a2958]">
-                        Bouquet Mixto
-                      </h4>
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#E60000] text-white font-bold">
-                        1 opción
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      Flores variadas con prevalencia de la flor seleccionada
-                    </p>
-                  </div>
-                  {tipoProducto === 'bouquet' && (
-                    <CheckCircle2 className="w-5 h-5 text-[#0a2958] shrink-0" />
-                  )}
-                </div>
-              </button>
-            </div>
-
-            {/* DETALLE DE OPCIONES PARA RAMO DE UN SOLO PRODUCTO */}
-            {tipoProducto === 'ramo' && (
-              <div className="space-y-3">
+            {/* DETALLE DE OPCIONES DE FLOR */}
+            <div className="space-y-3">
                 <label className="block text-xs font-bold text-slate-700">
                   Seleccione el tipo de flor para el ramo:
                 </label>
@@ -726,12 +721,12 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
                       </h4>
                     </div>
 
-                    {/* Sub-opciones de Rosa: Color o Rojo */}
+                    {/* Sub-opciones de Rosa: Rojo, Color, Bouquet */}
                     <div className="mt-3 pt-2.5 border-t border-slate-200">
                       <span className="text-[11px] font-bold text-slate-600 block mb-1.5">
                         Escoger opción:
                       </span>
-                      <div className="grid grid-cols-2 gap-1.5">
+                      <div className="grid grid-cols-3 gap-1.5">
                         <button
                           type="button"
                           onClick={(e) => {
@@ -739,7 +734,7 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
                             setFlorRamo('Rosa');
                             setOpcionRosa('Rojo');
                           }}
-                          className={`py-1 px-2 text-xs font-bold rounded-lg border transition ${
+                          className={`py-1 px-1 text-xs font-bold rounded-lg border transition ${
                             florRamo === 'Rosa' && opcionRosa === 'Rojo'
                               ? 'bg-[#E60000] text-white border-[#E60000] shadow-xs'
                               : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
@@ -754,13 +749,28 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
                             setFlorRamo('Rosa');
                             setOpcionRosa('Color');
                           }}
-                          className={`py-1 px-2 text-xs font-bold rounded-lg border transition ${
+                          className={`py-1 px-1 text-xs font-bold rounded-lg border transition ${
                             florRamo === 'Rosa' && opcionRosa === 'Color'
                               ? 'bg-[#0a2958] text-white border-[#0a2958] shadow-xs'
                               : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
                           }`}
                         >
                           Color
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setFlorRamo('Rosa');
+                            setOpcionRosa('Bouquet');
+                          }}
+                          className={`py-1 px-1 text-xs font-bold rounded-lg border transition ${
+                            florRamo === 'Rosa' && opcionRosa === 'Bouquet'
+                              ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                              : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                          }`}
+                        >
+                          Bouquet
                         </button>
                       </div>
                     </div>
@@ -831,100 +841,59 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
                   </div>
                 </div>
               </div>
-            )}
 
-            {/* DETALLE DE OPCIONES PARA BOUQUET MIXTO */}
-            {tipoProducto === 'bouquet' && (
-              <div className="space-y-3">
-                <label className="block text-xs font-bold text-slate-700">
-                  Seleccione una sola opción para el Bouquet Mixto (con prevalencia de la flor elegida):
-                </label>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  {/* Opción 1: Bouquet de Rosas */}
-                  <button
-                    type="button"
-                    onClick={() => setFlorBouquet('Rosa')}
-                    className={`p-4 rounded-xl border text-left transition cursor-pointer ${
-                      florBouquet === 'Rosa'
-                        ? 'border-[#0a2958] bg-rose-50/50 ring-2 ring-[#0a2958]/20'
-                        : 'border-slate-200 bg-white hover:bg-slate-50'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-2xl">🌹</span>
-                      <input
-                        type="radio"
-                        name="florBouquet"
-                        checked={florBouquet === 'Rosa'}
-                        onChange={() => setFlorBouquet('Rosa')}
-                        className="w-4 h-4 text-[#0a2958] accent-[#0a2958]"
-                      />
-                    </div>
-                    <h4 className="font-extrabold text-sm text-[#0a2958]">
-                      Bouquet de Rosas
-                    </h4>
-                    <p className="text-xs text-slate-500 mt-1">
-                      Bouquet variado con prevalencia de rosas
-                    </p>
-                  </button>
-
-                  {/* Opción 2: Bouquet de Clavel */}
-                  <button
-                    type="button"
-                    onClick={() => setFlorBouquet('Clavel')}
-                    className={`p-4 rounded-xl border text-left transition cursor-pointer ${
-                      florBouquet === 'Clavel'
-                        ? 'border-[#0a2958] bg-pink-50/50 ring-2 ring-[#0a2958]/20'
-                        : 'border-slate-200 bg-white hover:bg-slate-50'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-2xl">🌸</span>
-                      <input
-                        type="radio"
-                        name="florBouquet"
-                        checked={florBouquet === 'Clavel'}
-                        onChange={() => setFlorBouquet('Clavel')}
-                        className="w-4 h-4 text-[#0a2958] accent-[#0a2958]"
-                      />
-                    </div>
-                    <h4 className="font-extrabold text-sm text-[#0a2958]">
-                      Bouquet de Clavel
-                    </h4>
-                    <p className="text-xs text-slate-500 mt-1">
-                      Bouquet variado con prevalencia de clavel
-                    </p>
-                  </button>
-
-                  {/* Opción 3: Bouquet Alstroemeria */}
-                  <button
-                    type="button"
-                    onClick={() => setFlorBouquet('Alstroemeria')}
-                    className={`p-4 rounded-xl border text-left transition cursor-pointer ${
-                      florBouquet === 'Alstroemeria'
-                        ? 'border-[#0a2958] bg-amber-50/50 ring-2 ring-[#0a2958]/20'
-                        : 'border-slate-200 bg-white hover:bg-slate-50'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-2xl">🌺</span>
-                      <input
-                        type="radio"
-                        name="florBouquet"
-                        checked={florBouquet === 'Alstroemeria'}
-                        onChange={() => setFlorBouquet('Alstroemeria')}
-                        className="w-4 h-4 text-[#0a2958] accent-[#0a2958]"
-                      />
-                    </div>
-                    <h4 className="font-extrabold text-sm text-[#0a2958]">
-                      Bouquet Alstroemeria
-                    </h4>
-                    <p className="text-xs text-slate-500 mt-1">
-                      Bouquet variado con prevalencia de alstroemeria
-                    </p>
-                  </button>
+            {/* Selector de cantidad según cargo */}
+            {trabajadorEncontrado && (
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-700">
+                    Cantidad de ramos / unidades
+                  </label>
+                  <span className="text-[11px] text-slate-500">
+                    Cargo: <strong>{trabajadorEncontrado.cargo || 'Operario'}</strong> → máx. {maxCantidadPorCargo} sin autorización
+                  </span>
                 </div>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setCantidad(Math.max(1, cantidad - 1))}
+                    className="w-9 h-9 rounded-lg border border-slate-300 bg-white font-bold text-slate-700 hover:bg-slate-100"
+                  >
+                    −
+                  </button>
+                  <span className="text-lg font-extrabold text-[#0a2958] w-8 text-center">{cantidad}</span>
+                  <button
+                    type="button"
+                    onClick={() => setCantidad(cantidad + 1)}
+                    className="w-9 h-9 rounded-lg border border-slate-300 bg-white font-bold text-slate-700 hover:bg-slate-100"
+                  >
+                    +
+                  </button>
+                  {cantidad > maxCantidadPorCargo && (
+                    <span className="text-[11px] font-bold text-amber-700 bg-amber-50 px-2 py-1 rounded-lg border border-amber-200">
+                      Requiere autorización Dirección Poscosecha
+                    </span>
+                  )}
+                </div>
+                {cantidad > maxCantidadPorCargo && (
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Autorización de Dirección de Poscosecha <span className="text-[#E60000]">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={autorizacionPoscosecha}
+                      onChange={(e) => setAutorizacionPoscosecha(e.target.value)}
+                      placeholder="Nombre o código de quien autoriza"
+                      className={`w-full px-3.5 py-2.5 text-xs rounded-xl border ${
+                        errores.autorizacion ? 'border-rose-400 bg-rose-50/40' : 'border-slate-300'
+                      } focus:border-[#0a2958] focus:ring-2 focus:ring-[#0a2958]/20 outline-hidden`}
+                    />
+                    {errores.autorizacion && (
+                      <p className="text-[11px] text-[#E60000] font-semibold mt-1">{errores.autorizacion}</p>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
@@ -941,7 +910,7 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
               </div>
               <div className="flex items-center gap-2">
                 <span className="px-3 py-1 rounded-lg bg-[#0a2958] text-white font-bold text-xs shadow-xs">
-                  Cantidad: 1 unidad
+                  Cantidad: {cantidad} {cantidad === 1 ? 'unidad' : 'unidades'}
                 </span>
               </div>
             </div>
