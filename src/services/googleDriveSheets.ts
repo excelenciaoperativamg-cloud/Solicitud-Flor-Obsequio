@@ -92,13 +92,13 @@ export const createSpreadsheetWithTemplate = async (
   const createdSheet = await res.json();
   const spreadsheetId = createdSheet.spreadsheetId;
 
-  // Encabezados exactos: Id, Fecha, Semana, Código, Nombre, Producto, Sede, Motivo, Fecha Entrega, Remitente, Estado
+  // Encabezados: Id, Fecha, Semana, Código, Nombre, Cargo, Cantidad, Producto, Sede, Motivo, Fecha Entrega, Remitente, Estado
   const solicitudesHeaders = [
-    ['Id', 'Fecha', 'Semana', 'Código', 'Nombre', 'Producto', 'Sede', 'Motivo', 'Fecha Entrega', 'Remitente', 'Estado'],
+    ['Id', 'Fecha', 'Semana', 'Código', 'Nombre', 'Cargo', 'Cantidad', 'Producto', 'Sede', 'Motivo', 'Fecha Entrega', 'Remitente', 'Estado'],
   ];
 
   await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Solicitudes!A1:K1?valueInputOption=USER_ENTERED`,
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Solicitudes!A1:M1?valueInputOption=USER_ENTERED`,
     {
       method: 'PUT',
       headers: {
@@ -170,6 +170,8 @@ export const appendSolicitudToDrive = async (
       solicitud.semana,
       solicitud.codigo,
       solicitud.nombre,
+      solicitud.cargo || '',
+      solicitud.cantidad || 1,
       solicitud.producto,
       solicitud.sede,
       solicitud.motivo,
@@ -180,7 +182,7 @@ export const appendSolicitudToDrive = async (
   ];
 
   const res = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Solicitudes!A:K:append?valueInputOption=USER_ENTERED`,
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Solicitudes!A:M:append?valueInputOption=USER_ENTERED`,
     {
       method: 'POST',
       headers: {
@@ -246,7 +248,7 @@ export const fetchSolicitudesFromDrive = async (
   spreadsheetId: string
 ): Promise<SolicitudFlor[]> => {
   const res = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Solicitudes!A2:K`,
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Solicitudes!A2:M`,
     {
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -264,17 +266,57 @@ export const fetchSolicitudesFromDrive = async (
   return rows
     .filter((r) => r.length >= 4 && r[0])
     .map((r, index) => {
-      // Manejar formato nuevo (con Semana en col 2) o anterior
+      // Formatos:
+      // Antiguo corto: Id, Fecha, Código, Nombre, Producto, Sede, Motivo, FechaEntrega, Remitente, Estado
+      // Con Semana: Id, Fecha, Semana, Código, Nombre, Producto, Sede, Motivo, FechaEntrega, Remitente, Estado (11 cols)
+      // Nuevo: Id, Fecha, Semana, Código, Nombre, Cargo, Cantidad, Producto, Sede, Motivo, FechaEntrega, Remitente, Estado (13 cols)
+      const isNewWithCargo = r.length >= 13;
       const hasSemanaCol = r.length >= 11;
-      const semanaVal = hasSemanaCol ? r[2] : '';
-      const codigoVal = hasSemanaCol ? r[3] : r[2];
-      const nombreVal = hasSemanaCol ? r[4] : r[3];
-      const prodStr = hasSemanaCol ? (r[5] || '') : (r[4] || '');
-      const sedeVal = hasSemanaCol ? r[6] : r[5];
-      const motivoVal = hasSemanaCol ? r[7] : r[6];
-      const fechaEntregaVal = hasSemanaCol ? r[8] : r[7];
-      const remitenteVal = hasSemanaCol ? r[9] : r[8];
-      const estadoVal = hasSemanaCol ? r[10] : r[9];
+
+      let semanaVal = '';
+      let codigoVal = '';
+      let nombreVal = '';
+      let cargoVal = '';
+      let cantidadVal = 1;
+      let prodStr = '';
+      let sedeVal = '';
+      let motivoVal = '';
+      let fechaEntregaVal = '';
+      let remitenteVal = '';
+      let estadoVal = '';
+
+      if (isNewWithCargo) {
+        semanaVal = r[2] || '';
+        codigoVal = r[3] || '';
+        nombreVal = r[4] || '';
+        cargoVal = r[5] || '';
+        cantidadVal = parseInt(r[6], 10) || 1;
+        prodStr = r[7] || '';
+        sedeVal = r[8] || '';
+        motivoVal = r[9] || '';
+        fechaEntregaVal = r[10] || '';
+        remitenteVal = r[11] || '';
+        estadoVal = r[12] || '';
+      } else if (hasSemanaCol) {
+        semanaVal = r[2] || '';
+        codigoVal = r[3] || '';
+        nombreVal = r[4] || '';
+        prodStr = r[5] || '';
+        sedeVal = r[6] || '';
+        motivoVal = r[7] || '';
+        fechaEntregaVal = r[8] || '';
+        remitenteVal = r[9] || '';
+        estadoVal = r[10] || '';
+      } else {
+        codigoVal = r[2] || '';
+        nombreVal = r[3] || '';
+        prodStr = r[4] || '';
+        sedeVal = r[5] || '';
+        motivoVal = r[6] || '';
+        fechaEntregaVal = r[7] || '';
+        remitenteVal = r[8] || '';
+        estadoVal = r[9] || '';
+      }
 
       const isBouquet = prodStr.toLowerCase().includes('bouquet');
       let florPrincipal: any = 'Rosa';
@@ -287,6 +329,8 @@ export const fetchSolicitudesFromDrive = async (
         semana: semanaVal || 'Semana 46',
         codigo: codigoVal || '',
         nombre: nombreVal || '',
+        cargo: cargoVal || undefined,
+        cantidad: cantidadVal,
         producto: prodStr,
         tipoProducto: isBouquet ? 'bouquet' : 'ramo',
         florPrincipal,
