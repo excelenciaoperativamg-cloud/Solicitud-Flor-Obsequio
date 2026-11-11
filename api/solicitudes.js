@@ -1,5 +1,21 @@
 import { getSolicitudesStorage, saveSolicitudesStorage, getDriveConfigStorage, callAppsScript } from './_lib/storage.js';
 
+function soloSemana(valor) {
+  const m = String(valor || '').match(/(\d+)/);
+  return m ? m[1] : String(valor || '');
+}
+
+function soloSede(valor) {
+  return String(valor || '').replace(/^sede\s+/i, '').trim();
+}
+
+function soloProducto(valor) {
+  return String(valor || '')
+    .replace(/^ramo de\s+/i, '')
+    .replace(/\s*\(\d+\s+unidad(?:es)?\)\s*$/i, '')
+    .trim();
+}
+
 export default async function handler(req, res) {
   try {
     if (req.method === 'POST') {
@@ -17,13 +33,13 @@ export default async function handler(req, res) {
       await callAppsScript(driveCfg.webhookUrl, {
         id: nueva.id,
         fecha: nueva.fecha,
-        semana: nueva.semana,
+        semana: soloSemana(nueva.semana),
         codigo: nueva.codigo,
         nombre: nueva.nombre,
         cargo: nueva.cargo || '',
         cantidad: nueva.cantidad || 1,
-        producto: nueva.producto,
-        sede: nueva.sede,
+        producto: soloProducto(nueva.producto),
+        sede: soloSede(nueva.sede),
         motivo: nueva.motivo,
         fechaEntrega: nueva.fechaEntrega,
         remitente: nueva.remitente,
