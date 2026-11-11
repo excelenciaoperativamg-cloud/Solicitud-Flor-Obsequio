@@ -11,6 +11,7 @@ import { CuposDashboard } from './components/CuposDashboard';
 import { SolicitudesTable } from './components/SolicitudesTable';
 import { MaestroTrabajadores } from './components/MaestroTrabajadores';
 import { LoginCodigo } from './components/LoginCodigo';
+import { DriveConfigModal } from './components/DriveConfigModal';
 import { SolicitudFlor, TrabajadorMaestro } from './types';
 import {
   TRABAJADORES_INICIALES,
