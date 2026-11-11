@@ -10,7 +10,7 @@ import { SolicitudForm } from './components/SolicitudForm';
 import { CuposDashboard } from './components/CuposDashboard';
 import { SolicitudesTable } from './components/SolicitudesTable';
 import { MaestroTrabajadores } from './components/MaestroTrabajadores';
-import { DriveConfigModal } from './components/DriveConfigModal';
+import { LoginCodigo } from './components/LoginCodigo';
 import { SolicitudFlor, TrabajadorMaestro } from './types';
 import {
   TRABAJADORES_INICIALES,
@@ -54,7 +54,7 @@ export default function App() {
     spreadsheetUrl: 'https://docs.google.com/spreadsheets/d/1ecAKLTKJ-qrIWMGI5Rk1SpxhlTpfY6k5Gkyl4b5efzA/edit',
     syncEnabled: true,
   });
-  const [isDriveModalOpen, setIsDriveModalOpen] = useState(false);
+  const [sesion, setSesion] = useState<TrabajadorMaestro | null>(null);
 
   // Datos principales
   const [maestro, setMaestro] = useState<TrabajadorMaestro[]>(TRABAJADORES_INICIALES);
@@ -133,26 +133,8 @@ export default function App() {
   ): Promise<{ success: boolean; error?: string }> => {
     try {
       const guardada = await createSolicitudApi(nueva);
-
-      // Si además hay token de OAuth activo en el cliente, asegurar registro en Drive
-      const activeToken = token || (await getAccessToken());
-      if (activeToken && spreadsheetId && !guardada.syncedToDrive) {
-        try {
-          await appendSolicitudToDrive(activeToken, spreadsheetId, guardada);
-          guardada.syncedToDrive = true;
-        } catch (oErr) {
-          console.warn('Aviso escribiendo vía token OAuth:', oErr);
-        }
-      }
-
-      setSolicitudes((prev) => [guardada, ...prev]);
-
-      if (guardada.syncedToDrive || driveConfig.webhookUrl) {
-        mostrarToast('Solicitud guardada en servidor y registrada en Google Drive');
-      } else {
-        mostrarToast('Solicitud guardada con total seguridad en el servidor');
-      }
-
+      setSolicitudes((prev) => [guardada, ...prev.filter((s) => s.id !== guardada.id)]);
+      mostrarToast('Solicitud registrada en la hoja Solicitudes');
       return { success: true };
     } catch (err: any) {
       return { success: false, error: err.message || 'Error al guardar la solicitud' };
@@ -269,18 +251,27 @@ export default function App() {
         driveConfig={driveConfig}
         onOpenDriveModal={() => setIsDriveModalOpen(true)}
         totalSolicitudes={solicitudes.length}
+        sesion={sesion}
+        onCerrarSesion={() => setSesion(null)}
       />
 
-      {/* Contenido Principal por Pestaña */}
       <main className="flex-1">
+        {!sesion ? (
+          <LoginCodigo maestro={maestro} cargando={maestro.length === 0} onIngresar={(t) => {
+            setSesion(t);
+            setActiveTab('formulario');
+          }} />
+        ) : (
+        <>
         {activeTab === 'formulario' && (
           <SolicitudForm
             maestro={maestro}
             solicitudes={solicitudes}
             onGuardarSolicitud={handleGuardarSolicitud}
-            isDriveConnected={!!(driveConfig.webhookUrl || user)}
+            isDriveConnected={!!driveConfig.webhookUrl}
             spreadsheetLink={spreadsheetLink || driveConfig.spreadsheetUrl}
             onRecargarMaestroDeDrive={handleRecargarDeDrive}
+            sesion={sesion}
           />
         )}
 
@@ -312,6 +303,8 @@ export default function App() {
             onRecargarDeDrive={handleRecargarDeDrive}
             isSyncing={isSyncing}
           />
+        )}
+        </>
         )}
       </main>
 

@@ -51,7 +51,19 @@ export default async function handler(req, res) {
       saveSolicitudesStorage(solicitudes);
       return res.status(200).json({ success: true, solicitud: finalNueva });
     }
-    return res.status(200).json({ success: true, solicitudes: getSolicitudesStorage() });
+    const driveCfg = getDriveConfigStorage();
+    if (driveCfg.webhookUrl) {
+      try {
+        const data = await callAppsScript(driveCfg.webhookUrl);
+        if (Array.isArray(data.solicitudes)) {
+          saveSolicitudesStorage(data.solicitudes);
+          return res.status(200).json({ success: true, solicitudes: data.solicitudes, source: 'sheets' });
+        }
+      } catch (e) {
+        console.warn('[solicitudes] lectura hoja:', e?.message || e);
+      }
+    }
+    return res.status(200).json({ success: true, solicitudes: getSolicitudesStorage(), source: 'cache' });
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message || 'Error en solicitudes' });
   }

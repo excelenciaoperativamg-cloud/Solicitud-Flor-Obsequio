@@ -2,6 +2,7 @@ import React from 'react';
 import { Flower, Calendar, Users, FileText, Cloud, ExternalLink, Settings } from 'lucide-react';
 import { User } from 'firebase/auth';
 import { DriveConfig } from '../services/apiClient';
+import { TrabajadorMaestro } from '../types';
 
 interface NavbarProps {
   activeTab: 'formulario' | 'cupos' | 'solicitudes' | 'maestro';
@@ -11,6 +12,8 @@ interface NavbarProps {
   driveConfig: DriveConfig;
   onOpenDriveModal: () => void;
   totalSolicitudes: number;
+  sesion?: TrabajadorMaestro | null;
+  onCerrarSesion?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -21,6 +24,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   driveConfig,
   onOpenDriveModal,
   totalSolicitudes,
+  sesion,
+  onCerrarSesion,
 }) => {
   const isDriveActive = !!(driveConfig.webhookUrl || user);
 
@@ -62,6 +67,17 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Conexión Automática a Google Drive (Sin pedir correo) */}
           <div className="flex items-center gap-2 flex-wrap">
+            {sesion && (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-slate-50">
+                <div className="text-left leading-tight">
+                  <div className="text-xs font-bold text-[#0a2958]">{sesion.nombre}</div>
+                  <div className="text-[10px] text-slate-500">{sesion.codigo} · {sesion.cargo || 'Sin cargo'}</div>
+                </div>
+                <button type="button" onClick={onCerrarSesion} className="text-[11px] font-bold text-[#E60000]">
+                  Salir
+                </button>
+              </div>
+            )}
             <button
               onClick={onOpenDriveModal}
               className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition shadow-xs cursor-pointer border ${

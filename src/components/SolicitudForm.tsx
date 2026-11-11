@@ -42,6 +42,7 @@ interface SolicitudFormProps {
   isDriveConnected: boolean;
   spreadsheetLink: string | null;
   onRecargarMaestroDeDrive?: () => Promise<void>;
+  sesion?: TrabajadorMaestro | null;
 }
 
 export const SolicitudForm: React.FC<SolicitudFormProps> = ({
@@ -51,6 +52,7 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
   isDriveConnected,
   spreadsheetLink,
   onRecargarMaestroDeDrive,
+  sesion,
 }) => {
   const upcomingFridays = useMemo(() => getUpcomingFridays(6), []);
 
@@ -132,6 +134,10 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
     const cargoLower = (trabajadorEncontrado.cargo || '').toLowerCase();
     return cargoLower.includes('operario') ? 1 : 2;
   }, [trabajadorEncontrado]);
+
+  useEffect(() => {
+    if (sesion) aplicarTrabajador(sesion);
+  }, [sesion]);
 
   // Buscar y vincular automáticamente cuando el usuario escribe código
   const buscarYVincularCodigo = (valorInput: string) => {
@@ -593,6 +599,7 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
                 <input
                   type="text"
                   value={codigo}
+                  readOnly={!!sesion}
                   onChange={(e) => {
                     const val = e.target.value;
                     setCodigo(val);
