@@ -163,17 +163,24 @@ export const appendSolicitudToDrive = async (
   spreadsheetId: string,
   solicitud: SolicitudFlor
 ): Promise<boolean> => {
+  const soloSemana = String(solicitud.semana || '').match(/(\d+)/)?.[1] || solicitud.semana;
+  const soloSede = String(solicitud.sede || '').replace(/^sede\s+/i, '').trim();
+  const soloProducto = String(solicitud.producto || '')
+    .replace(/^ramo de\s+/i, '')
+    .replace(/\s*\(\d+\s+unidad(?:es)?\)\s*$/i, '')
+    .trim();
+
   const rowValues = [
     [
       solicitud.id,
       solicitud.fecha,
-      solicitud.semana,
+      soloSemana,
       solicitud.codigo,
       solicitud.nombre,
       solicitud.cargo || '',
       solicitud.cantidad || 1,
-      solicitud.producto,
-      solicitud.sede,
+      soloProducto,
+      soloSede,
       solicitud.motivo,
       solicitud.fechaEntrega,
       solicitud.remitente,
