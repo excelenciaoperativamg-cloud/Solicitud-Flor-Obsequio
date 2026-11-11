@@ -48,6 +48,7 @@ export default function App() {
   const [spreadsheetLink, setSpreadsheetLink] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncToast, setSyncToast] = useState<string | null>(null);
+  const [isDriveModalOpen, setIsDriveModalOpen] = useState(false);
 
   // Configuración de Google Drive automática (Webhook sin pedir correo)
   const [driveConfig, setDriveConfig] = useState<DriveConfig>({
