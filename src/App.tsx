@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { User } from 'firebase/auth';
 import { Navbar } from './components/Navbar';
 import { SolicitudForm } from './components/SolicitudForm';
@@ -34,9 +34,9 @@ import {
 } from './services/apiClient';
 import {
   getOrCreateSpreadsheet,
-  appendSolicitudToDrive,
   fetchMaestroFromDrive,
 } from './services/googleDriveSheets';
+import { esRolAdmin } from './utils/roles';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'formulario' | 'cupos' | 'solicitudes' | 'maestro'>('formulario');
@@ -61,6 +61,15 @@ export default function App() {
   // Datos principales
   const [maestro, setMaestro] = useState<TrabajadorMaestro[]>(TRABAJADORES_INICIALES);
   const [solicitudes, setSolicitudes] = useState<SolicitudFlor[]>(SOLICITUDES_INICIALES);
+
+  const esAdmin = esRolAdmin(sesion);
+
+  // Si el usuario no es admin, siempre mostrar solo el formulario
+  useEffect(() => {
+    if (sesion && !esAdmin && activeTab !== 'formulario') {
+      setActiveTab('formulario');
+    }
+  }, [sesion, esAdmin, activeTab]);
 
   // Mostrar toast temporal
   const mostrarToast = (mensaje: string) => {
@@ -126,10 +135,6 @@ export default function App() {
     };
   }, [maestro]);
 
-  // Guardar nueva solicitud:
-  // 1. Guarda en el backend Express permanentemente (seguridad total)
-  // 2. Si hay Webhook de Drive configurado, el backend lo envía automáticamente a la hoja de Google Drive (cero login, cero correo)
-  // 3. Si hay sesión Google OAuth activa, también sincroniza vía API
   const handleGuardarSolicitud = async (
     nueva: SolicitudFlor
   ): Promise<{ success: boolean; error?: string }> => {
@@ -143,7 +148,6 @@ export default function App() {
     }
   };
 
-  // Agregar trabajador al maestro
   const handleAgregarTrabajador = async (nuevo: TrabajadorMaestro) => {
     try {
       const updated = await addTrabajadorApi(nuevo);
@@ -159,7 +163,6 @@ export default function App() {
     }
   };
 
-  // Importar lista masiva de trabajadores
   const handleImportarCSV = async (nuevos: TrabajadorMaestro[]) => {
     setMaestro((prev) => {
       const codigosExistentes = new Set(prev.map((p) => p.codigo.toUpperCase()));
@@ -174,7 +177,6 @@ export default function App() {
     mostrarToast(`Se importaron ${nuevos.length} trabajadores a la Hoja Maestro`);
   };
 
-  // Guardar configuración del Webhook automático de Google Drive
   const handleGuardarDriveConfig = async (webhookUrl: string, spreadsheetUrl: string) => {
     const updated = await updateDriveConfigApi({ webhookUrl, spreadsheetUrl });
     setDriveConfig(updated);
@@ -184,16 +186,13 @@ export default function App() {
     mostrarToast('Configuración de Google Drive actualizada');
   };
 
-  // Probar conexión automática con Drive
   const handleProbarConexionDrive = async (targetUrl?: string) => {
     return await testDriveWebhookApi(targetUrl);
   };
 
-  // Recargar datos desde la hoja Google Sheets "Maestro"
   const handleRecargarDeDrive = async () => {
     setIsSyncing(true);
     try {
-      // 1. Intentar primero sincronizar a través del Webhook automático (cero correos)
       const resWebhook = await syncMaestroFromDriveApi();
       if (resWebhook.success && resWebhook.maestro && resWebhook.maestro.length > 0) {
         setMaestro(resWebhook.maestro);
@@ -201,7 +200,6 @@ export default function App() {
         return;
       }
 
-      // 2. Si no hay webhook o falló, revisar si hay token OAuth
       const activeToken = token || (await getAccessToken());
       if (activeToken && spreadsheetId) {
         const trabajadoresDrive = await fetchMaestroFromDrive(activeToken, spreadsheetId);
@@ -217,7 +215,6 @@ export default function App() {
         }
       }
 
-      // Si no está configurado, abrir ventana para activar
       setIsDriveModalOpen(true);
     } catch {
       setIsDriveModalOpen(true);
@@ -226,91 +223,104 @@ export default function App() {
     }
   };
 
+  const handleSetActiveTab = (tab: 'formulario' | 'cupos' | 'solicitudes' | 'maestro') => {
+    if (!esAdmin && tab !== 'formulario') {
+      setActiveTab('formulario');
+      return;
+    }
+    setActiveTab(tab);
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans">
-      {/* Toast flotante de sincronización */}
       {syncToast && (
         <div className="fixed bottom-4 right-4 z-50 bg-[#0a2958] text-white text-xs font-bold py-2.5 px-4 rounded-xl shadow-xl border border-white/20 animate-in fade-in slide-in-from-bottom-2 duration-200">
           {syncToast}
         </div>
       )}
 
-      {/* Modal de Conexión Automática a Google Drive */}
       <DriveConfigModal
-        isOpen={isDriveModalOpen}
+        isOpen={isDriveModalOpen && esAdmin}
         onClose={() => setIsDriveModalOpen(false)}
         config={driveConfig}
         onGuardarConfig={handleGuardarDriveConfig}
         onProbarConexion={handleProbarConexionDrive}
       />
 
-      {/* Navbar Superior */}
       <Navbar
         activeTab={activeTab}
-        setActiveTab={setActiveTab}
+        setActiveTab={handleSetActiveTab}
         user={user}
         spreadsheetLink={spreadsheetLink || driveConfig.spreadsheetUrl}
         driveConfig={driveConfig}
-        onOpenDriveModal={() => setIsDriveModalOpen(true)}
+        onOpenDriveModal={() => {
+          if (esAdmin) setIsDriveModalOpen(true);
+        }}
         totalSolicitudes={solicitudes.length}
         sesion={sesion}
-        onCerrarSesion={() => setSesion(null)}
+        onCerrarSesion={() => {
+          setSesion(null);
+          setActiveTab('formulario');
+        }}
       />
 
       <main className="flex-1">
         {!sesion ? (
-          <LoginCodigo maestro={maestro} cargando={maestro.length === 0} onIngresar={(t) => {
-            setSesion(t);
-            setActiveTab('formulario');
-          }} />
-        ) : (
-        <>
-        {activeTab === 'formulario' && (
-          <SolicitudForm
+          <LoginCodigo
             maestro={maestro}
-            solicitudes={solicitudes}
-            onGuardarSolicitud={handleGuardarSolicitud}
-            isDriveConnected={!!driveConfig.webhookUrl}
-            spreadsheetLink={spreadsheetLink || driveConfig.spreadsheetUrl}
-            onRecargarMaestroDeDrive={handleRecargarDeDrive}
-            sesion={sesion}
-          />
-        )}
-
-        {activeTab === 'cupos' && (
-          <CuposDashboard
-            solicitudes={solicitudes}
-            onIrAFormulario={() => setActiveTab('formulario')}
-          />
-        )}
-
-        {activeTab === 'solicitudes' && (
-          <SolicitudesTable
-            solicitudes={solicitudes}
-            isDriveConnected={!!(driveConfig.webhookUrl || user)}
-            spreadsheetLink={spreadsheetLink || driveConfig.spreadsheetUrl}
-            onSincronizarConDrive={async () => {
-              setIsDriveModalOpen(true);
+            cargando={maestro.length === 0}
+            onIngresar={(t) => {
+              setSesion(t);
+              setActiveTab('formulario');
             }}
-            isSyncing={isSyncing}
           />
-        )}
+        ) : (
+          <>
+            {(activeTab === 'formulario' || !esAdmin) && (
+              <SolicitudForm
+                maestro={maestro}
+                solicitudes={solicitudes}
+                onGuardarSolicitud={handleGuardarSolicitud}
+                isDriveConnected={!!driveConfig.webhookUrl}
+                spreadsheetLink={esAdmin ? spreadsheetLink || driveConfig.spreadsheetUrl : null}
+                onRecargarMaestroDeDrive={esAdmin ? handleRecargarDeDrive : undefined}
+                sesion={sesion}
+              />
+            )}
 
-        {activeTab === 'maestro' && (
-          <MaestroTrabajadores
-            maestro={maestro}
-            onAgregarTrabajador={handleAgregarTrabajador}
-            onImportarCSV={handleImportarCSV}
-            isDriveConnected={!!(driveConfig.webhookUrl || user)}
-            onRecargarDeDrive={handleRecargarDeDrive}
-            isSyncing={isSyncing}
-          />
-        )}
-        </>
+            {esAdmin && activeTab === 'cupos' && (
+              <CuposDashboard
+                solicitudes={solicitudes}
+                onIrAFormulario={() => setActiveTab('formulario')}
+              />
+            )}
+
+            {esAdmin && activeTab === 'solicitudes' && (
+              <SolicitudesTable
+                solicitudes={solicitudes}
+                isDriveConnected={!!(driveConfig.webhookUrl || user)}
+                spreadsheetLink={spreadsheetLink || driveConfig.spreadsheetUrl}
+                onSincronizarConDrive={async () => {
+                  setIsDriveModalOpen(true);
+                }}
+                isSyncing={isSyncing}
+              />
+            )}
+
+            {esAdmin && activeTab === 'maestro' && (
+              <MaestroTrabajadores
+                maestro={maestro}
+                onAgregarTrabajador={handleAgregarTrabajador}
+                onImportarCSV={handleImportarCSV}
+                isDriveConnected={!!(driveConfig.webhookUrl || user)}
+                onRecargarDeDrive={handleRecargarDeDrive}
+                isSyncing={isSyncing}
+              />
+            )}
+          </>
         )}
       </main>
 
-      {/* Footer corporativo */}
       <footer className="bg-white border-t border-slate-200 py-4 px-4 text-center text-xs text-slate-500">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
           <div className="flex items-center gap-2">
