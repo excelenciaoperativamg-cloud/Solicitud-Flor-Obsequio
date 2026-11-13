@@ -30,22 +30,34 @@ export default async function handler(req, res) {
           error: 'No hay webhook de Google Sheets. Abra Conexión con Drive y guarde la URL /exec.',
         });
       }
-      await callAppsScript(driveCfg.webhookUrl, {
+
+      const cantidadNum = Math.max(1, Number(nueva.cantidad) || 1);
+      const payload = {
         id: nueva.id,
         fecha: nueva.fecha,
         semana: soloSemana(nueva.semana),
         codigo: nueva.codigo,
         nombre: nueva.nombre,
         cargo: nueva.cargo || '',
-        cantidad: nueva.cantidad || 1,
+        cantidad: cantidadNum,
         producto: soloProducto(nueva.producto),
         sede: soloSede(nueva.sede),
-        motivo: nueva.motivo,
-        fechaEntrega: nueva.fechaEntrega,
+        motivo: nueva.motivo || 'Obsequio',
+        fechaEntrega: nueva.fechaEntrega || '',
         remitente: nueva.remitente,
         estado: nueva.estado || 'Registrada',
-      });
-      const finalNueva = { ...nueva, syncedToDrive: true, guardadoEnServidor: true };
+      };
+
+      await callAppsScript(driveCfg.webhookUrl, payload);
+
+      const finalNueva = {
+        ...nueva,
+        cantidad: cantidadNum,
+        motivo: payload.motivo,
+        fechaEntrega: payload.fechaEntrega,
+        syncedToDrive: true,
+        guardadoEnServidor: true,
+      };
       const solicitudes = getSolicitudesStorage().filter((s) => s.id !== nueva.id);
       solicitudes.unshift(finalNueva);
       saveSolicitudesStorage(solicitudes);
