@@ -117,6 +117,10 @@ function leerSolicitudes(ss) {
     var cantidadRaw = cel(["CANTIDAD"]);
     var cantidadNum = Number(cantidadRaw);
     if (!cantidadNum || isNaN(cantidadNum)) cantidadNum = 1;
+    var florPrincipal = "Rosa";
+    var prodLow = producto.toLowerCase();
+    if (prodLow.indexOf("clavel") !== -1) florPrincipal = "Clavel";
+    else if (prodLow.indexOf("alstroemeria") !== -1) florPrincipal = "Alstroemeria";
     out.push({
       id: id,
       fecha: String(fecha || ""),
@@ -126,8 +130,8 @@ function leerSolicitudes(ss) {
       cargo: String(cel(["CARGO"]) || ""),
       cantidad: cantidadNum,
       producto: producto,
-      tipoProducto: producto.toLowerCase().indexOf("bouquet") !== -1 ? "bouquet" : "ramo",
-      florPrincipal: "Rosa",
+      tipoProducto: prodLow.indexOf("bouquet") !== -1 ? "bouquet" : "ramo",
+      florPrincipal: florPrincipal,
       sede: normSede(cel(["SEDE"])),
       motivo: String(cel(["MOTIVO"]) || ""),
       fechaEntrega: String(fechaEntrega || ""),

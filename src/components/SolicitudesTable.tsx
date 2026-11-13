@@ -4,10 +4,10 @@ import {
   Download,
   CheckCircle2,
   RefreshCw,
-  ExternalLink,
   AlertCircle,
   Eye,
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { SolicitudFlor } from '../types';
 import { formatDateSpanish, formatShortDate } from '../utils/dateUtils';
 
@@ -52,33 +52,53 @@ export const SolicitudesTable: React.FC<SolicitudesTableProps> = ({
     });
   }, [solicitudes, busqueda, filtroSede, filtroTipo]);
 
-  // Exportar a CSV con los encabezados exactos del prompt incluyendo SEMANA:
-  // Id, Fecha, Semana, Código, Nombre, Producto, Sede, Motivo, Fecha Entrega, Remitente, Estado
-  const exportarCSV = () => {
-    const headers = ['Id', 'Fecha', 'Semana', 'Código', 'Nombre', 'Producto', 'Sede', 'Motivo', 'Fecha Entrega', 'Remitente', 'Estado'];
+  // Exportar a Excel (.xlsx) con los encabezados incluyendo Semana
+  const exportarExcel = () => {
+    const headers = [
+      'Id',
+      'Fecha',
+      'Semana',
+      'Código',
+      'Nombre',
+      'Producto',
+      'Sede',
+      'Motivo',
+      'Fecha Entrega',
+      'Remitente',
+      'Estado',
+    ];
     const rows = solicitudesFiltradas.map((s) => [
-      `"${s.id}"`,
-      `"${s.fecha}"`,
-      `"${s.semana || ''}"`,
-      `"${s.codigo}"`,
-      `"${s.nombre}"`,
-      `"${s.producto.replace(/"/g, '""')}"`,
-      `"${s.sede}"`,
-      `"${s.motivo.replace(/"/g, '""')}"`,
-      `"${s.fechaEntrega}"`,
-      `"${s.remitente.replace(/"/g, '""')}"`,
-      `"${s.estado}"`,
+      s.id,
+      s.fecha,
+      s.semana || '',
+      s.codigo,
+      s.nombre,
+      s.producto,
+      s.sede,
+      s.motivo,
+      s.fechaEntrega,
+      s.remitente,
+      s.estado,
     ]);
 
-    const csvContent = '\uFEFF' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `Solicitudes_Flor_Obsequio_${new Date().toISOString().slice(0, 10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    worksheet['!cols'] = [
+      { wch: 15 }, // Id
+      { wch: 12 }, // Fecha
+      { wch: 12 }, // Semana
+      { wch: 12 }, // Código
+      { wch: 30 }, // Nombre
+      { wch: 36 }, // Producto
+      { wch: 12 }, // Sede
+      { wch: 28 }, // Motivo
+      { wch: 14 }, // Fecha Entrega
+      { wch: 26 }, // Remitente
+      { wch: 14 }, // Estado
+    ];
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Solicitudes');
+    XLSX.writeFile(workbook, `Solicitudes_Flor_Obsequio_${new Date().toISOString().slice(0, 10)}.xlsx`);
   };
 
   return (
@@ -214,24 +234,12 @@ export const SolicitudesTable: React.FC<SolicitudesTableProps> = ({
             </button>
           )}
 
-          {spreadsheetLink && (
-            <a
-              href={spreadsheetLink}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold shadow-xs transition"
-            >
-              <ExternalLink className="w-3.5 h-3.5 text-[#0a2958]" />
-              <span>Abrir Hoja de Google</span>
-            </a>
-          )}
-
           <button
-            onClick={exportarCSV}
+            onClick={exportarExcel}
             className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-[#0a2958] hover:bg-[#0d346e] text-white text-xs font-bold shadow-xs transition cursor-pointer"
           >
             <Download className="w-3.5 h-3.5 text-[#E60000]" />
-            <span>Descargar CSV / Excel</span>
+            <span>Descargar Excel</span>
           </button>
         </div>
       </div>

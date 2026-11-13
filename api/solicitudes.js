@@ -12,8 +12,23 @@ function soloSede(valor) {
 function soloProducto(valor) {
   return String(valor || '')
     .replace(/^ramo de\s+/i, '')
+    .replace(/\s*\(seg[uú]n color disponible\)/gi, '')
     .replace(/\s*\(\d+\s+unidad(?:es)?\)\s*$/i, '')
     .trim();
+}
+
+function normalizarSolicitudDesdeSheet(s) {
+  const cantidadNum = Number(s?.cantidad);
+  const fechaEntregaOk = /^\d{4}-\d{2}-\d{2}$/.test(String(s?.fechaEntrega || '').trim())
+    ? String(s.fechaEntrega).trim()
+    : '';
+  return {
+    ...s,
+    producto: String(s?.producto || '').replace(/\s*\(seg[uú]n color disponible\)/gi, '').trim(),
+    cantidad: cantidadNum && !Number.isNaN(cantidadNum) ? cantidadNum : 1,
+    fechaEntrega: fechaEntregaOk,
+    syncedToDrive: true,
+  };
 }
 
 export default async function handler(req, res) {
@@ -68,8 +83,9 @@ export default async function handler(req, res) {
       try {
         const data = await callAppsScript(driveCfg.webhookUrl);
         if (Array.isArray(data.solicitudes)) {
-          saveSolicitudesStorage(data.solicitudes);
-          return res.status(200).json({ success: true, solicitudes: data.solicitudes, source: 'sheets' });
+          const limpias = data.solicitudes.map(normalizarSolicitudDesdeSheet);
+          saveSolicitudesStorage(limpias);
+          return res.status(200).json({ success: true, solicitudes: limpias, source: 'sheets' });
         }
       } catch (e) {
         console.warn('[solicitudes] lectura hoja:', e?.message || e);

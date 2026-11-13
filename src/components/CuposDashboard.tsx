@@ -73,9 +73,6 @@ export const CuposDashboard: React.FC<CuposDashboardProps> = ({
           <h2 className="text-xl font-extrabold text-[#0a2958] tracking-tight">
             Cupos Semanales de Flor por Sede ({semanaNombre})
           </h2>
-          <p className="text-xs text-slate-500 mt-1 font-medium">
-            Disponibilidad de ramos y bouquets para entrega de los días viernes
-          </p>
         </div>
 
         {/* Selector de Viernes */}

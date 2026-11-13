@@ -43,3 +43,22 @@ export function esRolAdmin(trabajador?: TrabajadorMaestro | null): boolean {
 
   return false;
 }
+
+/**
+ * Verifica si el trabajador tiene el cargo de DIRECTOR POSCOSECHA,
+ * quien tiene habilitado el formulario todos los días de la semana.
+ */
+export function esDirectorPoscosecha(trabajador?: TrabajadorMaestro | null): boolean {
+  if (!trabajador) return false;
+
+  const normalizar = (s: string) =>
+    String(s || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+  const cargo = normalizar(trabajador.cargo || '');
+  return cargo.includes('director') && cargo.includes('poscosecha');
+}

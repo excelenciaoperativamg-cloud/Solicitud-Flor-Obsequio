@@ -99,6 +99,9 @@ export const getVentanaSolicitud = (now = new Date()): VentanaSolicitud => {
   const day = now.getDay();
   const nombres = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
   const friday = getFridayOfSameWeek(now);
+  if (day === 0 || day === 6) {
+    friday.setDate(friday.getDate() + 7);
+  }
   const fechaEntrega = toDateString(friday);
   const labelEntrega = friday.toLocaleDateString('es-ES', {
     weekday: 'long',

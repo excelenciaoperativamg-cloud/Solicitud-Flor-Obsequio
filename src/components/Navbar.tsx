@@ -1,5 +1,5 @@
 import React from 'react';
-import { Flower, Calendar, Users, FileText, Cloud, ExternalLink, Settings } from 'lucide-react';
+import { Flower, Calendar, Users, FileText, Cloud, Settings } from 'lucide-react';
 import { User } from 'firebase/auth';
 import { DriveConfig } from '../services/apiClient';
 import { TrabajadorMaestro } from '../types';
@@ -109,19 +109,6 @@ export const Navbar: React.FC<NavbarProps> = ({
                   </div>
                   <Settings className="w-3.5 h-3.5 text-slate-400 ml-1" />
                 </button>
-
-                {(spreadsheetLink || driveConfig.spreadsheetUrl) && (
-                  <a
-                    href={spreadsheetLink || driveConfig.spreadsheetUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="hidden sm:inline-flex items-center gap-1 px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition"
-                    title="Abrir hoja de cálculo en Google Drive"
-                  >
-                    <span>Ver Hoja</span>
-                    <ExternalLink className="w-3 h-3 text-[#0a2958]" />
-                  </a>
-                )}
               </>
             )}
           </div>

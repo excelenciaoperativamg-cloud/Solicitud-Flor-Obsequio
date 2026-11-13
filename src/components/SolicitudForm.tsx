@@ -31,6 +31,7 @@ import {
   getWeekLabel,
   getVentanaSolicitud,
 } from '../utils/dateUtils';
+import { esDirectorPoscosecha } from '../utils/roles';
 
 interface SolicitudFormProps {
   maestro: TrabajadorMaestro[];
@@ -51,6 +52,8 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
   sesion,
 }) => {
   const ventana = useMemo(() => getVentanaSolicitud(), []);
+  const esDirector = useMemo(() => esDirectorPoscosecha(sesion), [sesion]);
+  const formularioHabilitado = ventana.abierto || esDirector;
   const cantidad = 1;
   const fechaEntrega = ventana.fechaEntrega;
   const motivoFijo = 'Obsequio';
@@ -144,13 +147,13 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
   const descripcionProducto = useMemo(() => {
     if (florRamo === 'Rosa' && opcionRosa === 'Bouquet') return 'Bouquet de Rosas (1 unidad)';
     if (florRamo === 'Rosa') return `Ramo de Rosa (${opcionRosa}) (1 unidad)`;
-    if (florRamo === 'Clavel') return 'Ramo de Clavel (Según color disponible) (1 unidad)';
-    return 'Ramo de Alstroemeria (Según color disponible) (1 unidad)';
+    if (florRamo === 'Clavel') return 'Ramo de Clavel (1 unidad)';
+    return 'Ramo de Alstroemeria (1 unidad)';
   }, [florRamo, opcionRosa]);
 
   const validarFormulario = (): boolean => {
     const nuevosErrores: Record<string, string> = {};
-    if (!ventana.abierto) nuevosErrores.ventana = ventana.mensajeCerrado;
+    if (!formularioHabilitado) nuevosErrores.ventana = ventana.mensajeCerrado;
     if (!codigo.trim()) nuevosErrores.codigo = 'El código del trabajador es obligatorio';
     if (!nombre.trim()) nuevosErrores.nombre = 'El nombre del trabajador es obligatorio';
     if (!sede) nuevosErrores.sede = 'No se ha determinado la sede del trabajador';
@@ -184,7 +187,7 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
       producto: descripcionProducto,
       tipoProducto,
       florPrincipal: florRamo,
-      opcionFlor: florRamo === 'Rosa' ? opcionRosa : 'Según color disponible',
+      opcionFlor: florRamo === 'Rosa' ? opcionRosa : undefined,
       sede,
       motivo: motivoFijo,
       fechaEntrega,
@@ -233,7 +236,7 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
     }
   };
 
-  if (!ventana.abierto) {
+  if (!formularioHabilitado) {
     return (
       <div className="max-w-xl mx-auto py-16 px-4">
         <div className="bg-white rounded-2xl border border-amber-200 shadow-sm p-8 text-center">
@@ -307,7 +310,6 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
             </div>
             <div>
               <h2 className="text-base font-extrabold text-[#0a2958]">Formulario de Solicitud</h2>
-              <p className="text-[11px] text-slate-500">Solo lunes y martes · 1 ramo cada 15 días · Entrega el viernes</p>
             </div>
           </div>
           {isDriveConnected && (
