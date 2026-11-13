@@ -9,6 +9,27 @@ interface CuposDashboardProps {
   onIrAFormulario: () => void;
 }
 
+type CategoriaProducto = 'Rosa (Rojo)' | 'Rosa (Color)' | 'Alstroemeria' | 'Clavel' | 'Bouquet';
+
+const CATEGORIAS_PRODUCTO: CategoriaProducto[] = [
+  'Rosa (Rojo)',
+  'Rosa (Color)',
+  'Alstroemeria',
+  'Clavel',
+  'Bouquet',
+];
+
+function categorizarProducto(s: SolicitudFlor): CategoriaProducto {
+  const prod = String(s.producto || '').toLowerCase();
+  if (s.tipoProducto === 'bouquet' || prod.includes('bouquet')) return 'Bouquet';
+  if (prod.includes('clavel') || s.florPrincipal === 'Clavel') return 'Clavel';
+  if (prod.includes('alstroemeria') || s.florPrincipal === 'Alstroemeria') return 'Alstroemeria';
+  if (prod.includes('color') || String(s.opcionFlor || '').toLowerCase().includes('color')) {
+    return 'Rosa (Color)';
+  }
+  return 'Rosa (Rojo)';
+}
+
 export const CuposDashboard: React.FC<CuposDashboardProps> = ({
   solicitudes,
   onIrAFormulario,
@@ -18,20 +39,74 @@ export const CuposDashboard: React.FC<CuposDashboardProps> = ({
 
   const semanaNombre = useMemo(() => getWeekLabel(semanaSeleccionada), [semanaSeleccionada]);
 
+  const solicitudesSemanaActivas = useMemo(
+    () =>
+      solicitudes.filter(
+        (s) => s.fechaEntrega === semanaSeleccionada && s.estado !== 'Cancelada'
+      ),
+    [solicitudes, semanaSeleccionada]
+  );
+
+  // Conteo total por producto sin importar la sede + desglose por sede
+  const resumenPorProducto = useMemo(() => {
+    const mapa: Record<
+      CategoriaProducto,
+      { total: number; porSede: Record<Sede, number> }
+    > = {
+      'Rosa (Rojo)': { total: 0, porSede: { 'Sede MG': 0, 'Sede HA': 0, 'Sede SC': 0 } },
+      'Rosa (Color)': { total: 0, porSede: { 'Sede MG': 0, 'Sede HA': 0, 'Sede SC': 0 } },
+      Alstroemeria: { total: 0, porSede: { 'Sede MG': 0, 'Sede HA': 0, 'Sede SC': 0 } },
+      Clavel: { total: 0, porSede: { 'Sede MG': 0, 'Sede HA': 0, 'Sede SC': 0 } },
+      Bouquet: { total: 0, porSede: { 'Sede MG': 0, 'Sede HA': 0, 'Sede SC': 0 } },
+    };
+
+    const sedesRamos: Record<Sede, number> = { 'Sede MG': 0, 'Sede HA': 0, 'Sede SC': 0 };
+    let totalRamos = 0;
+
+    for (const s of solicitudesSemanaActivas) {
+      const cant = Number(s.cantidad) || 1;
+      const cat = categorizarProducto(s);
+      const sedeNorm: Sede =
+        s.sede === 'Sede HA' || s.sede === 'Sede SC' ? s.sede : 'Sede MG';
+
+      mapa[cat].total += cant;
+      mapa[cat].porSede[sedeNorm] += cant;
+
+      if (cat !== 'Bouquet') {
+        totalRamos += cant;
+        sedesRamos[sedeNorm] += cant;
+      }
+    }
+
+    return { mapa, totalRamos, sedesRamos };
+  }, [solicitudesSemanaActivas]);
+
   // Métricas por sede para la semana seleccionada
   const metricasPorSede = useMemo(() => {
-    const solicitudesSemana = solicitudes.filter(
-      (s) => s.fechaEntrega === semanaSeleccionada && s.estado !== 'Cancelada'
-    );
-
     const sedes: Sede[] = ['Sede MG', 'Sede HA', 'Sede SC'];
 
     return sedes.map((sede) => {
       const config = CUPOS_CONFIG[sede];
-      const enSede = solicitudesSemana.filter((s) => s.sede === sede);
-      const ramosUsados = enSede.filter((s) => s.tipoProducto === 'ramo').length;
-      const bouquetsUsados = enSede.filter((s) => s.tipoProducto === 'bouquet').length;
-      const totalUsados = enSede.length;
+      const enSede = solicitudesSemanaActivas.filter((s) => s.sede === sede);
+      const ramosUsados = enSede
+        .filter((s) => s.tipoProducto === 'ramo')
+        .reduce((acc, s) => acc + (Number(s.cantidad) || 1), 0);
+      const bouquetsUsados = enSede
+        .filter((s) => s.tipoProducto === 'bouquet')
+        .reduce((acc, s) => acc + (Number(s.cantidad) || 1), 0);
+      const totalUsados = enSede.reduce((acc, s) => acc + (Number(s.cantidad) || 1), 0);
+
+      const porProducto: Record<CategoriaProducto, number> = {
+        'Rosa (Rojo)': 0,
+        'Rosa (Color)': 0,
+        Alstroemeria: 0,
+        Clavel: 0,
+        Bouquet: 0,
+      };
+      for (const s of enSede) {
+        const cant = Number(s.cantidad) || 1;
+        porProducto[categorizarProducto(s)] += cant;
+      }
 
       const ramosMax = config.ramosMax;
       const bouquetsMax = config.bouquetsMax || 0;
@@ -57,10 +132,11 @@ export const CuposDashboard: React.FC<CuposDashboardProps> = ({
         totalUsados,
         totalDisponibles,
         porcentajeTotal,
+        porProducto,
         solicitudesDetalle: enSede,
       };
     });
-  }, [solicitudes, semanaSeleccionada]);
+  }, [solicitudesSemanaActivas]);
 
   return (
     <div className="max-w-6xl mx-auto py-6 px-4 sm:px-6 space-y-6">
@@ -93,6 +169,68 @@ export const CuposDashboard: React.FC<CuposDashboardProps> = ({
                 </option>
               ))}
             </select>
+          </div>
+        </div>
+      </div>
+
+      {/* Total de Ramos por Producto (Todas las Sedes) */}
+      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <span className="text-[11px] font-bold uppercase tracking-wider text-[#E60000]">
+              Consolidado Total por Producto
+            </span>
+            <h3 className="text-sm font-extrabold text-[#0a2958]">
+              Conteo general de ramos por producto ({semanaNombre})
+            </h3>
+          </div>
+          <div className="text-xs font-bold text-[#0a2958] bg-[#0a2958]/5 border border-[#0a2958]/15 px-3 py-1.5 rounded-xl">
+            Total Ramos (3 sedes): {resumenPorProducto.totalRamos}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          {CATEGORIAS_PRODUCTO.map((cat) => {
+            const info = resumenPorProducto.mapa[cat];
+            const isBouquet = cat === 'Bouquet';
+            return (
+              <div
+                key={cat}
+                className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/60 flex flex-col justify-between"
+              >
+                <div>
+                  <span className="text-[11px] font-bold text-slate-600 block">{cat}</span>
+                  <div className="text-2xl font-extrabold text-[#0a2958] mt-1">
+                    {info.total}
+                  </div>
+                  <span className="text-[10px] text-slate-400 font-medium">
+                    {isBouquet ? 'bouquets pedidos' : 'ramos pedidos'}
+                  </span>
+                </div>
+                <div className="mt-2 pt-2 border-t border-slate-200/80 text-[10px] text-slate-600 font-semibold flex flex-wrap gap-x-2 gap-y-0.5">
+                  <span>MG: {info.porSede['Sede MG']}</span>
+                  <span>HA: {info.porSede['Sede HA']}</span>
+                  <span>SC: {info.porSede['Sede SC']}</span>
+                </div>
+              </div>
+            );
+          })}
+
+          <div className="p-3.5 rounded-xl border border-[#0a2958]/20 bg-[#0a2958]/5 flex flex-col justify-between">
+            <div>
+              <span className="text-[11px] font-bold text-[#0a2958] block">Total Ramos</span>
+              <div className="text-2xl font-extrabold text-[#E60000] mt-1">
+                {resumenPorProducto.totalRamos}
+              </div>
+              <span className="text-[10px] text-slate-500 font-medium">
+                en las 3 sedes
+              </span>
+            </div>
+            <div className="mt-2 pt-2 border-t border-[#0a2958]/15 text-[10px] text-[#0a2958] font-bold flex flex-wrap gap-x-2 gap-y-0.5">
+              <span>MG: {resumenPorProducto.sedesRamos['Sede MG']}</span>
+              <span>HA: {resumenPorProducto.sedesRamos['Sede HA']}</span>
+              <span>SC: {resumenPorProducto.sedesRamos['Sede SC']}</span>
+            </div>
           </div>
         </div>
       </div>
@@ -240,6 +378,41 @@ export const CuposDashboard: React.FC<CuposDashboardProps> = ({
                     </div>
                   </div>
                 )}
+
+                {/* Conteo por Producto en esta Sede */}
+                <div className="mt-4 pt-3 border-t border-slate-100">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-2">
+                    Pedidos por producto en {m.sede}
+                  </span>
+                  <div className="grid grid-cols-2 gap-1.5 text-[11px]">
+                    <div className="flex justify-between px-2 py-1 rounded-lg bg-slate-50 border border-slate-100">
+                      <span className="text-slate-600">Rosa (Rojo)</span>
+                      <span className="font-bold text-[#0a2958]">{m.porProducto['Rosa (Rojo)']}</span>
+                    </div>
+                    <div className="flex justify-between px-2 py-1 rounded-lg bg-slate-50 border border-slate-100">
+                      <span className="text-slate-600">Rosa (Color)</span>
+                      <span className="font-bold text-[#0a2958]">{m.porProducto['Rosa (Color)']}</span>
+                    </div>
+                    <div className="flex justify-between px-2 py-1 rounded-lg bg-slate-50 border border-slate-100">
+                      <span className="text-slate-600">Alstroemeria</span>
+                      <span className="font-bold text-[#0a2958]">{m.porProducto.Alstroemeria}</span>
+                    </div>
+                    <div className="flex justify-between px-2 py-1 rounded-lg bg-slate-50 border border-slate-100">
+                      <span className="text-slate-600">Clavel</span>
+                      <span className="font-bold text-[#0a2958]">{m.porProducto.Clavel}</span>
+                    </div>
+                    {(isMG || m.porProducto.Bouquet > 0) && (
+                      <div className="flex justify-between px-2 py-1 rounded-lg bg-slate-50 border border-slate-100">
+                        <span className="text-slate-600">Bouquet</span>
+                        <span className="font-bold text-[#0a2958]">{m.porProducto.Bouquet}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between px-2 py-1 rounded-lg bg-[#0a2958]/5 border border-[#0a2958]/15">
+                      <span className="font-bold text-[#0a2958]">Total</span>
+                      <span className="font-extrabold text-[#E60000]">{m.totalUsados}</span>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               {/* Lista compacta de solicitudes para esta sede y semana */}

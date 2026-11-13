@@ -165,10 +165,13 @@ export const appendSolicitudToDrive = async (
 ): Promise<boolean> => {
   const soloSemana = String(solicitud.semana || '').match(/(\d+)/)?.[1] || solicitud.semana;
   const soloSede = String(solicitud.sede || '').replace(/^sede\s+/i, '').trim();
-  const soloProducto = String(solicitud.producto || '')
-    .replace(/^ramo de\s+/i, '')
-    .replace(/\s*\(\d+\s+unidad(?:es)?\)\s*$/i, '')
-    .trim();
+  const rawProd = String(solicitud.producto || '').trim();
+  const lowProd = rawProd.toLowerCase();
+  let soloProducto = rawProd;
+  if (lowProd.includes('bouquet')) soloProducto = 'Bouquet';
+  else if (lowProd.includes('clavel')) soloProducto = 'Clavel';
+  else if (lowProd.includes('alstroemeria')) soloProducto = 'Alstroemeria';
+  else if (lowProd.includes('rosa')) soloProducto = lowProd.includes('color') ? 'Rosa (Color)' : 'Rosa (Rojo)';
 
   const rowValues = [
     [
@@ -333,7 +336,7 @@ export const fetchSolicitudesFromDrive = async (
       return {
         id: r[0],
         fecha: r[1] || '',
-        semana: semanaVal || 'Semana 46',
+        semana: String(semanaVal || '').match(/(\d+)/)?.[1] || '46',
         codigo: codigoVal || '',
         nombre: nombreVal || '',
         cargo: cargoVal || undefined,

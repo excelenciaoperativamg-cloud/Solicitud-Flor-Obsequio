@@ -144,6 +144,12 @@ export default function App() {
       mostrarToast('Solicitud registrada en la hoja Solicitudes');
       return { success: true };
     } catch (err: any) {
+      try {
+        const frescas = await fetchSolicitudesApi();
+        if (frescas && frescas.length > 0) {
+          setSolicitudes(frescas);
+        }
+      } catch {}
       return { success: false, error: err.message || 'Error al guardar la solicitud' };
     }
   };
