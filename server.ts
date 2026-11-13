@@ -7,6 +7,7 @@ import indexHandler from './api/index.js';
 import driveConfigHandler from './api/drive-config.js';
 import driveTestHandler from './api/drive-test.js';
 import maestroHandler from './api/maestro.js';
+import pingHandler from './api/ping.js';
 import solicitudesHandler from './api/solicitudes.js';
 import maestroSyncHandler from './api/maestro/sync-from-drive.js';
 
@@ -14,12 +15,15 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = Number(process.env.PORT) || 3000;
+const portArgIdx = process.argv.indexOf('--port');
+const cliPort = portArgIdx !== -1 ? Number(process.argv[portArgIdx + 1]) : undefined;
+const PORT = cliPort && !Number.isNaN(cliPort) ? cliPort : 3000;
 
 app.use(express.json());
 
 // API Endpoints unificados con los Serverless Functions de Vercel
 app.all('/api', (req, res) => indexHandler(req, res));
+app.all('/api/ping', (req, res) => pingHandler(req, res));
 app.all('/api/drive-config', (req, res) => driveConfigHandler(req, res));
 app.all('/api/drive-test', (req, res) => driveTestHandler(req, res));
 app.all('/api/maestro', (req, res) => maestroHandler(req, res));
