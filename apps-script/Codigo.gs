@@ -22,6 +22,25 @@ function indiceColumna(headers, pistas) {
   return -1;
 }
 
+/** Busca la mejor columna: prioriza coincidencia más específica (más larga). */
+function indiceColumnaEstricto(headers, pistas) {
+  var mejor = -1;
+  var mejorLen = -1;
+  for (var c = 0; c < headers.length; c++) {
+    var h = String(headers[c] || "").toUpperCase().replace(/\s+/g, " ").trim();
+    for (var n = 0; n < pistas.length; n++) {
+      var p = String(pistas[n]).toUpperCase();
+      if (h === p || h.indexOf(p) !== -1) {
+        if (p.length > mejorLen) {
+          mejor = c;
+          mejorLen = p.length;
+        }
+      }
+    }
+  }
+  return mejor;
+}
+
 function cargoDeFila(headers, row) {
   var i = indiceColumna(headers, ["CARGO"]);
   if (i >= 0 && row[i]) return String(row[i]).trim();
@@ -74,20 +93,30 @@ function leerSolicitudes(ss) {
   for (var r = 1; r < values.length; r++) {
     var row = values[r];
     function cel(pistas) {
-      var i = indiceColumna(headers, pistas);
+      var i = indiceColumnaEstricto(headers, pistas);
       return i >= 0 ? row[i] : "";
     }
-    var id = String(cel(["ID"]) || row[0] || "").trim();
+    var id = String(cel(["ID", "ID"]) || row[0] || "").trim();
     if (!id) continue;
     var producto = String(cel(["PRODUCTO"]) || "");
-    var fechaEntrega = cel(["ENTREGA"]);
+    var fechaEntrega = cel(["FECHA ENTREGA", "ENTREGA"]);
     if (fechaEntrega instanceof Date) {
       fechaEntrega = Utilities.formatDate(fechaEntrega, Session.getScriptTimeZone(), "yyyy-MM-dd");
     }
     var fecha = cel(["FECHA"]);
+    // Evitar tomar "Fecha Entrega" como fecha de registro: si el header exacto es FECHA
+    var idxFecha = -1;
+    for (var c = 0; c < headers.length; c++) {
+      var hh = String(headers[c] || "").toUpperCase().replace(/\s+/g, " ").trim();
+      if (hh === "FECHA") { idxFecha = c; break; }
+    }
+    if (idxFecha >= 0) fecha = row[idxFecha];
     if (fecha instanceof Date) {
       fecha = Utilities.formatDate(fecha, Session.getScriptTimeZone(), "yyyy-MM-dd");
     }
+    var cantidadRaw = cel(["CANTIDAD"]);
+    var cantidadNum = Number(cantidadRaw);
+    if (!cantidadNum || isNaN(cantidadNum)) cantidadNum = 1;
     out.push({
       id: id,
       fecha: String(fecha || ""),
@@ -95,7 +124,7 @@ function leerSolicitudes(ss) {
       codigo: String(cel(["CÓDIGO", "CODIGO"]) || ""),
       nombre: String(cel(["NOMBRE"]) || ""),
       cargo: String(cel(["CARGO"]) || ""),
-      cantidad: Number(cel(["CANTIDAD"]) || 1) || 1,
+      cantidad: cantidadNum,
       producto: producto,
       tipoProducto: producto.toLowerCase().indexOf("bouquet") !== -1 ? "bouquet" : "ramo",
       florPrincipal: "Rosa",
@@ -133,41 +162,49 @@ function doGet(e) {
   }
 }
 
+/**
+ * Escribe una fila alineada al orden real de la hoja:
+ * Id | Fecha | Semana | Código | Nombre | Cargo | Sede | Producto | Cantidad | Motivo | Fecha Entrega | Remitente | Estado
+ */
 function escribirSolicitud(sheet, data) {
   var headers = sheet.getLastRow() > 0 ? sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0] : [];
+  var headersDefault = [
+    "Id", "Fecha", "Semana", "Código", "Nombre", "Cargo", "Sede",
+    "Producto", "Cantidad", "Motivo", "Fecha Entrega", "Remitente", "Estado"
+  ];
   if (!headers.length || !headers[0]) {
-    headers = ["Id", "Fecha", "Semana", "Código", "Nombre", "Cargo", "Cantidad", "Producto", "Sede", "Motivo", "Fecha Entrega", "Remitente", "Estado"];
+    headers = headersDefault;
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
     sheet.getRange(1, 1, 1, headers.length).setFontWeight("bold").setBackground("#0a2958").setFontColor("#ffffff");
   }
-  var mapa = {
-    ID: data.id || ("SFO-" + new Date().getTime()),
-    FECHA: data.fecha || "",
-    SEMANA: data.semana || "",
-    "CÓDIGO": data.codigo || "",
-    CODIGO: data.codigo || "",
-    NOMBRE: data.nombre || "",
-    CARGO: data.cargo || "",
-    CANTIDAD: data.cantidad || 1,
-    PRODUCTO: data.producto || "",
-    SEDE: data.sede || "",
-    MOTIVO: data.motivo || "",
-    ENTREGA: data.fechaEntrega || "",
-    REMITENTE: data.remitente || "",
-    ESTADO: data.estado || "Registrada"
-  };
+
+  var cantidadNum = Number(data.cantidad);
+  if (!cantidadNum || isNaN(cantidadNum)) cantidadNum = 1;
+
+  // Valores por tipo de columna (pistas de mayor a menor especificidad)
+  function valorParaHeader(headerRaw) {
+    var h = String(headerRaw || "").toUpperCase().replace(/\s+/g, " ").trim();
+    if (h === "ID" || h === "ID.") return data.id || ("SFO-" + new Date().getTime());
+    if (h === "FECHA ENTREGA" || (h.indexOf("ENTREGA") !== -1 && h.indexOf("FECHA") !== -1)) {
+      return data.fechaEntrega || "";
+    }
+    if (h === "FECHA") return data.fecha || "";
+    if (h.indexOf("SEMANA") !== -1) return data.semana || "";
+    if (h.indexOf("CÓDIGO") !== -1 || h.indexOf("CODIGO") !== -1) return data.codigo || "";
+    if (h.indexOf("NOMBRE") !== -1) return data.nombre || "";
+    if (h.indexOf("CARGO") !== -1) return data.cargo || "";
+    if (h.indexOf("SEDE") !== -1) return data.sede || "";
+    if (h.indexOf("PRODUCTO") !== -1) return data.producto || "";
+    if (h.indexOf("CANTIDAD") !== -1) return cantidadNum;
+    if (h.indexOf("MOTIVO") !== -1) return data.motivo || "Obsequio";
+    if (h.indexOf("REMITENTE") !== -1) return data.remitente || "";
+    if (h.indexOf("ESTADO") !== -1) return data.estado || "Registrada";
+    return "";
+  }
+
   var fila = [];
   for (var c = 0; c < headers.length; c++) {
-    var h = String(headers[c] || "").toUpperCase();
-    var valor = "";
-    var claves = Object.keys(mapa);
-    for (var k = 0; k < claves.length; k++) {
-      if (h.indexOf(claves[k]) !== -1) {
-        valor = mapa[claves[k]];
-        break;
-      }
-    }
-    fila.push(valor);
+    fila.push(valorParaHeader(headers[c]));
   }
   sheet.appendRow(fila);
 }
@@ -199,6 +236,8 @@ function doPost(e) {
       status: "success",
       message: "Solicitud registrada en Solicitudes",
       id: data.id,
+      cantidad: Number(data.cantidad) || 1,
+      fechaEntrega: data.fechaEntrega || "",
       solicitudes: leerSolicitudes(ss)
     });
   } catch (err) {
