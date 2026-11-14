@@ -18,6 +18,13 @@ export const CUPOS_CONFIG: Record<string, CupoConfig> = {
   },
 };
 
+export const CUPOS_POR_PRODUCTO = {
+  rosaMax: 20, // Rosa (Color) + Rosa (Rojo) combinados entre las 3 sedes
+  bouquetMax: 5, // Bouquet entre las 3 sedes
+  clavelMax: 20, // Clavel entre las 3 sedes
+  alstroemeriaMax: 30, // Alstroemeria entre las 3 sedes
+} as const;
+
 export const MOTIVOS_SOLICITUD = [
   'Cumpleaños de familiar o allegado',
   'Aniversario / Celebración de pareja',

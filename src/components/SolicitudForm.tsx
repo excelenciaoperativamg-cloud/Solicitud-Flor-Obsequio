@@ -22,7 +22,7 @@ import {
   SolicitudFlor,
   TrabajadorMaestro,
 } from '../types';
-import { CUPOS_CONFIG } from '../data/initialData';
+import { CUPOS_POR_PRODUCTO } from '../data/initialData';
 import {
   getTodayString,
   formatDateSpanish,
@@ -109,65 +109,104 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
   }, [codigo, solicitudes, hoyStr]);
 
   const cuposSemana = useMemo(() => {
+    // Conteo global por producto entre las tres sedes para esta semana de entrega
     const solicitudesEnSemana = solicitudes.filter(
-      (s) => s.sede === sede && s.fechaEntrega === fechaEntrega && s.estado !== 'Cancelada'
+      (s) => s.fechaEntrega === fechaEntrega && s.estado !== 'Cancelada'
     );
-    const config = CUPOS_CONFIG[sede] || CUPOS_CONFIG['Sede MG'];
-    const ramosUsados = solicitudesEnSemana
-      .filter((s) => s.tipoProducto === 'ramo')
-      .reduce((acc, s) => acc + (Number(s.cantidad) || 1), 0);
-    const bouquetsUsados = solicitudesEnSemana
-      .filter((s) => s.tipoProducto === 'bouquet')
-      .reduce((acc, s) => acc + (Number(s.cantidad) || 1), 0);
-    const totalSolicitudesSemana = solicitudesEnSemana.reduce(
-      (acc, s) => acc + (Number(s.cantidad) || 1),
-      0
-    );
-    let ramoAgotado = false;
-    let bouquetAgotado = false;
-    let ramosDisponibles = 0;
-    let bouquetsDisponibles = 0;
-    if (sede === 'Sede MG') {
-      const bMax = config.bouquetsMax || 5;
-      ramoAgotado = ramosUsados >= config.ramosMax;
-      bouquetAgotado = bouquetsUsados >= bMax;
-      ramosDisponibles = Math.max(0, config.ramosMax - ramosUsados);
-      bouquetsDisponibles = Math.max(0, bMax - bouquetsUsados);
-    } else {
-      ramoAgotado = totalSolicitudesSemana >= config.ramosMax;
-      bouquetAgotado = totalSolicitudesSemana >= config.ramosMax;
-      ramosDisponibles = Math.max(0, config.ramosMax - totalSolicitudesSemana);
-      bouquetsDisponibles = ramosDisponibles;
+
+    let rosaUsados = 0;
+    let bouquetUsados = 0;
+    let clavelUsados = 0;
+    let alstroemeriaUsados = 0;
+
+    for (const s of solicitudesEnSemana) {
+      const cant = Number(s.cantidad) || 1;
+      const prodLow = String(s.producto || '').toLowerCase();
+      if (s.tipoProducto === 'bouquet' || prodLow.includes('bouquet')) {
+        bouquetUsados += cant;
+      } else if (prodLow.includes('clavel') || s.florPrincipal === 'Clavel') {
+        clavelUsados += cant;
+      } else if (prodLow.includes('alstroemeria') || s.florPrincipal === 'Alstroemeria') {
+        alstroemeriaUsados += cant;
+      } else {
+        rosaUsados += cant;
+      }
     }
-    const todosAgotados = ramoAgotado && bouquetAgotado;
+
+    const rosaMax = CUPOS_POR_PRODUCTO.rosaMax;
+    const bouquetMax = CUPOS_POR_PRODUCTO.bouquetMax;
+    const clavelMax = CUPOS_POR_PRODUCTO.clavelMax;
+    const alstroemeriaMax = CUPOS_POR_PRODUCTO.alstroemeriaMax;
+
+    const rosaDisponibles = Math.max(0, rosaMax - rosaUsados);
+    const bouquetDisponibles = Math.max(0, bouquetMax - bouquetUsados);
+    const clavelDisponibles = Math.max(0, clavelMax - clavelUsados);
+    const alstroemeriaDisponibles = Math.max(0, alstroemeriaMax - alstroemeriaUsados);
+
+    const rosaAgotado = rosaUsados >= rosaMax;
+    const bouquetAgotado = bouquetUsados >= bouquetMax;
+    const clavelAgotado = clavelUsados >= clavelMax;
+    const alstroemeriaAgotado = alstroemeriaUsados >= alstroemeriaMax;
+    const todosAgotados =
+      rosaAgotado && bouquetAgotado && clavelAgotado && alstroemeriaAgotado;
+
+    let estaAgotado = false;
+    if (florRamo === 'Rosa' && opcionRosa === 'Bouquet') estaAgotado = bouquetAgotado;
+    else if (florRamo === 'Rosa') estaAgotado = rosaAgotado;
+    else if (florRamo === 'Clavel') estaAgotado = clavelAgotado;
+    else estaAgotado = alstroemeriaAgotado;
+
     return {
-      ramosUsados,
-      ramosMax: config.ramosMax,
-      ramosDisponibles,
-      bouquetsUsados,
-      bouquetsMax: config.bouquetsMax || 0,
-      bouquetsDisponibles,
-      ramoAgotado,
+      rosaUsados,
+      rosaMax,
+      rosaDisponibles,
+      rosaAgotado,
+      bouquetUsados,
+      bouquetMax,
+      bouquetDisponibles,
       bouquetAgotado,
+      clavelUsados,
+      clavelMax,
+      clavelDisponibles,
+      clavelAgotado,
+      alstroemeriaUsados,
+      alstroemeriaMax,
+      alstroemeriaDisponibles,
+      alstroemeriaAgotado,
       todosAgotados,
-      estaAgotado: tipoProducto === 'ramo' ? ramoAgotado : bouquetAgotado,
+      estaAgotado,
     };
-  }, [sede, fechaEntrega, solicitudes, tipoProducto]);
+  }, [fechaEntrega, solicitudes, florRamo, opcionRosa]);
 
   useEffect(() => {
     if (florRamo === 'Rosa' && opcionRosa === 'Bouquet') setTipoProducto('bouquet');
     else setTipoProducto('ramo');
   }, [florRamo, opcionRosa]);
 
-  // Si en Sede MG los ramos están agotados pero hay bouquets disponibles, cambiar automáticamente a Bouquet
+  // Si el producto seleccionado está agotado y otro producto aún tiene disponibilidad, seleccionar uno disponible
   useEffect(() => {
-    if (sede === 'Sede MG' && cuposSemana.ramoAgotado && !cuposSemana.bouquetAgotado) {
-      if (florRamo !== 'Rosa' || opcionRosa !== 'Bouquet') {
-        setFlorRamo('Rosa');
-        setOpcionRosa('Bouquet');
-      }
+    if (cuposSemana.todosAgotados || !cuposSemana.estaAgotado) return;
+    if (!cuposSemana.rosaAgotado) {
+      setFlorRamo('Rosa');
+      setOpcionRosa('Rojo');
+    } else if (!cuposSemana.bouquetAgotado) {
+      setFlorRamo('Rosa');
+      setOpcionRosa('Bouquet');
+    } else if (!cuposSemana.clavelAgotado) {
+      setFlorRamo('Clavel');
+      setOpcionRosa('Rojo');
+    } else if (!cuposSemana.alstroemeriaAgotado) {
+      setFlorRamo('Alstroemeria');
+      setOpcionRosa('Rojo');
     }
-  }, [sede, cuposSemana.ramoAgotado, cuposSemana.bouquetAgotado, florRamo, opcionRosa]);
+  }, [
+    cuposSemana.todosAgotados,
+    cuposSemana.estaAgotado,
+    cuposSemana.rosaAgotado,
+    cuposSemana.bouquetAgotado,
+    cuposSemana.clavelAgotado,
+    cuposSemana.alstroemeriaAgotado,
+  ]);
 
   const descripcionProducto = useMemo(() => {
     if (florRamo === 'Rosa' && opcionRosa === 'Bouquet') return 'Bouquet';
@@ -188,9 +227,9 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
       nuevosErrores.regla15 = `El trabajador ya solicitó flor hace ${validacion15Dias.diasTranscurridos} días. Debe esperar 15 días entre solicitudes (1 ramo cada 15 días).`;
     }
     if (cuposSemana.todosAgotados) {
-      nuevosErrores.cupo = `Se han agotado las disponibilidades para todos los productos en ${sede} para la ${semanaEntrega}.`;
+      nuevosErrores.cupo = `Se han agotado las disponibilidades para todos los productos en la ${semanaEntrega}.`;
     } else if (cuposSemana.estaAgotado) {
-      nuevosErrores.cupo = `El cupo de ${tipoProducto === 'ramo' ? 'ramos' : 'bouquets'} para ${sede} en la ${semanaEntrega} está agotado.`;
+      nuevosErrores.cupo = `Producto sin existencia / agotado: ${descripcionProducto} alcanzó su límite semanal entre las tres sedes.`;
     }
     if (!trabajadorEncontrado) {
       nuevosErrores.codigo = 'Debe iniciar sesión ingresando un código de trabajador válido';
@@ -351,12 +390,11 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
             <AlertTriangle className="w-5 h-5 text-[#E60000] shrink-0 mt-0.5" />
             <div>
               <h4 className="font-extrabold text-[#E60000]">
-                Disponibilidad agotada para todos los productos ({sede})
+                Disponibilidad agotada para todos los productos
               </h4>
               <p className="mt-0.5 leading-relaxed">
-                Se han agotado todas las disponibilidades para todos los productos en{' '}
-                <strong>{sede}</strong> para la <strong>{semanaEntrega}</strong> (entrega el{' '}
-                <strong>{formatShortDate(fechaEntrega)}</strong>). No es posible registrar más solicitudes esta semana.
+                Se han agotado todas las disponibilidades para todos los productos (Rosa, Bouquet, Clavel y Alstroemeria) para la{' '}
+                <strong>{semanaEntrega}</strong> (entrega el <strong>{formatShortDate(fechaEntrega)}</strong>). No es posible registrar más solicitudes esta semana.
               </p>
             </div>
           </div>
@@ -425,45 +463,59 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
                 <Sparkles className="w-4 h-4 text-[#0a2958]" />
                 <h3 className="text-sm font-extrabold text-[#0a2958] uppercase tracking-wider">2. Tipo de Flor / Producto</h3>
               </div>
-              <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold">
-                {sede === 'Sede MG' ? (
-                  <>
-                    <span
-                      className={`px-2.5 py-0.5 rounded-full border ${
-                        cuposSemana.ramoAgotado
-                          ? 'bg-rose-50 text-[#E60000] border-rose-200'
-                          : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                      }`}
-                    >
-                      Ramos: {cuposSemana.ramosDisponibles} / {cuposSemana.ramosMax} disp.
-                    </span>
-                    <span
-                      className={`px-2.5 py-0.5 rounded-full border ${
-                        cuposSemana.bouquetAgotado
-                          ? 'bg-rose-50 text-[#E60000] border-rose-200'
-                          : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                      }`}
-                    >
-                      Bouquets: {cuposSemana.bouquetsDisponibles} / {cuposSemana.bouquetsMax} disp.
-                    </span>
-                  </>
-                ) : (
-                  <span
-                    className={`px-2.5 py-0.5 rounded-full border ${
-                      cuposSemana.todosAgotados
-                        ? 'bg-rose-50 text-[#E60000] border-rose-200'
-                        : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                    }`}
-                  >
-                    Disponibilidad {sede}: {cuposSemana.ramosDisponibles} / {cuposSemana.ramosMax} disp.
-                  </span>
-                )}
+              <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-bold">
+                <span
+                  className={`px-2.5 py-0.5 rounded-full border ${
+                    cuposSemana.rosaAgotado
+                      ? 'bg-rose-50 text-[#E60000] border-rose-200'
+                      : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                  }`}
+                >
+                  Rosa (Rojo/Color): {cuposSemana.rosaDisponibles} / {cuposSemana.rosaMax} disp.
+                </span>
+                <span
+                  className={`px-2.5 py-0.5 rounded-full border ${
+                    cuposSemana.bouquetAgotado
+                      ? 'bg-rose-50 text-[#E60000] border-rose-200'
+                      : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                  }`}
+                >
+                  Bouquet: {cuposSemana.bouquetDisponibles} / {cuposSemana.bouquetMax} disp.
+                </span>
+                <span
+                  className={`px-2.5 py-0.5 rounded-full border ${
+                    cuposSemana.clavelAgotado
+                      ? 'bg-rose-50 text-[#E60000] border-rose-200'
+                      : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                  }`}
+                >
+                  Clavel: {cuposSemana.clavelDisponibles} / {cuposSemana.clavelMax} disp.
+                </span>
+                <span
+                  className={`px-2.5 py-0.5 rounded-full border ${
+                    cuposSemana.alstroemeriaAgotado
+                      ? 'bg-rose-50 text-[#E60000] border-rose-200'
+                      : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                  }`}
+                >
+                  Alstroemeria: {cuposSemana.alstroemeriaDisponibles} / {cuposSemana.alstroemeriaMax} disp.
+                </span>
               </div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               {(['Rosa', 'Clavel', 'Alstroemeria'] as FlowerType[]).map((f) => {
                 const deshabilitado =
-                  f === 'Rosa' ? cuposSemana.todosAgotados : cuposSemana.ramoAgotado;
+                  f === 'Rosa'
+                    ? cuposSemana.rosaAgotado && cuposSemana.bouquetAgotado
+                    : f === 'Clavel'
+                    ? cuposSemana.clavelAgotado
+                    : cuposSemana.alstroemeriaAgotado;
+                const dispTexto =
+                  f === 'Rosa'
+                    ? `${cuposSemana.rosaDisponibles} disp. (${cuposSemana.bouquetDisponibles} bouq.)`
+                    : f === 'Clavel'
+                    ? `${cuposSemana.clavelDisponibles} / ${cuposSemana.clavelMax} disp.`
+                    : `${cuposSemana.alstroemeriaDisponibles} / ${cuposSemana.alstroemeriaMax} disp.`;
                 return (
                   <button
                     key={f}
@@ -471,9 +523,13 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
                     disabled={deshabilitado}
                     onClick={() => {
                       setFlorRamo(f);
-                      if (f !== 'Rosa') setOpcionRosa('Rojo');
+                      if (f === 'Rosa') {
+                        setOpcionRosa(cuposSemana.rosaAgotado && !cuposSemana.bouquetAgotado ? 'Bouquet' : 'Rojo');
+                      } else {
+                        setOpcionRosa('Rojo');
+                      }
                     }}
-                    className={`px-4 py-3 rounded-xl border text-xs font-bold transition ${
+                    className={`px-4 py-3 rounded-xl border text-xs font-bold transition flex flex-col items-center justify-center gap-0.5 ${
                       deshabilitado
                         ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
                         : florRamo === f
@@ -481,9 +537,20 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
                         : 'bg-white text-slate-700 border-slate-200 hover:border-[#0a2958]/40 cursor-pointer'
                     }`}
                   >
-                    <span>{f}</span>
-                    {deshabilitado && (
-                      <span className="ml-1.5 text-[10px] text-[#E60000] font-bold">(Agotado)</span>
+                    <span>
+                      {f}
+                      {deshabilitado && (
+                        <span className="ml-1.5 text-[10px] text-[#E60000] font-bold">(Agotado)</span>
+                      )}
+                    </span>
+                    {!deshabilitado && (
+                      <span
+                        className={`text-[10px] font-medium ${
+                          florRamo === f ? 'text-slate-200' : 'text-slate-500'
+                        }`}
+                      >
+                        {dispTexto}
+                      </span>
                     )}
                   </button>
                 );
@@ -493,7 +560,11 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
               <div className="flex flex-wrap gap-2">
                 {(['Rojo', 'Color', 'Bouquet'] as const).map((o) => {
                   const opcionAgotada =
-                    o === 'Bouquet' ? cuposSemana.bouquetAgotado : cuposSemana.ramoAgotado;
+                    o === 'Bouquet' ? cuposSemana.bouquetAgotado : cuposSemana.rosaAgotado;
+                  const dispOpc =
+                    o === 'Bouquet'
+                      ? `${cuposSemana.bouquetDisponibles}/${cuposSemana.bouquetMax}`
+                      : `${cuposSemana.rosaDisponibles}/${cuposSemana.rosaMax}`;
                   return (
                     <button
                       key={o}
@@ -508,8 +579,8 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
                           : 'bg-slate-50 text-slate-600 border-slate-200 cursor-pointer'
                       }`}
                     >
-                      {o === 'Bouquet' ? 'Bouquet de Rosas' : o}
-                      {opcionAgotada && ' (Agotado)'}
+                      {o === 'Bouquet' ? 'Bouquet de Rosas' : `Rosa (${o})`}
+                      {opcionAgotada ? ' (Sin existencia / Agotado)' : ` (${dispOpc} disp.)`}
                     </button>
                   );
                 })}
@@ -544,17 +615,13 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
                 <div>
                   <h4 className="font-bold">
                     {cuposSemana.todosAgotados
-                      ? `Se han agotado las disponibilidades para todos los productos en ${sede}`
-                      : `Disponibilidad de ${tipoProducto === 'ramo' ? 'ramos' : 'bouquets'} agotada en ${sede}`}
+                      ? 'Se han agotado las disponibilidades para todos los productos'
+                      : `Producto sin existencia / agotado: ${descripcionProducto}`}
                   </h4>
                   <p className="mt-0.5">
                     {cuposSemana.todosAgotados
-                      ? `No hay más cupos disponibles para ningún producto en la ${semanaEntrega} (entrega el ${formatShortDate(fechaEntrega)}).`
-                      : sede === 'Sede MG' && tipoProducto === 'ramo' && !cuposSemana.bouquetAgotado
-                      ? `Se alcanzó el límite de ${cuposSemana.ramosMax} ramos. Aún quedan ${cuposSemana.bouquetsDisponibles} bouquet(s) de rosas disponibles.`
-                      : sede === 'Sede MG' && tipoProducto === 'bouquet' && !cuposSemana.ramoAgotado
-                      ? `Se alcanzó el límite de ${cuposSemana.bouquetsMax} bouquets. Aún quedan ${cuposSemana.ramosDisponibles} ramo(s) disponibles.`
-                      : `Límite alcanzado en la ${semanaEntrega} (entrega el ${formatShortDate(fechaEntrega)}).`}
+                      ? `No hay más disponibilidad para ningún producto en la ${semanaEntrega} (entrega el ${formatShortDate(fechaEntrega)}).`
+                      : `Se alcanzó el límite semanal entre las tres sedes para este producto en la ${semanaEntrega} (entrega el ${formatShortDate(fechaEntrega)}).`}
                   </p>
                 </div>
               </div>

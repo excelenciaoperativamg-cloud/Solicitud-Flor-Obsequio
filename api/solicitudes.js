@@ -26,11 +26,20 @@ function soloProducto(valor) {
     .trim();
 }
 
-const CUPOS_CONFIG = {
-  'Sede MG': { ramosMax: 20, bouquetsMax: 5 },
-  'Sede HA': { ramosMax: 30, bouquetsMax: 0 },
-  'Sede SC': { ramosMax: 20, bouquetsMax: 0 },
+const CUPOS_PRODUCTO = {
+  rosa: 20, // Rosa (Color) + Rosa (Rojo) total entre las 3 sedes
+  bouquet: 5, // Bouquet total entre las 3 sedes
+  clavel: 20, // Clavel total entre las 3 sedes
+  alstroemeria: 30, // Alstroemeria total entre las 3 sedes
 };
+
+function categoriaCuotaProducto(producto, tipoProducto) {
+  const low = String(producto || '').toLowerCase();
+  if (tipoProducto === 'bouquet' || low.includes('bouquet')) return 'bouquet';
+  if (low.includes('clavel')) return 'clavel';
+  if (low.includes('alstroemeria')) return 'alstroemeria';
+  return 'rosa';
+}
 
 function normalizarSede(valor) {
   const s = String(valor || '').toUpperCase();
@@ -73,14 +82,15 @@ export default async function handler(req, res) {
       }
 
       const cantidadNum = Math.max(1, Number(nueva.cantidad) || 1);
-      const sedeNorm = normalizarSede(nueva.sede);
+      const prodLimpio = soloProducto(nueva.producto);
       const tipoProd =
-        nueva.tipoProducto === 'bouquet' || String(nueva.producto || '').toLowerCase().includes('bouquet')
+        nueva.tipoProducto === 'bouquet' || prodLimpio.toLowerCase().includes('bouquet')
           ? 'bouquet'
           : 'ramo';
+      const categoriaNueva = categoriaCuotaProducto(prodLimpio, tipoProd);
       const fechaEntregaNueva = String(nueva.fechaEntrega || '').trim();
 
-      // Verificar disponibilidad real en la hoja antes de registrar
+      // Verificar disponibilidad real global por producto entre las 3 sedes antes de registrar
       let existentes = getSolicitudesStorage();
       try {
         const sheetData = await callAppsScript(driveCfg.webhookUrl);
@@ -93,54 +103,41 @@ export default async function handler(req, res) {
       }
 
       if (fechaEntregaNueva) {
-        const enSemanaSede = existentes.filter(
+        const enSemana = existentes.filter(
           (s) =>
-            normalizarSede(s.sede) === sedeNorm &&
             String(s.fechaEntrega || '').trim() === fechaEntregaNueva &&
             s.estado !== 'Cancelada'
         );
-        const ramosUsados = enSemanaSede
-          .filter((s) => s.tipoProducto !== 'bouquet')
-          .reduce((acc, s) => acc + (Number(s.cantidad) || 1), 0);
-        const bouquetsUsados = enSemanaSede
-          .filter((s) => s.tipoProducto === 'bouquet')
-          .reduce((acc, s) => acc + (Number(s.cantidad) || 1), 0);
-        const totalUsados = ramosUsados + bouquetsUsados;
-        const cfg = CUPOS_CONFIG[sedeNorm] || CUPOS_CONFIG['Sede MG'];
+        const usados = { rosa: 0, bouquet: 0, clavel: 0, alstroemeria: 0 };
+        for (const s of enSemana) {
+          const cat = categoriaCuotaProducto(s.producto, s.tipoProducto);
+          usados[cat] += Number(s.cantidad) || 1;
+        }
 
-        if (sedeNorm === 'Sede MG') {
-          const ramosAgotados = ramosUsados >= cfg.ramosMax;
-          const bouquetsAgotados = bouquetsUsados >= cfg.bouquetsMax;
-          if (ramosAgotados && bouquetsAgotados) {
-            return res.status(400).json({
-              success: false,
-              error: `Se han agotado las disponibilidades para todos los productos en ${sedeNorm} para esta semana.`,
-            });
-          }
-          if (tipoProd === 'ramo' && ramosUsados + cantidadNum > cfg.ramosMax) {
-            return res.status(400).json({
-              success: false,
-              error: `Se agotó la disponibilidad de ramos en ${sedeNorm} (${ramosUsados}/${cfg.ramosMax}).${
-                !bouquetsAgotados
-                  ? ` Aún hay ${cfg.bouquetsMax - bouquetsUsados} bouquet(s) de rosas disponibles.`
-                  : ''
-              }`,
-            });
-          }
-          if (tipoProd === 'bouquet' && bouquetsUsados + cantidadNum > cfg.bouquetsMax) {
-            return res.status(400).json({
-              success: false,
-              error: `Se agotó la disponibilidad de bouquets en ${sedeNorm} (${bouquetsUsados}/${cfg.bouquetsMax}).${
-                !ramosAgotados
-                  ? ` Aún hay ${cfg.ramosMax - ramosUsados} ramo(s) disponibles.`
-                  : ''
-              }`,
-            });
-          }
-        } else if (totalUsados + cantidadNum > cfg.ramosMax) {
+        const todosAgotados =
+          usados.rosa >= CUPOS_PRODUCTO.rosa &&
+          usados.bouquet >= CUPOS_PRODUCTO.bouquet &&
+          usados.clavel >= CUPOS_PRODUCTO.clavel &&
+          usados.alstroemeria >= CUPOS_PRODUCTO.alstroemeria;
+
+        if (todosAgotados) {
           return res.status(400).json({
             success: false,
-            error: `Se han agotado las disponibilidades para todos los productos en ${sedeNorm} (${totalUsados}/${cfg.ramosMax} ramos semanales).`,
+            error: 'Se han agotado las disponibilidades para todos los productos en esta semana.',
+          });
+        }
+
+        const maxCat = CUPOS_PRODUCTO[categoriaNueva];
+        if (usados[categoriaNueva] + cantidadNum > maxCat) {
+          const nombresCat = {
+            rosa: 'Rosa (Color y Rojo)',
+            bouquet: 'Bouquet',
+            clavel: 'Clavel',
+            alstroemeria: 'Alstroemeria',
+          };
+          return res.status(400).json({
+            success: false,
+            error: `Producto sin existencia / agotado: ${nombresCat[categoriaNueva]} alcanzó el límite semanal de ${maxCat} unidades entre las tres sedes (${usados[categoriaNueva]}/${maxCat}).`,
           });
         }
       }
