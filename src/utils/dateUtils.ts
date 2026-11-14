@@ -104,7 +104,6 @@ export const getVentanaSolicitud = (now = new Date()): VentanaSolicitud => {
   }
   const fechaEntrega = toDateString(friday);
   const labelEntrega = friday.toLocaleDateString('es-ES', {
-    weekday: 'long',
     day: 'numeric',
     month: 'long',
     year: 'numeric',

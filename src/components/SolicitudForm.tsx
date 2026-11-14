@@ -597,7 +597,7 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <div className="flex justify-between items-center mb-1">
-                  <label className="text-xs font-bold text-slate-700">Fecha de entrega (viernes de esta semana)</label>
+                  <label className="text-xs font-bold text-slate-700">Fecha de entrega</label>
                   <span className="text-[11px] font-bold text-[#E60000] bg-[#E60000]/10 px-2 py-0.5 rounded-md">{semanaEntrega}</span>
                 </div>
                 <div className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 bg-slate-50 font-semibold text-slate-900">{ventana.labelEntrega}</div>
