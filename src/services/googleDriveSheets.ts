@@ -186,7 +186,7 @@ export const appendSolicitudToDrive = async (
       soloSede,
       solicitud.motivo,
       solicitud.fechaEntrega,
-      solicitud.remitente,
+      solicitud.remitente || '',
       solicitud.estado || 'Registrada',
     ],
   ];

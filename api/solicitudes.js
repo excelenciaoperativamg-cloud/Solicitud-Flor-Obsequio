@@ -154,7 +154,7 @@ export default async function handler(req, res) {
         sede: soloSede(nueva.sede),
         motivo: nueva.motivo || 'Obsequio',
         fechaEntrega: fechaEntregaNueva,
-        remitente: nueva.remitente,
+        remitente: nueva.remitente || '',
         estado: nueva.estado || 'Registrada',
       };
 

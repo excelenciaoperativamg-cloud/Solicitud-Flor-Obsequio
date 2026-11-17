@@ -41,7 +41,7 @@ export const SolicitudesTable: React.FC<SolicitudesTableProps> = ({
         item.codigo.toLowerCase().includes(q) ||
         item.nombre.toLowerCase().includes(q) ||
         item.producto.toLowerCase().includes(q) ||
-        item.remitente.toLowerCase().includes(q) ||
+        (item.remitente || '').toLowerCase().includes(q) ||
         item.motivo.toLowerCase().includes(q) ||
         (item.semana && item.semana.toLowerCase().includes(q));
 
@@ -77,7 +77,7 @@ export const SolicitudesTable: React.FC<SolicitudesTableProps> = ({
       s.sede,
       s.motivo,
       s.fechaEntrega,
-      s.remitente,
+      s.remitente || '',
       s.estado,
     ]);
 
@@ -176,12 +176,14 @@ export const SolicitudesTable: React.FC<SolicitudesTableProps> = ({
                     {formatDateSpanish(solicitudSeleccionada.fechaEntrega)}
                   </span>
                 </div>
-                <div className="col-span-2">
-                  <span className="text-slate-400 block text-[10px] uppercase font-bold">
-                    Remitente
-                  </span>
-                  <span className="text-slate-800">{solicitudSeleccionada.remitente}</span>
-                </div>
+                {solicitudSeleccionada.remitente && (
+                  <div className="col-span-2">
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold">
+                      Remitente
+                    </span>
+                    <span className="text-slate-800">{solicitudSeleccionada.remitente}</span>
+                  </div>
+                )}
               </div>
 
               <div>

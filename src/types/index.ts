@@ -21,7 +21,7 @@ export interface SolicitudFlor {
   sede: Sede; // 'Sede MG' | 'Sede HA' | 'Sede SC' (proveniente del Maestro)
   motivo: string;
   fechaEntrega: string; // YYYY-MM-DD (fecha del viernes de entrega)
-  remitente: string;
+  remitente?: string;
   estado: SolicitudEstado;
   requiereAutorizacion?: boolean; // true si cantidad > límite por cargo
   autorizacionPoscosecha?: string; // nombre o código de quien autoriza

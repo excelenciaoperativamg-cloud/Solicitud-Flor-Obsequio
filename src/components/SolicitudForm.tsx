@@ -10,8 +10,6 @@ import {
   Printer,
   Copy,
   Clock,
-  ExternalLink,
-  Cloud,
   Lock,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
@@ -66,7 +64,6 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
   const [tipoProducto, setTipoProducto] = useState<ProductType>('ramo');
   const [florRamo, setFlorRamo] = useState<FlowerType>('Rosa');
   const [opcionRosa, setOpcionRosa] = useState<'Rojo' | 'Color' | 'Bouquet'>('Rojo');
-  const [remitente, setRemitente] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errores, setErrores] = useState<Record<string, string>>({});
   const [solicitudExitosa, setSolicitudExitosa] = useState<SolicitudFlor | null>(null);
@@ -222,7 +219,6 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
     if (!nombre.trim()) nuevosErrores.nombre = 'El nombre del trabajador es obligatorio';
     if (!sede) nuevosErrores.sede = 'No se ha determinado la sede del trabajador';
     if (!fechaEntrega) nuevosErrores.fechaEntrega = 'No hay fecha de entrega configurada';
-    if (!remitente.trim()) nuevosErrores.remitente = 'Debe indicar el remitente de la solicitud';
     if (!validacion15Dias.puedeSolicitar) {
       nuevosErrores.regla15 = `El trabajador ya solicitó flor hace ${validacion15Dias.diasTranscurridos} días. Debe esperar 15 días entre solicitudes (1 ramo cada 15 días).`;
     }
@@ -249,7 +245,7 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
       codigo: codigo.trim(),
       nombre: nombre.trim(),
       cargo: trabajadorEncontrado?.cargo || '',
-      cantidad: 1,
+      cantidad,
       producto: descripcionProducto,
       tipoProducto,
       florPrincipal: florRamo,
@@ -257,7 +253,7 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
       sede,
       motivo: motivoFijo,
       fechaEntrega,
-      remitente: remitente.trim(),
+      remitente: '',
       estado: 'Registrada',
       requiereAutorizacion: false,
       creadoEn: Date.now(),
@@ -286,7 +282,6 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
 
   const handleNuevaSolicitud = () => {
     setSolicitudExitosa(null);
-    setRemitente('');
     setFlorRamo('Rosa');
     setOpcionRosa('Rojo');
     setTipoProducto('ramo');
@@ -329,13 +324,11 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
               <CheckCircle2 className="w-8 h-8 text-[#0a2958]" />
             </div>
             <div className="text-center mb-5">
-              <span className="inline-block px-3 py-1 text-xs font-bold uppercase tracking-wider text-[#0a2958] bg-[#0a2958]/10 rounded-full mb-2">
-                Solicitud Registrada
-              </span>
               <h3 className="text-xl font-extrabold text-[#0a2958] mb-2">¡Registro Exitoso!</h3>
               <div className="p-4 rounded-xl bg-slate-50 border-l-4 border-[#0a2958] text-slate-800 font-medium text-sm text-left">
                 <p className="mb-2 text-base font-bold text-[#0a2958]">Su solicitud a sido registrada con exito.</p>
                 <p className="text-xs text-slate-600">La entrega de flor se realizará en Poscosecha el viernes, al finalizar la jornada laboral.</p>
+                <p className="mt-2 text-xs font-semibold text-amber-800">Tenga presente que si no reclama el ramo solicitado, no podrá pedir en el resto del mes.</p>
               </div>
             </div>
             <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 text-xs text-slate-700 space-y-2 mb-6">
@@ -354,7 +347,6 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
               <div className="flex justify-between"><span className="text-slate-500">Producto:</span><span className="font-bold text-slate-900">{solicitudExitosa.producto}</span></div>
               <div className="flex justify-between"><span className="text-slate-500">Cantidad:</span><span className="font-bold text-slate-900">{solicitudExitosa.cantidad}</span></div>
               <div className="flex justify-between"><span className="text-slate-500">Fecha de Entrega:</span><span className="font-semibold text-slate-900">{formatDateSpanish(solicitudExitosa.fechaEntrega)}</span></div>
-              <div className="flex justify-between"><span className="text-slate-500">Remitente:</span><span className="text-slate-800">{solicitudExitosa.remitente}</span></div>
             </div>
             <div className="flex flex-col sm:flex-row gap-2">
               <button type="button" onClick={() => window.print()} className="flex-1 py-2.5 px-4 rounded-xl border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs font-bold flex items-center justify-center gap-2">
@@ -378,11 +370,6 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
               <h2 className="text-base font-extrabold text-[#0a2958]">Formulario de Solicitud</h2>
             </div>
           </div>
-          {isDriveConnected && (
-            <div className="flex items-center gap-2 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
-              <Cloud className="w-3.5 h-3.5" /> Guardado automático activo
-            </div>
-          )}
         </div>
 
         {cuposSemana.todosAgotados && (
@@ -414,11 +401,6 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
                 <UserCheck className="w-4 h-4 text-[#0a2958]" />
                 <h3 className="text-sm font-extrabold text-[#0a2958] uppercase tracking-wider">1. Datos del Trabajador</h3>
               </div>
-              {trabajadorEncontrado && (
-                <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
-                  <CheckCircle2 className="w-3.5 h-3.5" /> Verificado
-                </span>
-              )}
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
@@ -431,21 +413,7 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
                 <input type="text" value={nombre} readOnly className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 bg-slate-50 font-semibold" />
               </div>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Sede</label>
-                <input type="text" value={sede} readOnly className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 bg-slate-50 font-semibold text-[#0a2958]" />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Cargo</label>
-                <input type="text" value={trabajadorEncontrado?.cargo || ''} readOnly className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 bg-slate-50" />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Cantidad</label>
-                <div className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 bg-slate-50 font-extrabold text-[#0a2958]">1 ramo (fijo)</div>
-                <p className="text-[11px] text-slate-500 mt-1">Máximo 1 solicitud cada 15 días</p>
-              </div>
-            </div>
+            <p className="text-[11px] text-slate-500">Máximo 1 solicitud cada 15 días</p>
             {!validacion15Dias.puedeSolicitar && (
               <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start gap-3">
                 <Clock className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
@@ -458,49 +426,12 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
           </div>
 
           <div className="space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-100">
+            <div className="pb-2 border-b border-slate-100">
               <div className="flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-[#0a2958]" />
                 <h3 className="text-sm font-extrabold text-[#0a2958] uppercase tracking-wider">2. Tipo de Flor / Producto</h3>
               </div>
-              <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-bold">
-                <span
-                  className={`px-2.5 py-0.5 rounded-full border ${
-                    cuposSemana.rosaAgotado
-                      ? 'bg-rose-50 text-[#E60000] border-rose-200'
-                      : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                  }`}
-                >
-                  Rosa (Rojo/Color): {cuposSemana.rosaDisponibles} / {cuposSemana.rosaMax} disp.
-                </span>
-                <span
-                  className={`px-2.5 py-0.5 rounded-full border ${
-                    cuposSemana.bouquetAgotado
-                      ? 'bg-rose-50 text-[#E60000] border-rose-200'
-                      : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                  }`}
-                >
-                  Bouquet: {cuposSemana.bouquetDisponibles} / {cuposSemana.bouquetMax} disp.
-                </span>
-                <span
-                  className={`px-2.5 py-0.5 rounded-full border ${
-                    cuposSemana.clavelAgotado
-                      ? 'bg-rose-50 text-[#E60000] border-rose-200'
-                      : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                  }`}
-                >
-                  Clavel: {cuposSemana.clavelDisponibles} / {cuposSemana.clavelMax} disp.
-                </span>
-                <span
-                  className={`px-2.5 py-0.5 rounded-full border ${
-                    cuposSemana.alstroemeriaAgotado
-                      ? 'bg-rose-50 text-[#E60000] border-rose-200'
-                      : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                  }`}
-                >
-                  Alstroemeria: {cuposSemana.alstroemeriaDisponibles} / {cuposSemana.alstroemeriaMax} disp.
-                </span>
-              </div>
+              <p className="text-xs text-slate-600 mt-1">Seleccione el producto de su interés.</p>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               {(['Rosa', 'Clavel', 'Alstroemeria'] as FlowerType[]).map((f) => {
@@ -510,12 +441,6 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
                     : f === 'Clavel'
                     ? cuposSemana.clavelAgotado
                     : cuposSemana.alstroemeriaAgotado;
-                const dispTexto =
-                  f === 'Rosa'
-                    ? `${cuposSemana.rosaDisponibles} disp. (${cuposSemana.bouquetDisponibles} bouq.)`
-                    : f === 'Clavel'
-                    ? `${cuposSemana.clavelDisponibles} / ${cuposSemana.clavelMax} disp.`
-                    : `${cuposSemana.alstroemeriaDisponibles} / ${cuposSemana.alstroemeriaMax} disp.`;
                 return (
                   <button
                     key={f}
@@ -529,7 +454,7 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
                         setOpcionRosa('Rojo');
                       }
                     }}
-                    className={`px-4 py-3 rounded-xl border text-xs font-bold transition flex flex-col items-center justify-center gap-0.5 ${
+                    className={`px-4 py-3 rounded-xl border text-xs font-bold transition flex items-center justify-center ${
                       deshabilitado
                         ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
                         : florRamo === f
@@ -543,15 +468,6 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
                         <span className="ml-1.5 text-[10px] text-[#E60000] font-bold">(Agotado)</span>
                       )}
                     </span>
-                    {!deshabilitado && (
-                      <span
-                        className={`text-[10px] font-medium ${
-                          florRamo === f ? 'text-slate-200' : 'text-slate-500'
-                        }`}
-                      >
-                        {dispTexto}
-                      </span>
-                    )}
                   </button>
                 );
               })}
@@ -561,10 +477,6 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
                 {(['Rojo', 'Color', 'Bouquet'] as const).map((o) => {
                   const opcionAgotada =
                     o === 'Bouquet' ? cuposSemana.bouquetAgotado : cuposSemana.rosaAgotado;
-                  const dispOpc =
-                    o === 'Bouquet'
-                      ? `${cuposSemana.bouquetDisponibles}/${cuposSemana.bouquetMax}`
-                      : `${cuposSemana.rosaDisponibles}/${cuposSemana.rosaMax}`;
                   return (
                     <button
                       key={o}
@@ -580,7 +492,7 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
                       }`}
                     >
                       {o === 'Bouquet' ? 'Bouquet de Rosas' : `Rosa (${o})`}
-                      {opcionAgotada ? ' (Sin existencia / Agotado)' : ` (${dispOpc} disp.)`}
+                      {opcionAgotada && ' (Sin existencia / Agotado)'}
                     </button>
                   );
                 })}
@@ -592,22 +504,14 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
           <div className="space-y-4">
             <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
               <Calendar className="w-4 h-4 text-[#0a2958]" />
-              <h3 className="text-sm font-extrabold text-[#0a2958] uppercase tracking-wider">3. Fecha de Entrega y Remitente</h3>
+              <h3 className="text-sm font-extrabold text-[#0a2958] uppercase tracking-wider">3. Fecha de Entrega</h3>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <div className="flex justify-between items-center mb-1">
-                  <label className="text-xs font-bold text-slate-700">Fecha de entrega</label>
-                  <span className="text-[11px] font-bold text-[#E60000] bg-[#E60000]/10 px-2 py-0.5 rounded-md">{semanaEntrega}</span>
-                </div>
-                <div className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 bg-slate-50 font-semibold text-slate-900">{ventana.labelEntrega}</div>
-                <p className="text-[11px] text-slate-500 mt-1">Fija: viernes de la misma semana en que solicita (lun/mar).</p>
+            <div className="max-w-md">
+              <div className="flex justify-between items-center mb-1">
+                <label className="text-xs font-bold text-slate-700">Fecha de entrega</label>
+                <span className="text-[11px] font-bold text-[#E60000] bg-[#E60000]/10 px-2 py-0.5 rounded-md">{semanaEntrega}</span>
               </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Remitente <span className="text-[#E60000]">*</span></label>
-                <input type="text" value={remitente} onChange={(e) => setRemitente(e.target.value)} placeholder="Quién solicita / entrega el obsequio"
-                  className={`w-full px-3.5 py-2.5 text-xs rounded-xl border ${errores.remitente ? 'border-rose-400 bg-rose-50/40' : 'border-slate-300'} outline-hidden`} />
-              </div>
+              <div className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 bg-slate-50 font-semibold text-slate-900">{ventana.labelEntrega}</div>
             </div>
             {(cuposSemana.todosAgotados || cuposSemana.estaAgotado) && (
               <div className="p-4 rounded-xl bg-rose-50 border border-rose-300 text-rose-900 text-xs flex items-start gap-3">
