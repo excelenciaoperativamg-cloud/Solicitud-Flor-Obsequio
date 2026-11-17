@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { Users, Search, Plus, Upload, CheckCircle2, RefreshCw } from 'lucide-react';
+import { Users, Search, Plus, Upload, CheckCircle2, RefreshCw, Download, FileSpreadsheet } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { TrabajadorMaestro, Sede } from '../types';
 
 interface MaestroTrabajadoresProps {
@@ -80,48 +81,118 @@ export const MaestroTrabajadores: React.FC<MaestroTrabajadoresProps> = ({
     setMostrarModalNuevo(false);
   };
 
-  // Importar desde archivo CSV
+  // Descargar plantilla en Excel para cargar el Maestro
+  const descargarPlantillaMaestro = () => {
+    const headers = ['Código', 'Nombre', 'Sede', 'Cargo', 'Estado'];
+    const ejemplo = [
+      ['5705', 'EJEMPLO NOMBRE COMPLETO', 'Sede MG', 'OPERARIO POSCOSECHA', 'Activo'],
+      ['10203', 'EJEMPLO TRABAJADOR HA', 'Sede HA', 'AUXILIAR POSCOSECHA', 'Activo'],
+    ];
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...ejemplo]);
+    ws['!cols'] = [
+      { wch: 14 },
+      { wch: 34 },
+      { wch: 14 },
+      { wch: 28 },
+      { wch: 12 },
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Maestro');
+    XLSX.writeFile(wb, 'Plantilla_Maestro_Trabajadores.xlsx');
+  };
+
+  // Importar Maestro desde archivo Excel (.xlsx/.xls) o CSV
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    const inputEl = e.target;
+    const isCsvLike = /\.(csv|txt)$/i.test(file.name);
     const reader = new FileReader();
+
     reader.onload = (evt) => {
       try {
-        const text = evt.target?.result as string;
-        const lines = text.split(/\r\n|\n/).filter((l) => l.trim().length > 0);
-        if (lines.length < 2) return;
+        const result = evt.target?.result;
+        if (!result) return;
+
+        const workbook = isCsvLike
+          ? XLSX.read(result as string, { type: 'string' })
+          : XLSX.read(new Uint8Array(result as ArrayBuffer), { type: 'array' });
+
+        const firstSheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[firstSheetName];
+        const rows = XLSX.utils.sheet_to_json<any[]>(sheet, { header: 1, defval: '' });
+        if (!rows || rows.length === 0) return;
+
+        const firstRowStr = rows[0].map((c) => String(c || '').toLowerCase()).join(' ');
+        const hasHeader =
+          firstRowStr.includes('código') ||
+          firstRowStr.includes('codigo') ||
+          firstRowStr.includes('nombre');
+
+        const startIdx = hasHeader ? 1 : 0;
+        const headers = hasHeader
+          ? rows[0].map((c) =>
+              String(c || '')
+                .toLowerCase()
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '')
+                .trim()
+            )
+          : [];
+
+        const findCol = (clues: string[], fallback: number) => {
+          if (!headers.length) return fallback;
+          const idx = headers.findIndex((h) => clues.some((c) => h.includes(c)));
+          return idx >= 0 ? idx : fallback;
+        };
+
+        const idxCodigo = findCol(['codigo', 'id'], 0);
+        const idxNombre = findCol(['nombre'], 1);
+        const idxSede = findCol(['sede'], 2);
+        const idxCargo = findCol(['cargo', 'funcion'], 3);
+        const idxEstado = findCol(['estado'], 4);
 
         const nuevosTrabajadores: TrabajadorMaestro[] = [];
-        const startIdx = lines[0].toLowerCase().includes('código') || lines[0].toLowerCase().includes('codigo') ? 1 : 0;
 
-        for (let i = startIdx; i < lines.length; i++) {
-          const cols = lines[i].split(',').map((c) => c.replace(/^["']|["']$/g, '').trim());
-          if (cols.length >= 2 && cols[0] && cols[1]) {
-            const rawSede = cols[2] || 'Sede MG';
-            let parsedSede: Sede = 'Sede MG';
-            if (rawSede.toUpperCase().includes('HA')) parsedSede = 'Sede HA';
-            else if (rawSede.toUpperCase().includes('SC')) parsedSede = 'Sede SC';
+        for (let i = startIdx; i < rows.length; i++) {
+          const cols = rows[i];
+          const codigoVal = String(cols[idxCodigo] ?? '').trim();
+          const nombreVal = String(cols[idxNombre] ?? '').trim();
+          if (!codigoVal || !nombreVal) continue;
 
-            nuevosTrabajadores.push({
-              codigo: cols[0].toUpperCase(),
-              nombre: cols[1],
-              sede: parsedSede,
-              cargo: cols[3] || 'Operario',
-              area: 'Poscosecha',
-              activo: true,
-            });
-          }
+          const rawSede = String(cols[idxSede] ?? 'Sede MG').trim();
+          let parsedSede: Sede = 'Sede MG';
+          if (rawSede.toUpperCase().includes('HA')) parsedSede = 'Sede HA';
+          else if (rawSede.toUpperCase().includes('SC')) parsedSede = 'Sede SC';
+
+          const estadoVal = String(cols[idxEstado] ?? 'Activo').trim().toLowerCase();
+
+          nuevosTrabajadores.push({
+            codigo: codigoVal.toUpperCase(),
+            nombre: nombreVal,
+            sede: parsedSede,
+            cargo: String(cols[idxCargo] ?? '').trim() || 'Operario',
+            area: 'Poscosecha',
+            activo: estadoVal !== 'inactivo',
+          });
         }
 
         if (nuevosTrabajadores.length > 0) {
           onImportarCSV(nuevosTrabajadores);
         }
       } catch (err) {
-        console.error('Error al parsear archivo CSV:', err);
+        console.error('Error al leer archivo del maestro:', err);
+      } finally {
+        inputEl.value = '';
       }
     };
-    reader.readAsText(file);
+
+    if (isCsvLike) {
+      reader.readAsText(file, 'utf-8');
+    } else {
+      reader.readAsArrayBuffer(file);
+    }
   };
 
   return (
@@ -225,7 +296,7 @@ export const MaestroTrabajadores: React.FC<MaestroTrabajadoresProps> = ({
             Catálogo Oficial de Personal
           </span>
           <h2 className="text-xl font-extrabold text-[#0a2958] tracking-tight">
-            Hoja Maestro: Solicitud Flor Obsequio
+            Actualizar Maestro: Solicitud Flor Obsequio
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
             El formulario valida automáticamente el código, nombre y sede con esta base de datos ({maestro.length} registros)
@@ -246,10 +317,10 @@ export const MaestroTrabajadores: React.FC<MaestroTrabajadoresProps> = ({
 
           <label className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold shadow-xs transition cursor-pointer">
             <Upload className="w-3.5 h-3.5 text-slate-500" />
-            <span>Importar CSV</span>
+            <span>Importar maestro</span>
             <input
               type="file"
-              accept=".csv,.txt"
+              accept=".xlsx,.xls,.csv,.txt"
               onChange={handleFileUpload}
               className="hidden"
             />
@@ -262,6 +333,64 @@ export const MaestroTrabajadores: React.FC<MaestroTrabajadoresProps> = ({
             <Plus className="w-3.5 h-3.5 text-[#E60000]" />
             <span>Nuevo Trabajador</span>
           </button>
+        </div>
+      </div>
+
+      {/* Plantilla para cargar Maestro */}
+      <div className="bg-white p-5 rounded-2xl border border-[#0a2958]/15 shadow-xs space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-start gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-[#0a2958]/10 text-[#0a2958] flex items-center justify-center shrink-0">
+              <FileSpreadsheet className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="text-sm font-extrabold text-[#0a2958]">
+                Plantilla para cargar Maestro
+              </h3>
+              <p className="text-xs text-slate-500">
+                Use estas columnas en su archivo Excel (.xlsx) o CSV antes de presionar <strong>Importar maestro</strong>.
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={descargarPlantillaMaestro}
+            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl border border-[#0a2958]/20 bg-[#0a2958]/5 hover:bg-[#0a2958]/10 text-[#0a2958] text-xs font-bold transition cursor-pointer shrink-0"
+          >
+            <Download className="w-3.5 h-3.5 text-[#E60000]" />
+            <span>Descargar plantilla (.xlsx)</span>
+          </button>
+        </div>
+
+        <div className="overflow-x-auto rounded-xl border border-slate-200">
+          <table className="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-200 text-[#0a2958] font-bold uppercase text-[10px] tracking-wider">
+                <th className="py-2 px-3">Código *</th>
+                <th className="py-2 px-3">Nombre *</th>
+                <th className="py-2 px-3">Sede *</th>
+                <th className="py-2 px-3">Cargo</th>
+                <th className="py-2 px-3">Estado</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 text-slate-600">
+              <tr>
+                <td className="py-2 px-3 font-mono font-bold text-[#0a2958]">5705</td>
+                <td className="py-2 px-3">EJEMPLO NOMBRE COMPLETO</td>
+                <td className="py-2 px-3 font-semibold">Sede MG</td>
+                <td className="py-2 px-3">OPERARIO POSCOSECHA</td>
+                <td className="py-2 px-3">Activo</td>
+              </tr>
+              <tr>
+                <td className="py-2 px-3 font-mono font-bold text-[#0a2958]">10203</td>
+                <td className="py-2 px-3">EJEMPLO TRABAJADOR HA</td>
+                <td className="py-2 px-3 font-semibold">Sede HA</td>
+                <td className="py-2 px-3">AUXILIAR POSCOSECHA</td>
+                <td className="py-2 px-3">Activo</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
 

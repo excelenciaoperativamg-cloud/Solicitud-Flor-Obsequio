@@ -165,7 +165,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     }`}
                   >
                     <Users className="w-4 h-4" />
-                    <span>Hoja Maestro (Trabajadores)</span>
+                    <span>Actualizar Maestro</span>
                   </button>
                 )}
               </>

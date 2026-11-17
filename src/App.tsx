@@ -14,7 +14,6 @@ import { DriveConfigModal } from './components/DriveConfigModal';
 import { SolicitudFlor, TrabajadorMaestro } from './types';
 import {
   TRABAJADORES_INICIALES,
-  SOLICITUDES_INICIALES,
 } from './data/initialData';
 import {
   initAuth,
@@ -59,7 +58,7 @@ export default function App() {
 
   // Datos principales
   const [maestro, setMaestro] = useState<TrabajadorMaestro[]>(TRABAJADORES_INICIALES);
-  const [solicitudes, setSolicitudes] = useState<SolicitudFlor[]>(SOLICITUDES_INICIALES);
+  const [solicitudes, setSolicitudes] = useState<SolicitudFlor[]>([]);
 
   const esAdmin = esRolAdmin(sesion);
   const puedeVerMaestro = puedeVerHojaMaestro(sesion);
@@ -92,7 +91,7 @@ export default function App() {
           getDriveConfigApi(),
         ]);
 
-        if (solis && solis.length > 0) {
+        if (Array.isArray(solis)) {
           setSolicitudes(solis);
         }
         if (maest && maest.length > 0) {
@@ -149,7 +148,7 @@ export default function App() {
     } catch (err: any) {
       try {
         const frescas = await fetchSolicitudesApi();
-        if (frescas && frescas.length > 0) {
+        if (Array.isArray(frescas)) {
           setSolicitudes(frescas);
         }
       } catch {}
