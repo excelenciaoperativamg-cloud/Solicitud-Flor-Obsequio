@@ -14,6 +14,7 @@ export function esRolAdmin(trabajador?: TrabajadorMaestro | null): boolean {
       .toLowerCase()
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '')
+      .replace(/\s+/g, ' ')
       .trim();
 
   const cargo = normalizar(trabajador.cargo || '');
@@ -22,6 +23,11 @@ export function esRolAdmin(trabajador?: TrabajadorMaestro | null): boolean {
 
   // Gestión Humana / Auxiliar de Gestión
   if (full.includes('gestion humana') || full.includes('auxiliar de gestion')) {
+    return true;
+  }
+
+  // Analista Gestión de Información EAI
+  if (full.includes('analista') && full.includes('gestion') && full.includes('informacion')) {
     return true;
   }
 
@@ -42,6 +48,30 @@ export function esRolAdmin(trabajador?: TrabajadorMaestro | null): boolean {
   }
 
   return false;
+}
+
+/**
+ * Controla si el usuario administrador puede visualizar la pestaña Hoja Maestro (Trabajadores).
+ * Se oculta para AUXILIAR TÉCNICO POSCOSECHA EAI y AUXILIAR GESTIÓN HUMANA EAI.
+ */
+export function puedeVerHojaMaestro(trabajador?: TrabajadorMaestro | null): boolean {
+  if (!esRolAdmin(trabajador)) return false;
+
+  const cargo = String(trabajador?.cargo || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (cargo.includes('auxiliar') && cargo.includes('tecnico') && cargo.includes('poscosecha')) {
+    return false;
+  }
+  if (cargo.includes('auxiliar') && cargo.includes('gestion') && cargo.includes('humana')) {
+    return false;
+  }
+
+  return true;
 }
 
 /**

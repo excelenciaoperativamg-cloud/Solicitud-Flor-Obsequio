@@ -1,13 +1,13 @@
 import React from 'react';
-import { Flower, Calendar, Users, FileText, Cloud, Settings } from 'lucide-react';
+import { Flower, Users, FileText, Cloud, Settings } from 'lucide-react';
 import { User } from 'firebase/auth';
 import { DriveConfig } from '../services/apiClient';
 import { TrabajadorMaestro } from '../types';
-import { esRolAdmin } from '../utils/roles';
+import { esRolAdmin, puedeVerHojaMaestro } from '../utils/roles';
 
 interface NavbarProps {
-  activeTab: 'formulario' | 'cupos' | 'solicitudes' | 'maestro';
-  setActiveTab: (tab: 'formulario' | 'cupos' | 'solicitudes' | 'maestro') => void;
+  activeTab: 'formulario' | 'solicitudes' | 'maestro';
+  setActiveTab: (tab: 'formulario' | 'solicitudes' | 'maestro') => void;
   user: User | null;
   spreadsheetLink: string | null;
   driveConfig: DriveConfig;
@@ -30,6 +30,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   const isDriveActive = !!(driveConfig.webhookUrl || user);
   const esAdmin = esRolAdmin(sesion);
+  const verMaestro = puedeVerHojaMaestro(sesion);
   // En pantalla de login no se muestran pestañas ni accesos a Drive
   const mostrarTabs = !!sesion;
   // Hoja de Drive y config solo para roles admin
@@ -132,18 +133,6 @@ export const Navbar: React.FC<NavbarProps> = ({
             {esAdmin && (
               <>
                 <button
-                  onClick={() => setActiveTab('cupos')}
-                  className={`flex items-center gap-2 px-3.5 py-2 text-xs sm:text-sm font-bold rounded-lg transition whitespace-nowrap cursor-pointer ${
-                    activeTab === 'cupos'
-                      ? 'bg-[#0a2958] text-white shadow-xs'
-                      : 'text-slate-600 hover:text-[#0a2958] hover:bg-slate-100'
-                  }`}
-                >
-                  <Calendar className="w-4 h-4" />
-                  <span>Cupos Semanales</span>
-                </button>
-
-                <button
                   onClick={() => setActiveTab('solicitudes')}
                   className={`flex items-center gap-2 px-3.5 py-2 text-xs sm:text-sm font-bold rounded-lg transition whitespace-nowrap cursor-pointer ${
                     activeTab === 'solicitudes'
@@ -166,17 +155,19 @@ export const Navbar: React.FC<NavbarProps> = ({
                   )}
                 </button>
 
-                <button
-                  onClick={() => setActiveTab('maestro')}
-                  className={`flex items-center gap-2 px-3.5 py-2 text-xs sm:text-sm font-bold rounded-lg transition whitespace-nowrap cursor-pointer ${
-                    activeTab === 'maestro'
-                      ? 'bg-[#0a2958] text-white shadow-xs'
-                      : 'text-slate-600 hover:text-[#0a2958] hover:bg-slate-100'
-                  }`}
-                >
-                  <Users className="w-4 h-4" />
-                  <span>Hoja Maestro (Trabajadores)</span>
-                </button>
+                {verMaestro && (
+                  <button
+                    onClick={() => setActiveTab('maestro')}
+                    className={`flex items-center gap-2 px-3.5 py-2 text-xs sm:text-sm font-bold rounded-lg transition whitespace-nowrap cursor-pointer ${
+                      activeTab === 'maestro'
+                        ? 'bg-[#0a2958] text-white shadow-xs'
+                        : 'text-slate-600 hover:text-[#0a2958] hover:bg-slate-100'
+                    }`}
+                  >
+                    <Users className="w-4 h-4" />
+                    <span>Hoja Maestro (Trabajadores)</span>
+                  </button>
+                )}
               </>
             )}
           </nav>

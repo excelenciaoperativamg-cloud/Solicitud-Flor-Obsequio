@@ -41,7 +41,7 @@ export const LoginCodigo: React.FC<LoginCodigoProps> = ({ maestro, cargando, onI
           <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#061a3a] via-[#0a2958]/92 to-transparent pt-7 pb-3 px-4">
             <p className="text-sm text-white text-center leading-snug font-medium drop-shadow-xs">
               Solicitudes solo <strong className="font-bold text-amber-300">lunes y martes</strong>; entrega el{' '}
-              <strong className="font-bold text-amber-300">viernes</strong> de la misma semana. Un solo ramo cada 15 días.
+              <strong className="font-bold text-amber-300">viernes</strong> de la misma semana. Un ramo por persona cada 15 días.
             </p>
           </div>
         </div>

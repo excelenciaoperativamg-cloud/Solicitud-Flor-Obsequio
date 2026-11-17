@@ -7,7 +7,6 @@ import React, { useState, useEffect } from 'react';
 import { User } from 'firebase/auth';
 import { Navbar } from './components/Navbar';
 import { SolicitudForm } from './components/SolicitudForm';
-import { CuposDashboard } from './components/CuposDashboard';
 import { SolicitudesTable } from './components/SolicitudesTable';
 import { MaestroTrabajadores } from './components/MaestroTrabajadores';
 import { LoginCodigo } from './components/LoginCodigo';
@@ -36,10 +35,10 @@ import {
   getOrCreateSpreadsheet,
   fetchMaestroFromDrive,
 } from './services/googleDriveSheets';
-import { esRolAdmin } from './utils/roles';
+import { esRolAdmin, puedeVerHojaMaestro } from './utils/roles';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'formulario' | 'cupos' | 'solicitudes' | 'maestro'>('formulario');
+  const [activeTab, setActiveTab] = useState<'formulario' | 'solicitudes' | 'maestro'>('formulario');
 
   // Estados de autenticación Google (opcional para administrador)
   const [user, setUser] = useState<User | null>(null);
@@ -63,13 +62,17 @@ export default function App() {
   const [solicitudes, setSolicitudes] = useState<SolicitudFlor[]>(SOLICITUDES_INICIALES);
 
   const esAdmin = esRolAdmin(sesion);
+  const puedeVerMaestro = puedeVerHojaMaestro(sesion);
 
-  // Si el usuario no es admin, siempre mostrar solo el formulario
+  // Si el usuario no es admin o no tiene permiso de Maestro, redirigir al formulario
   useEffect(() => {
-    if (sesion && !esAdmin && activeTab !== 'formulario') {
+    if (!sesion) return;
+    if (!esAdmin && activeTab !== 'formulario') {
+      setActiveTab('formulario');
+    } else if (activeTab === 'maestro' && !puedeVerMaestro) {
       setActiveTab('formulario');
     }
-  }, [sesion, esAdmin, activeTab]);
+  }, [sesion, esAdmin, puedeVerMaestro, activeTab]);
 
   // Mostrar toast temporal
   const mostrarToast = (mensaje: string) => {
@@ -229,8 +232,12 @@ export default function App() {
     }
   };
 
-  const handleSetActiveTab = (tab: 'formulario' | 'cupos' | 'solicitudes' | 'maestro') => {
+  const handleSetActiveTab = (tab: 'formulario' | 'solicitudes' | 'maestro') => {
     if (!esAdmin && tab !== 'formulario') {
+      setActiveTab('formulario');
+      return;
+    }
+    if (tab === 'maestro' && !puedeVerMaestro) {
       setActiveTab('formulario');
       return;
     }
@@ -298,13 +305,6 @@ export default function App() {
               />
             )}
 
-            {esAdmin && activeTab === 'cupos' && (
-              <CuposDashboard
-                solicitudes={solicitudes}
-                onIrAFormulario={() => setActiveTab('formulario')}
-              />
-            )}
-
             {esAdmin && activeTab === 'solicitudes' && (
               <SolicitudesTable
                 solicitudes={solicitudes}
@@ -317,7 +317,7 @@ export default function App() {
               />
             )}
 
-            {esAdmin && activeTab === 'maestro' && (
+            {puedeVerMaestro && activeTab === 'maestro' && (
               <MaestroTrabajadores
                 maestro={maestro}
                 onAgregarTrabajador={handleAgregarTrabajador}
