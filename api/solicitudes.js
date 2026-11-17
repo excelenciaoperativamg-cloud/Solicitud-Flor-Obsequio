@@ -66,6 +66,31 @@ function normalizarSolicitudDesdeSheet(s) {
   };
 }
 
+function generarIdUnico(existentes, idSugerido) {
+  const usados = new Set(
+    existentes.map((s) => String(s?.id || '').trim()).filter(Boolean)
+  );
+  const sugerido = String(idSugerido || '').trim();
+  if (sugerido && !usados.has(sugerido)) {
+    return sugerido;
+  }
+  const year = new Date().getFullYear();
+  let maxNum = 0;
+  for (const s of existentes) {
+    const m = String(s?.id || '').match(/^SFO-(\d{4})-(\d+)$/i);
+    if (m && Number(m[1]) === year) {
+      maxNum = Math.max(maxNum, Number(m[2]));
+    }
+  }
+  let nextNum = Math.max(maxNum + 1, existentes.length + 1);
+  let candidate = `SFO-${year}-${String(nextNum).padStart(3, '0')}`;
+  while (usados.has(candidate)) {
+    nextNum += 1;
+    candidate = `SFO-${year}-${String(nextNum).padStart(3, '0')}`;
+  }
+  return candidate;
+}
+
 export default async function handler(req, res) {
   try {
     if (req.method === 'POST') {
@@ -142,8 +167,10 @@ export default async function handler(req, res) {
         }
       }
 
+      const idFinal = generarIdUnico(existentes, nueva.id);
+
       const payload = {
-        id: nueva.id,
+        id: idFinal,
         fecha: nueva.fecha,
         semana: soloSemana(nueva.semana),
         codigo: nueva.codigo,
@@ -162,13 +189,14 @@ export default async function handler(req, res) {
 
       const finalNueva = {
         ...nueva,
+        id: idFinal,
         cantidad: cantidadNum,
         motivo: payload.motivo,
         fechaEntrega: payload.fechaEntrega,
         syncedToDrive: true,
         guardadoEnServidor: true,
       };
-      const solicitudes = existentes.filter((s) => s.id !== nueva.id);
+      const solicitudes = existentes.filter((s) => s.id !== idFinal);
       solicitudes.unshift(finalNueva);
       saveSolicitudesStorage(solicitudes);
       return res.status(200).json({ success: true, solicitud: finalNueva });

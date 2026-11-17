@@ -315,8 +315,8 @@ export const MaestroTrabajadores: React.FC<MaestroTrabajadoresProps> = ({
                   </td>
                 </tr>
               ) : (
-                trabajadoresFiltrados.map((t) => (
-                  <tr key={t.codigo} className="hover:bg-slate-50/80 transition">
+                trabajadoresFiltrados.map((t, idx) => (
+                  <tr key={`${t.codigo}-${idx}`} className="hover:bg-slate-50/80 transition">
                     <td className="py-3 px-4 font-mono font-bold text-[#0a2958] whitespace-nowrap">
                       {t.codigo}
                     </td>

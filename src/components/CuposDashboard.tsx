@@ -336,9 +336,9 @@ export const CuposDashboard: React.FC<CuposDashboardProps> = ({
                   </p>
                 ) : (
                   <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
-                    {m.solicitudesDetalle.map((sol) => (
+                    {m.solicitudesDetalle.map((sol, idx) => (
                       <div
-                        key={sol.id}
+                        key={`${sol.id}-${sol.codigo}-${idx}`}
                         className="bg-white p-2 rounded-lg border border-slate-200 text-[11px] flex items-center justify-between"
                       >
                         <div>

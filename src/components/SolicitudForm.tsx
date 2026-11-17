@@ -11,6 +11,7 @@ import {
   Copy,
   Clock,
   Lock,
+  LogOut,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import {
@@ -35,11 +36,12 @@ import { esDirectorPoscosecha } from '../utils/roles';
 interface SolicitudFormProps {
   maestro: TrabajadorMaestro[];
   solicitudes: SolicitudFlor[];
-  onGuardarSolicitud: (nueva: SolicitudFlor) => Promise<{ success: boolean; error?: string }>;
+  onGuardarSolicitud: (nueva: SolicitudFlor) => Promise<{ success: boolean; error?: string; solicitud?: SolicitudFlor }>;
   isDriveConnected: boolean;
   spreadsheetLink: string | null;
   onRecargarMaestroDeDrive?: () => Promise<void>;
   sesion?: TrabajadorMaestro | null;
+  onCerrarSesion?: () => void;
 }
 
 export const SolicitudForm: React.FC<SolicitudFormProps> = ({
@@ -49,6 +51,7 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
   isDriveConnected,
   spreadsheetLink,
   sesion,
+  onCerrarSesion,
 }) => {
   const ventana = useMemo(() => getVentanaSolicitud(), []);
   const esDirector = useMemo(() => esDirectorPoscosecha(sesion), [sesion]);
@@ -62,8 +65,8 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
   const [sede, setSede] = useState<Sede>('Sede MG');
   const [trabajadorEncontrado, setTrabajadorEncontrado] = useState<TrabajadorMaestro | null>(null);
   const [tipoProducto, setTipoProducto] = useState<ProductType>('ramo');
-  const [florRamo, setFlorRamo] = useState<FlowerType>('Rosa');
-  const [opcionRosa, setOpcionRosa] = useState<'Rojo' | 'Color' | 'Bouquet'>('Rojo');
+  const [florRamo, setFlorRamo] = useState<FlowerType | null>(null);
+  const [opcionRosa, setOpcionRosa] = useState<'Color' | 'Rojo' | 'Bouquet' | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errores, setErrores] = useState<Record<string, string>>({});
   const [solicitudExitosa, setSolicitudExitosa] = useState<SolicitudFlor | null>(null);
@@ -75,9 +78,16 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
 
   const proximoId = useMemo(() => {
     const year = new Date().getFullYear();
-    const count = solicitudes.length + 1;
-    return `SFO-${year}-${String(count).padStart(3, '0')}`;
-  }, [solicitudes.length]);
+    let maxNum = 0;
+    for (const s of solicitudes) {
+      const m = String(s.id || '').match(/^SFO-(\d{4})-(\d+)$/i);
+      if (m && Number(m[1]) === year) {
+        maxNum = Math.max(maxNum, Number(m[2]));
+      }
+    }
+    const nextNum = Math.max(maxNum + 1, solicitudes.length + 1);
+    return `SFO-${year}-${String(nextNum).padStart(3, '0')}`;
+  }, [solicitudes]);
 
   const aplicarTrabajador = (trabajador: TrabajadorMaestro) => {
     setCodigo(trabajador.codigo);
@@ -149,9 +159,10 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
 
     let estaAgotado = false;
     if (florRamo === 'Rosa' && opcionRosa === 'Bouquet') estaAgotado = bouquetAgotado;
-    else if (florRamo === 'Rosa') estaAgotado = rosaAgotado;
+    else if (florRamo === 'Rosa' && opcionRosa !== null) estaAgotado = rosaAgotado;
+    else if (florRamo === 'Rosa') estaAgotado = rosaAgotado && bouquetAgotado;
     else if (florRamo === 'Clavel') estaAgotado = clavelAgotado;
-    else estaAgotado = alstroemeriaAgotado;
+    else if (florRamo === 'Alstroemeria') estaAgotado = alstroemeriaAgotado;
 
     return {
       rosaUsados,
@@ -180,34 +191,43 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
     else setTipoProducto('ramo');
   }, [florRamo, opcionRosa]);
 
-  // Si el producto seleccionado está agotado y otro producto aún tiene disponibilidad, seleccionar uno disponible
+  // Si la selección actual se agotó, limpiar para que el usuario elija otra opción disponible manualmente
   useEffect(() => {
-    if (cuposSemana.todosAgotados || !cuposSemana.estaAgotado) return;
-    if (!cuposSemana.rosaAgotado) {
-      setFlorRamo('Rosa');
-      setOpcionRosa('Rojo');
-    } else if (!cuposSemana.bouquetAgotado) {
-      setFlorRamo('Rosa');
-      setOpcionRosa('Bouquet');
-    } else if (!cuposSemana.clavelAgotado) {
-      setFlorRamo('Clavel');
-      setOpcionRosa('Rojo');
-    } else if (!cuposSemana.alstroemeriaAgotado) {
-      setFlorRamo('Alstroemeria');
-      setOpcionRosa('Rojo');
+    if (florRamo === 'Rosa') {
+      if (cuposSemana.rosaAgotado && cuposSemana.bouquetAgotado) {
+        setFlorRamo(null);
+        setOpcionRosa(null);
+      } else if (opcionRosa === 'Bouquet' && cuposSemana.bouquetAgotado) {
+        setOpcionRosa(null);
+      } else if ((opcionRosa === 'Rojo' || opcionRosa === 'Color') && cuposSemana.rosaAgotado) {
+        setOpcionRosa(null);
+      }
+    } else if (florRamo === 'Clavel' && cuposSemana.clavelAgotado) {
+      setFlorRamo(null);
+    } else if (florRamo === 'Alstroemeria' && cuposSemana.alstroemeriaAgotado) {
+      setFlorRamo(null);
     }
   }, [
-    cuposSemana.todosAgotados,
-    cuposSemana.estaAgotado,
+    florRamo,
+    opcionRosa,
     cuposSemana.rosaAgotado,
     cuposSemana.bouquetAgotado,
     cuposSemana.clavelAgotado,
     cuposSemana.alstroemeriaAgotado,
   ]);
 
+  const productoCompleto =
+    florRamo === 'Clavel' ||
+    florRamo === 'Alstroemeria' ||
+    (florRamo === 'Rosa' && opcionRosa !== null);
+
   const descripcionProducto = useMemo(() => {
-    if (florRamo === 'Rosa' && opcionRosa === 'Bouquet') return 'Bouquet';
-    if (florRamo === 'Rosa') return `Rosa (${opcionRosa})`;
+    if (!florRamo) return '';
+    if (florRamo === 'Rosa') {
+      if (!opcionRosa) return '';
+      if (opcionRosa === 'Bouquet') return 'Bouquet';
+      return `Rosa (${opcionRosa})`;
+    }
     if (florRamo === 'Clavel') return 'Clavel';
     return 'Alstroemeria';
   }, [florRamo, opcionRosa]);
@@ -219,6 +239,9 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
     if (!nombre.trim()) nuevosErrores.nombre = 'El nombre del trabajador es obligatorio';
     if (!sede) nuevosErrores.sede = 'No se ha determinado la sede del trabajador';
     if (!fechaEntrega) nuevosErrores.fechaEntrega = 'No hay fecha de entrega configurada';
+    if (!productoCompleto) {
+      nuevosErrores.producto = 'Debe seleccionar el tipo de flor / producto que desea solicitar.';
+    }
     if (!validacion15Dias.puedeSolicitar) {
       nuevosErrores.regla15 = `El trabajador ya solicitó flor hace ${validacion15Dias.diasTranscurridos} días. Debe esperar 15 días entre solicitudes (1 ramo cada 15 días).`;
     }
@@ -236,7 +259,7 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!validarFormulario()) return;
+    if (!validarFormulario() || !florRamo) return;
     setIsSubmitting(true);
     const nuevaSolicitud: SolicitudFlor = {
       id: proximoId,
@@ -249,7 +272,7 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
       producto: descripcionProducto,
       tipoProducto,
       florPrincipal: florRamo,
-      opcionFlor: florRamo === 'Rosa' ? opcionRosa : undefined,
+      opcionFlor: florRamo === 'Rosa' && opcionRosa ? opcionRosa : undefined,
       sede,
       motivo: motivoFijo,
       fechaEntrega,
@@ -261,7 +284,7 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
     try {
       const res = await onGuardarSolicitud(nuevaSolicitud);
       if (res.success) {
-        setSolicitudExitosa(nuevaSolicitud);
+        setSolicitudExitosa(res.solicitud || nuevaSolicitud);
         try {
           confetti({
             particleCount: 85,
@@ -278,15 +301,6 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
     } finally {
       setIsSubmitting(false);
     }
-  };
-
-  const handleNuevaSolicitud = () => {
-    setSolicitudExitosa(null);
-    setFlorRamo('Rosa');
-    setOpcionRosa('Rojo');
-    setTipoProducto('ramo');
-    setErrores({});
-    if (sesion) aplicarTrabajador(sesion);
   };
 
   const copiarIdComprobante = () => {
@@ -352,8 +366,15 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
               <button type="button" onClick={() => window.print()} className="flex-1 py-2.5 px-4 rounded-xl border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs font-bold flex items-center justify-center gap-2">
                 <Printer className="w-4 h-4" /> Imprimir Comprobante
               </button>
-              <button type="button" onClick={handleNuevaSolicitud} className="flex-1 py-2.5 px-4 rounded-xl bg-[#0a2958] hover:bg-[#0d346e] text-white text-xs font-bold">
-                Nueva Solicitud
+              <button
+                type="button"
+                onClick={() => {
+                  setSolicitudExitosa(null);
+                  onCerrarSesion?.();
+                }}
+                className="flex-1 py-2.5 px-4 rounded-xl bg-[#0a2958] hover:bg-[#0d346e] text-white text-xs font-bold flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <LogOut className="w-4 h-4 text-[#E60000]" /> Salir
               </button>
             </div>
           </div>
@@ -442,39 +463,78 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
                     ? cuposSemana.clavelAgotado
                     : cuposSemana.alstroemeriaAgotado;
                 return (
-                  <button
-                    key={f}
-                    type="button"
-                    disabled={deshabilitado}
-                    onClick={() => {
-                      setFlorRamo(f);
-                      if (f === 'Rosa') {
-                        setOpcionRosa(cuposSemana.rosaAgotado && !cuposSemana.bouquetAgotado ? 'Bouquet' : 'Rojo');
-                      } else {
-                        setOpcionRosa('Rojo');
-                      }
-                    }}
-                    className={`px-4 py-3 rounded-xl border text-xs font-bold transition flex items-center justify-center ${
-                      deshabilitado
-                        ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
-                        : florRamo === f
-                        ? 'bg-[#0a2958] text-white border-[#0a2958] cursor-pointer'
-                        : 'bg-white text-slate-700 border-slate-200 hover:border-[#0a2958]/40 cursor-pointer'
-                    }`}
-                  >
-                    <span>
-                      {f}
-                      {deshabilitado && (
-                        <span className="ml-1.5 text-[10px] text-[#E60000] font-bold">(Agotado)</span>
-                      )}
-                    </span>
-                  </button>
+                  <div key={f} className="space-y-2">
+                    <button
+                      type="button"
+                      disabled={deshabilitado}
+                      onClick={() => {
+                        if (f !== florRamo) {
+                          setFlorRamo(f);
+                          setOpcionRosa(null);
+                        }
+                        setErrores((prev) => {
+                          const next = { ...prev };
+                          delete next.producto;
+                          return next;
+                        });
+                      }}
+                      className={`w-full px-4 py-3 rounded-xl border text-xs font-bold transition flex items-center justify-center ${
+                        deshabilitado
+                          ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
+                          : florRamo === f
+                          ? 'bg-[#0a2958] text-white border-[#0a2958] cursor-pointer'
+                          : 'bg-white text-slate-700 border-slate-200 hover:border-[#0a2958]/40 cursor-pointer'
+                      }`}
+                    >
+                      <span>
+                        {f}
+                        {deshabilitado && (
+                          <span className="ml-1.5 text-[10px] text-[#E60000] font-bold">(Agotado)</span>
+                        )}
+                      </span>
+                    </button>
+
+                    {/* Sub-opciones de Rosa desplegadas directamente debajo de Rosa en móvil */}
+                    {f === 'Rosa' && florRamo === 'Rosa' && (
+                      <div className="sm:hidden pl-3 ml-1 border-l-2 border-[#0a2958]/25 space-y-2 py-1">
+                        {(['Color', 'Rojo', 'Bouquet'] as const).map((o) => {
+                          const opcionAgotada =
+                            o === 'Bouquet' ? cuposSemana.bouquetAgotado : cuposSemana.rosaAgotado;
+                          return (
+                            <button
+                              key={o}
+                              type="button"
+                              disabled={opcionAgotada}
+                              onClick={() => {
+                                setOpcionRosa(o);
+                                setErrores((prev) => {
+                                  const next = { ...prev };
+                                  delete next.producto;
+                                  return next;
+                                });
+                              }}
+                              className={`w-full text-left px-3.5 py-2.5 rounded-xl border text-xs font-bold transition ${
+                                opcionAgotada
+                                  ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
+                                  : opcionRosa === o
+                                  ? 'bg-[#E60000]/10 text-[#E60000] border-[#E60000]/40 cursor-pointer'
+                                  : 'bg-slate-50 text-slate-700 border-slate-200 hover:border-[#0a2958]/30 cursor-pointer'
+                              }`}
+                            >
+                              {o === 'Bouquet' ? 'Bouquet' : `Rosa (${o})`}
+                              {opcionAgotada && ' (Sin existencia / Agotado)'}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 );
               })}
             </div>
             {florRamo === 'Rosa' && (
-              <div className="flex flex-wrap gap-2">
-                {(['Rojo', 'Color', 'Bouquet'] as const).map((o) => {
+              <div className="hidden sm:flex flex-wrap gap-2">
+                {(['Color', 'Rojo', 'Bouquet'] as const).map((o) => {
                   const opcionAgotada =
                     o === 'Bouquet' ? cuposSemana.bouquetAgotado : cuposSemana.rosaAgotado;
                   return (
@@ -482,7 +542,14 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
                       key={o}
                       type="button"
                       disabled={opcionAgotada}
-                      onClick={() => setOpcionRosa(o)}
+                      onClick={() => {
+                        setOpcionRosa(o);
+                        setErrores((prev) => {
+                          const next = { ...prev };
+                          delete next.producto;
+                          return next;
+                        });
+                      }}
                       className={`px-3 py-2 rounded-lg border text-[11px] font-bold transition ${
                         opcionAgotada
                           ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
@@ -491,14 +558,26 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
                           : 'bg-slate-50 text-slate-600 border-slate-200 cursor-pointer'
                       }`}
                     >
-                      {o === 'Bouquet' ? 'Bouquet de Rosas' : `Rosa (${o})`}
+                      {o === 'Bouquet' ? 'Bouquet' : `Rosa (${o})`}
                       {opcionAgotada && ' (Sin existencia / Agotado)'}
                     </button>
                   );
                 })}
               </div>
             )}
-            <p className="text-xs text-slate-600 font-medium">Producto: <span className="text-[#0a2958] font-bold">{descripcionProducto}</span></p>
+            {florRamo === 'Rosa' && !opcionRosa && (
+              <p className="text-xs text-[#0a2958] font-semibold">
+                Seleccione una opción de Rosa: Rosa (Color), Rosa (Rojo) o Bouquet.
+              </p>
+            )}
+            {productoCompleto && (
+              <p className="text-xs text-slate-600 font-medium">
+                Producto: <span className="text-[#0a2958] font-bold">{descripcionProducto}</span>
+              </p>
+            )}
+            {errores.producto && (
+              <p className="text-xs text-[#E60000] font-semibold">{errores.producto}</p>
+            )}
           </div>
 
           <div className="space-y-4">
@@ -534,8 +613,8 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
 
           <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="text-xs text-slate-500">Campos con <span className="text-[#E60000] font-bold">*</span> son obligatorios.</div>
-            <button type="submit" disabled={isSubmitting || !validacion15Dias.puedeSolicitar || cuposSemana.estaAgotado || cuposSemana.todosAgotados}
-              className={`w-full sm:w-auto px-8 py-3 rounded-xl text-white text-xs sm:text-sm font-extrabold flex items-center justify-center gap-2 shadow-md transition ${isSubmitting || !validacion15Dias.puedeSolicitar || cuposSemana.estaAgotado || cuposSemana.todosAgotados ? 'bg-slate-400 cursor-not-allowed opacity-60' : 'bg-[#0a2958] hover:bg-[#0d346e]'}`}>
+            <button type="submit" disabled={isSubmitting || !validacion15Dias.puedeSolicitar || !productoCompleto || cuposSemana.estaAgotado || cuposSemana.todosAgotados}
+              className={`w-full sm:w-auto px-8 py-3 rounded-xl text-white text-xs sm:text-sm font-extrabold flex items-center justify-center gap-2 shadow-md transition ${isSubmitting || !validacion15Dias.puedeSolicitar || !productoCompleto || cuposSemana.estaAgotado || cuposSemana.todosAgotados ? 'bg-slate-400 cursor-not-allowed opacity-60' : 'bg-[#0a2958] hover:bg-[#0d346e]'}`}>
               {isSubmitting ? (<><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /><span>Registrando…</span></>) : (<><Send className="w-4 h-4 text-[#E60000]" /><span>Registrar Solicitud de Flor</span></>)}
             </button>
           </div>

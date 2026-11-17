@@ -315,8 +315,8 @@ export const SolicitudesTable: React.FC<SolicitudesTableProps> = ({
                   </td>
                 </tr>
               ) : (
-                solicitudesFiltradas.map((s) => (
-                  <tr key={s.id} className="hover:bg-slate-50/80 transition">
+                solicitudesFiltradas.map((s, idx) => (
+                  <tr key={`${s.id}-${s.codigo}-${idx}`} className="hover:bg-slate-50/80 transition">
                     <td className="py-3 px-4 font-mono font-bold text-[#0a2958] whitespace-nowrap">
                       {s.id}
                     </td>

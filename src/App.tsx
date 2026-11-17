@@ -137,12 +137,12 @@ export default function App() {
 
   const handleGuardarSolicitud = async (
     nueva: SolicitudFlor
-  ): Promise<{ success: boolean; error?: string }> => {
+  ): Promise<{ success: boolean; error?: string; solicitud?: SolicitudFlor }> => {
     try {
       const guardada = await createSolicitudApi(nueva);
       setSolicitudes((prev) => [guardada, ...prev.filter((s) => s.id !== guardada.id)]);
       mostrarToast('Solicitud registrada en la hoja Solicitudes');
-      return { success: true };
+      return { success: true, solicitud: guardada };
     } catch (err: any) {
       try {
         const frescas = await fetchSolicitudesApi();
@@ -291,6 +291,10 @@ export default function App() {
                 spreadsheetLink={esAdmin ? spreadsheetLink || driveConfig.spreadsheetUrl : null}
                 onRecargarMaestroDeDrive={esAdmin ? handleRecargarDeDrive : undefined}
                 sesion={sesion}
+                onCerrarSesion={() => {
+                  setSesion(null);
+                  setActiveTab('formulario');
+                }}
               />
             )}
 
