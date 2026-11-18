@@ -27,6 +27,7 @@ import {
   createSolicitudIntExtApi,
   fetchMaestroApi,
   addTrabajadorApi,
+  importMaestroBulkApi,
   getDriveConfigApi,
   updateDriveConfigApi,
   testDriveWebhookApi,
@@ -108,7 +109,14 @@ export default function App() {
           setIntExtSheetsSupported(intExtRes.sheetsSupported || intExtRes.source === 'sheets');
         }
         if (maest && maest.length > 0) {
-          setMaestro(maest);
+          const mapa = new Map<string, TrabajadorMaestro>();
+          for (const t of TRABAJADORES_INICIALES) {
+            mapa.set(t.codigo.trim().toUpperCase(), t);
+          }
+          for (const t of maest) {
+            mapa.set(t.codigo.trim().toUpperCase(), t);
+          }
+          setMaestro(Array.from(mapa.values()));
         }
         if (cfg) {
           setDriveConfig(cfg);
@@ -221,13 +229,15 @@ export default function App() {
 
   const handleImportarCSV = async (nuevos: TrabajadorMaestro[]) => {
     setMaestro((prev) => {
-      const codigosExistentes = new Set(prev.map((p) => p.codigo.toUpperCase()));
-      const filtrados = nuevos.filter((n) => !codigosExistentes.has(n.codigo.toUpperCase()));
-      return [...filtrados, ...prev];
+      const mapa = new Map<string, TrabajadorMaestro>();
+      for (const p of prev) mapa.set(p.codigo.trim().toUpperCase(), p);
+      for (const n of nuevos) mapa.set(n.codigo.trim().toUpperCase(), n);
+      return Array.from(mapa.values());
     });
 
-    for (const item of nuevos) {
-      await addTrabajadorApi(item).catch(() => {});
+    const updated = await importMaestroBulkApi(nuevos);
+    if (updated && updated.length > 0) {
+      setMaestro(updated);
     }
 
     mostrarToast(`Se importaron ${nuevos.length} trabajadores a la Hoja Maestro`);
@@ -266,11 +276,15 @@ export default function App() {
             trabajadoresDrive.forEach((t) => mapa.set(t.codigo.trim().toUpperCase(), t));
             return Array.from(mapa.values());
           });
+          await importMaestroBulkApi(trabajadoresDrive);
           mostrarToast(`Se cargaron ${trabajadoresDrive.length} trabajadores desde la hoja de Drive`);
           return;
         }
       }
 
+      if (resWebhook.error) {
+        mostrarToast(resWebhook.error);
+      }
       setIsDriveModalOpen(true);
     } catch {
       setIsDriveModalOpen(true);

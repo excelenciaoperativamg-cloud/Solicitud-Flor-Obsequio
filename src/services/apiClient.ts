@@ -83,16 +83,28 @@ export const createSolicitudIntExtApi = async (
   };
 };
 
+const isValidWorkerClient = (w: any): w is TrabajadorMaestro => {
+  if (!w || typeof w !== 'object') return false;
+  const codigo = String(w.codigo || '').trim();
+  const nombre = String(w.nombre || '').trim();
+  if (!codigo || !nombre) return false;
+  if (/^(SFO|SIE|SE)-\d{4}-/i.test(codigo)) return false;
+  if (/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+[A-Z][a-z]{2}\s+\d{1,2}\s+\d{4}/i.test(nombre)) return false;
+  if (/^\d{4}-\d{2}-\d{2}/.test(nombre)) return false;
+  return true;
+};
+
 export const fetchMaestroApi = async (): Promise<TrabajadorMaestro[]> => {
   try {
     const res = await fetch('/api/maestro');
     if (!res.ok) throw new Error('Error al consultar maestro');
     const data = await res.json();
-    return data.maestro || [];
+    return Array.isArray(data.maestro) ? data.maestro.filter(isValidWorkerClient) : [];
   } catch (error) {
     console.warn('Usando respaldo local para maestro:', error);
     const saved = localStorage.getItem('sfo_maestro_v2');
-    return saved ? JSON.parse(saved) : [];
+    const parsed = saved ? JSON.parse(saved) : [];
+    return Array.isArray(parsed) ? parsed.filter(isValidWorkerClient) : [];
   }
 };
 
@@ -108,6 +120,22 @@ export const addTrabajadorApi = async (trabajador: TrabajadorMaestro): Promise<T
     return data.maestro;
   } catch (error) {
     console.warn('Aviso guardando trabajador localmente:', error);
+    return [];
+  }
+};
+
+export const importMaestroBulkApi = async (workers: TrabajadorMaestro[]): Promise<TrabajadorMaestro[]> => {
+  try {
+    const res = await fetch('/api/maestro', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ workers }),
+    });
+    if (!res.ok) throw new Error('Error al importar trabajadores en el servidor');
+    const data = await res.json();
+    return Array.isArray(data.maestro) ? data.maestro.filter(isValidWorkerClient) : [];
+  } catch (error) {
+    console.warn('Aviso importando maestro:', error);
     return [];
   }
 };
@@ -154,12 +182,22 @@ export const testDriveWebhookApi = async (webhookUrl?: string): Promise<{ succes
   }
 };
 
-export const syncMaestroFromDriveApi = async (): Promise<{ success: boolean; count?: number; maestro?: TrabajadorMaestro[]; error?: string }> => {
+export const syncMaestroFromDriveApi = async (): Promise<{
+  success: boolean;
+  count?: number;
+  maestro?: TrabajadorMaestro[];
+  error?: string;
+  invalidMaestroSheet?: boolean;
+}> => {
   try {
     const res = await fetch('/api/maestro/sync-from-drive', { method: 'POST' });
     const text = await res.text();
     try {
-      return JSON.parse(text);
+      const data = JSON.parse(text);
+      if (Array.isArray(data.maestro)) {
+        data.maestro = data.maestro.filter(isValidWorkerClient);
+      }
+      return data;
     } catch {
       return { success: false, error: text || `Error HTTP ${res.status}` };
     }

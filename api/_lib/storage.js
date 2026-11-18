@@ -74,15 +74,65 @@ export function saveSolicitudesIntExtStorage(data) {
   safeWrite('solicitudes-int-ext.json', data);
 }
 
+export function normalizarSedeMaestro(raw) {
+  const t = String(raw || '').toUpperCase();
+  if (t.includes('HA')) return 'Sede HA';
+  if (t.includes('SC')) return 'Sede SC';
+  return 'Sede MG';
+}
+
+export function isValidWorker(w) {
+  if (!w || typeof w !== 'object') return false;
+  const codigo = String(w.codigo || '').trim();
+  const nombre = String(w.nombre || '').trim();
+  if (!codigo || !nombre) return false;
+  // Evitar IDs de solicitudes (SFO-2026-001, SIE-2026-001, SE-2026-001)
+  if (/^(SFO|SIE|SE)-\d{4}-/i.test(codigo)) return false;
+  // Evitar fechas convertidas a string como nombre (ej. "Wed Nov 18 2026 ...")
+  if (/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+[A-Z][a-z]{2}\s+\d{1,2}\s+\d{4}/i.test(nombre)) return false;
+  if (/^\d{4}-\d{2}-\d{2}/.test(nombre)) return false;
+  return true;
+}
+
+export function sanitizeMaestroWorkers(workers) {
+  if (!Array.isArray(workers)) return [];
+  const mapa = new Map();
+  for (const w of workers) {
+    if (!isValidWorker(w)) continue;
+    const codigo = String(w.codigo).trim();
+    const key = codigo.toUpperCase();
+    mapa.set(key, {
+      ...w,
+      codigo,
+      nombre: String(w.nombre).trim(),
+      sede: normalizarSedeMaestro(w.sede),
+      cargo: w.cargo ? String(w.cargo).trim() : 'Operario',
+      area: w.area ? String(w.area).trim() : 'Poscosecha',
+      activo: w.activo !== false,
+    });
+  }
+  return Array.from(mapa.values());
+}
+
 export function getMaestroStorage() {
-  if (cacheMaestro && cacheMaestro.length > 0) return cacheMaestro;
-  cacheMaestro = safeRead('maestro.json', []);
+  if (cacheMaestro && cacheMaestro.length > 0) {
+    const valid = sanitizeMaestroWorkers(cacheMaestro);
+    if (valid.length > 0) return valid;
+  }
+  const raw = safeRead('maestro.json', []);
+  const valid = sanitizeMaestroWorkers(raw);
+  cacheMaestro = valid;
   return cacheMaestro;
 }
 
 export function saveMaestroStorage(data) {
-  cacheMaestro = data;
-  safeWrite('maestro.json', data);
+  const valid = sanitizeMaestroWorkers(data);
+  if (valid.length === 0) {
+    console.warn('[Storage] Se omitió guardar Maestro vacío o inválido.');
+    return;
+  }
+  cacheMaestro = valid;
+  safeWrite('maestro.json', valid);
 }
 
 export function getDriveConfigStorage() {

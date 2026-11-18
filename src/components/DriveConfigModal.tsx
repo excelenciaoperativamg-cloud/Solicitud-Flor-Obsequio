@@ -87,29 +87,78 @@ function normSede(raw) {
 
 function leerTrabajadores(ss) {
   var sheets = ss.getSheets();
-  var sheetMaestro = null;
-  for (var i = 0; i < sheets.length; i++) {
-    var sName = sheets[i].getName();
-    if (sName === "Solicitudes" || sName === "Solicitud Extra" || sName === "Solicitud_Int-Ext") continue;
-    var val = sheets[i].getRange(1, 1).getValue();
-    if (val && String(val).toUpperCase().indexOf("ID") !== -1) {
-      sheetMaestro = sheets[i];
-      break;
+  var sheetMaestro = ss.getSheetByName("Maestro");
+  if (!sheetMaestro) {
+    for (var i = 0; i < sheets.length; i++) {
+      if (String(sheets[i].getName() || "").toLowerCase().trim() === "maestro") {
+        sheetMaestro = sheets[i];
+        break;
+      }
     }
   }
-  if (!sheetMaestro) sheetMaestro = ss.getSheetByName("Maestro") || sheets[0];
-  var data = sheetMaestro ? sheetMaestro.getDataRange().getValues() : [];
-  var workers = [];
+  if (!sheetMaestro) {
+    for (var j = 0; j < sheets.length; j++) {
+      var sName = String(sheets[j].getName() || "");
+      var sLow = sName.toLowerCase().trim();
+      if (
+        sLow === "solicitudes" ||
+        sLow.indexOf("solicitud") === 0 ||
+        sLow.indexOf("especial") === 0
+      ) {
+        continue;
+      }
+      var lastCol = Math.min(sheets[j].getLastColumn() || 1, 10);
+      var firstRow = sheets[j].getRange(1, 1, 1, lastCol).getValues()[0] || [];
+      var joined = firstRow.join(" ").toUpperCase();
+      if (
+        joined.indexOf("NOMBRE") !== -1 &&
+        (joined.indexOf("CÓDIGO") !== -1 || joined.indexOf("CODIGO") !== -1 || joined.indexOf("ID RH") !== -1)
+      ) {
+        sheetMaestro = sheets[j];
+        break;
+      }
+    }
+  }
+  if (!sheetMaestro) return [];
+
+  var data = sheetMaestro.getDataRange().getValues();
+  if (!data || data.length < 2) return [];
+
   var headers = data[0] || [];
+  var idxCodigo = indiceColumnaEstricto(headers, ["CÓDIGO", "CODIGO", "ID RH"]);
+  if (idxCodigo < 0) idxCodigo = 0;
+  var idxNombre = indiceColumnaEstricto(headers, ["NOMBRE"]);
+  if (idxNombre < 0) idxNombre = 1;
+  var idxSede = indiceColumnaEstricto(headers, ["SEDE"]);
+  if (idxSede < 0) idxSede = 2;
+  var idxCargo = indiceColumnaEstricto(headers, ["CARGO", "FUNCIÓN", "FUNCION"]);
+  if (idxCargo < 0) idxCargo = 3;
+  var idxEstado = indiceColumnaEstricto(headers, ["ESTADO"]);
+
+  var workers = [];
   for (var r = 1; r < data.length; r++) {
     var row = data[r];
-    if (!row[0] || !row[1]) continue;
+    var rawCod = row[idxCodigo];
+    var rawNom = row[idxNombre];
+    if (!rawCod || !rawNom) continue;
+    if (rawNom instanceof Date) continue;
+
+    var codigo = String(rawCod).trim();
+    var nombre = String(rawNom).trim();
+    if (!codigo || !nombre) continue;
+    if (/^(SFO|SIE|SE)-\\d{4}-/i.test(codigo)) continue;
+
+    var activo = true;
+    if (idxEstado >= 0 && row[idxEstado]) {
+      activo = String(row[idxEstado]).trim().toLowerCase() !== "inactivo";
+    }
+
     workers.push({
-      codigo: String(row[0]).trim(),
-      nombre: String(row[1]).trim(),
-      sede: normSede(row[2]),
-      cargo: cargoDeFila(headers, row),
-      activo: true
+      codigo: codigo,
+      nombre: nombre,
+      sede: normSede(row[idxSede]),
+      cargo: idxCargo >= 0 && row[idxCargo] ? String(row[idxCargo]).trim() : "",
+      activo: activo
     });
   }
   return workers;
