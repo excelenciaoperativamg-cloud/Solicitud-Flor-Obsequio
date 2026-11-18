@@ -92,3 +92,26 @@ export function esDirectorPoscosecha(trabajador?: TrabajadorMaestro | null): boo
   const cargo = normalizar(trabajador.cargo || '');
   return cargo.includes('director') && cargo.includes('poscosecha');
 }
+
+/**
+ * Verifica si el trabajador tiene habilitado el formulario todos los días de la semana:
+ * - DIRECTOR POSCOSECHA
+ * - ANALISTA GESTIÓN DE INFORMACIÓN EAI
+ */
+export function tieneFormularioTodosLosDias(trabajador?: TrabajadorMaestro | null): boolean {
+  if (!trabajador) return false;
+  if (esDirectorPoscosecha(trabajador)) return true;
+
+  const cargo = String(trabajador.cargo || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return (
+    cargo.includes('analista') &&
+    cargo.includes('gestion') &&
+    cargo.includes('informacion')
+  );
+}

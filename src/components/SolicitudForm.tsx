@@ -31,7 +31,7 @@ import {
   getISOWeekNumber,
   getVentanaSolicitud,
 } from '../utils/dateUtils';
-import { esDirectorPoscosecha } from '../utils/roles';
+import { tieneFormularioTodosLosDias } from '../utils/roles';
 
 interface SolicitudFormProps {
   maestro: TrabajadorMaestro[];
@@ -54,8 +54,8 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
   onCerrarSesion,
 }) => {
   const ventana = useMemo(() => getVentanaSolicitud(), []);
-  const esDirector = useMemo(() => esDirectorPoscosecha(sesion), [sesion]);
-  const formularioHabilitado = ventana.abierto || esDirector;
+  const habilitadoTodosLosDias = useMemo(() => tieneFormularioTodosLosDias(sesion), [sesion]);
+  const formularioHabilitado = ventana.abierto || habilitadoTodosLosDias;
   const cantidad = 1;
   const fechaEntrega = ventana.fechaEntrega;
   const motivoFijo = 'Obsequio';
@@ -340,9 +340,21 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
             <div className="text-center mb-5">
               <h3 className="text-xl font-extrabold text-[#0a2958] mb-2">¡Registro Exitoso!</h3>
               <div className="p-4 rounded-xl bg-slate-50 border-l-4 border-[#0a2958] text-slate-800 font-medium text-sm text-left">
-                <p className="mb-2 text-base font-bold text-[#0a2958]">Su solicitud a sido registrada con exito.</p>
-                <p className="text-xs text-slate-600">La entrega de flor se realizará en Poscosecha el viernes, al finalizar la jornada laboral.</p>
-                <p className="mt-2 text-xs font-semibold text-amber-800">Tenga presente que si no reclama el ramo solicitado, no podrá pedir en el resto del mes.</p>
+                <p className="mb-2 text-base font-bold text-[#0a2958]">Su solicitud ha sido registrada con éxito.</p>
+                <p className="text-xs text-slate-600">
+                  {(() => {
+                    const prod = (solicitudExitosa.producto || '').toLowerCase();
+                    const flor = (solicitudExitosa.florPrincipal || '').toLowerCase();
+                    const lugar =
+                      prod.includes('alstroemeria') || flor === 'alstroemeria'
+                        ? 'Poscosecha de Charrascal'
+                        : prod.includes('clavel') || flor === 'clavel'
+                          ? 'Poscosecha de Scarlett'
+                          : 'Poscosecha de MG';
+                    return `La entrega de flor se realizará en ${lugar} el viernes, al finalizar la jornada laboral.`;
+                  })()}
+                </p>
+                <p className="mt-2 text-xs font-semibold text-amber-800">Tenga presente que, si no reclama el ramo solicitado, no podrá pedir en el resto del mes.</p>
               </div>
             </div>
             <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 text-xs text-slate-700 space-y-2 mb-6">
