@@ -51,27 +51,11 @@ export function esRolAdmin(trabajador?: TrabajadorMaestro | null): boolean {
 }
 
 /**
- * Controla si el usuario administrador puede visualizar la pestaña Hoja Maestro (Trabajadores).
- * Se oculta para AUXILIAR TÉCNICO POSCOSECHA EAI y AUXILIAR GESTIÓN HUMANA EAI.
+ * Controla si el usuario puede visualizar la sección "Actualizar Maestro" (Hoja Maestro).
+ * Exclusivo para el administrador (ANALISTA GESTIÓN DE INFORMACIÓN EAI).
  */
 export function puedeVerHojaMaestro(trabajador?: TrabajadorMaestro | null): boolean {
-  if (!esRolAdmin(trabajador)) return false;
-
-  const cargo = String(trabajador?.cargo || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-  if (cargo.includes('auxiliar') && cargo.includes('tecnico') && cargo.includes('poscosecha')) {
-    return false;
-  }
-  if (cargo.includes('auxiliar') && cargo.includes('gestion') && cargo.includes('humana')) {
-    return false;
-  }
-
-  return true;
+  return esAdministradorSistema(trabajador);
 }
 
 /**
@@ -174,4 +158,36 @@ export function esAdministradorSistema(trabajador?: TrabajadorMaestro | null): b
   }
 
   return cargo === 'administrador' || cargo.startsWith('administrador ');
+}
+
+/**
+ * Controla si el usuario puede visualizar "Resumen Solicitud":
+ * - AUXILIAR GESTIÓN HUMANA EAI
+ * - AUXILIAR TÉCNICO POSCOSECHA EAI
+ * - Administradores (ANALISTA GESTIÓN DE INFORMACIÓN EAI)
+ */
+export function puedeVerResumenSolicitud(trabajador?: TrabajadorMaestro | null): boolean {
+  if (!trabajador) return false;
+  if (esAdministradorSistema(trabajador)) return true;
+
+  const cargo = String(trabajador.cargo || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (
+    cargo.includes('auxiliar') &&
+    cargo.includes('gestion') &&
+    cargo.includes('humana')
+  ) {
+    return true;
+  }
+
+  return (
+    cargo.includes('auxiliar') &&
+    cargo.includes('tecnico') &&
+    cargo.includes('poscosecha')
+  );
 }

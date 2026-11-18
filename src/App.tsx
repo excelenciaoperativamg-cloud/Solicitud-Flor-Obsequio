@@ -40,9 +40,9 @@ import {
   fetchMaestroFromDrive,
 } from './services/googleDriveSheets';
 import {
-  esRolAdmin,
   esAdministradorSistema,
   puedeVerHojaMaestro,
+  puedeVerResumenSolicitud,
   puedeVerSolicitudIntExt,
 } from './utils/roles';
 
@@ -73,9 +73,9 @@ export default function App() {
   const [solicitudesIntExt, setSolicitudesIntExt] = useState<SolicitudIntExt[]>([]);
   const [intExtSheetsSupported, setIntExtSheetsSupported] = useState<boolean>(true);
 
-  const esAdmin = esRolAdmin(sesion);
   const esAdminSistema = esAdministradorSistema(sesion);
   const puedeVerMaestro = puedeVerHojaMaestro(sesion);
+  const puedeVerResumen = puedeVerResumenSolicitud(sesion);
   const puedeVerIntExt = puedeVerSolicitudIntExt(sesion);
 
   // Redirigir al formulario si el usuario no tiene permiso para la pestaña actual
@@ -83,12 +83,12 @@ export default function App() {
     if (!sesion) return;
     if (activeTab === 'int-ext' && !puedeVerIntExt) {
       setActiveTab('formulario');
-    } else if ((activeTab === 'solicitudes' || activeTab === 'maestro') && !esAdmin) {
+    } else if (activeTab === 'solicitudes' && !puedeVerResumen) {
       setActiveTab('formulario');
     } else if (activeTab === 'maestro' && !puedeVerMaestro) {
       setActiveTab('formulario');
     }
-  }, [sesion, esAdmin, puedeVerMaestro, puedeVerIntExt, activeTab]);
+  }, [sesion, puedeVerResumen, puedeVerMaestro, puedeVerIntExt, activeTab]);
 
   // Mostrar toast temporal
   const mostrarToast = (mensaje: string) => {
@@ -306,7 +306,7 @@ export default function App() {
       setActiveTab('formulario');
       return;
     }
-    if ((tab === 'solicitudes' || tab === 'maestro') && !esAdmin) {
+    if (tab === 'solicitudes' && !puedeVerResumen) {
       setActiveTab('formulario');
       return;
     }
@@ -407,7 +407,7 @@ export default function App() {
                 />
               )}
 
-              {esAdmin && activeTab === 'solicitudes' && (
+              {puedeVerResumen && activeTab === 'solicitudes' && (
                 <SolicitudesTable
                   solicitudes={solicitudes}
                   isDriveConnected={esAdminSistema && !!(driveConfig.webhookUrl || user)}

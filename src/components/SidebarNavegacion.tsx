@@ -22,6 +22,7 @@ import {
   esRolAdmin,
   esAdministradorSistema,
   puedeVerHojaMaestro,
+  puedeVerResumenSolicitud,
   puedeVerSolicitudIntExt,
 } from '../utils/roles';
 
@@ -69,6 +70,7 @@ export const SidebarNavegacion: React.FC<SidebarNavegacionProps> = ({
   const esAdmin = esRolAdmin(sesion);
   const esAdminSistema = esAdministradorSistema(sesion);
   const verMaestro = puedeVerHojaMaestro(sesion);
+  const verResumen = puedeVerResumenSolicitud(sesion);
   const verIntExt = puedeVerSolicitudIntExt(sesion);
   const isDriveActive = !!(driveConfig.webhookUrl || userGoogleConnected);
 
@@ -237,7 +239,7 @@ export const SidebarNavegacion: React.FC<SidebarNavegacionProps> = ({
                     <span className="truncate">Formulario de Solicitud</span>
                   </button>
 
-                  {esAdmin && (
+                  {verResumen && (
                     <button
                       type="button"
                       onClick={() => manejarSeleccion('solicitudes')}
