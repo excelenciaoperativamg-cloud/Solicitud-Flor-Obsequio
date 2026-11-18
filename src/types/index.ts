@@ -31,6 +31,24 @@ export interface SolicitudFlor {
   creadoEn: number;
 }
 
+export interface SolicitudIntExt {
+  id: string;
+  fechaSolicitud: string;
+  codigo: string;
+  nombre: string;
+  sede: string;
+  area: string;
+  producto: string;
+  cantidad: number;
+  motivo: string;
+  semana?: string;
+  fechaEntrega: string;
+  observacion: string;
+  estado?: string;
+  syncedToDrive?: boolean;
+  creadoEn?: number;
+}
+
 export interface TrabajadorMaestro {
   codigo: string;
   nombre: string;

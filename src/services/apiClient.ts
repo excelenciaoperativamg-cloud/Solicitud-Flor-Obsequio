@@ -1,4 +1,4 @@
-import { SolicitudFlor, TrabajadorMaestro } from '../types';
+import { SolicitudFlor, SolicitudIntExt, TrabajadorMaestro } from '../types';
 
 export interface DriveConfig {
   webhookUrl: string;
@@ -39,6 +39,48 @@ export const createSolicitudApi = async (solicitud: SolicitudFlor): Promise<Soli
   } catch (error: any) {
     throw error instanceof Error ? error : new Error('Error al guardar la solicitud');
   }
+};
+
+export const fetchSolicitudesIntExtApi = async (): Promise<{
+  solicitudes: SolicitudIntExt[];
+  sheetsSupported: boolean;
+  source: string;
+}> => {
+  try {
+    const res = await fetch('/api/solicitudes-int-ext');
+    if (!res.ok) throw new Error('Error al consultar Solicitud Extra');
+    const data = await res.json();
+    return {
+      solicitudes: data.solicitudes || [],
+      sheetsSupported: !!data.sheetsSupported,
+      source: data.source || 'local',
+    };
+  } catch (error) {
+    console.warn('Error consultando Solicitud Extra:', error);
+    return { solicitudes: [], sheetsSupported: false, source: 'error' };
+  }
+};
+
+export const createSolicitudIntExtApi = async (
+  solicitud: SolicitudIntExt
+): Promise<{
+  solicitud: SolicitudIntExt;
+  pendingAppsScriptUpdate?: boolean;
+}> => {
+  const res = await fetch('/api/solicitudes-int-ext', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(solicitud),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Error al guardar en Solicitud Extra');
+  }
+  const data = await res.json();
+  return {
+    solicitud: data.solicitud,
+    pendingAppsScriptUpdate: !!data.pendingAppsScriptUpdate,
+  };
 };
 
 export const fetchMaestroApi = async (): Promise<TrabajadorMaestro[]> => {

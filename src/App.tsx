@@ -7,11 +7,12 @@ import React, { useState, useEffect } from 'react';
 import { User } from 'firebase/auth';
 import { Navbar } from './components/Navbar';
 import { SolicitudForm } from './components/SolicitudForm';
+import { SolicitudIntExtForm } from './components/SolicitudIntExtForm';
 import { SolicitudesTable } from './components/SolicitudesTable';
 import { MaestroTrabajadores } from './components/MaestroTrabajadores';
 import { LoginCodigo } from './components/LoginCodigo';
 import { DriveConfigModal } from './components/DriveConfigModal';
-import { SolicitudFlor, TrabajadorMaestro } from './types';
+import { SolicitudFlor, SolicitudIntExt, TrabajadorMaestro } from './types';
 import {
   TRABAJADORES_INICIALES,
 } from './data/initialData';
@@ -22,6 +23,8 @@ import {
 import {
   fetchSolicitudesApi,
   createSolicitudApi,
+  fetchSolicitudesIntExtApi,
+  createSolicitudIntExtApi,
   fetchMaestroApi,
   addTrabajadorApi,
   getDriveConfigApi,
@@ -34,10 +37,10 @@ import {
   getOrCreateSpreadsheet,
   fetchMaestroFromDrive,
 } from './services/googleDriveSheets';
-import { esRolAdmin, puedeVerHojaMaestro } from './utils/roles';
+import { esRolAdmin, puedeVerHojaMaestro, puedeVerSolicitudIntExt } from './utils/roles';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'formulario' | 'solicitudes' | 'maestro'>('formulario');
+  const [activeTab, setActiveTab] = useState<'formulario' | 'int-ext' | 'solicitudes' | 'maestro'>('formulario');
 
   // Estados de autenticación Google (opcional para administrador)
   const [user, setUser] = useState<User | null>(null);
@@ -59,19 +62,24 @@ export default function App() {
   // Datos principales
   const [maestro, setMaestro] = useState<TrabajadorMaestro[]>(TRABAJADORES_INICIALES);
   const [solicitudes, setSolicitudes] = useState<SolicitudFlor[]>([]);
+  const [solicitudesIntExt, setSolicitudesIntExt] = useState<SolicitudIntExt[]>([]);
+  const [intExtSheetsSupported, setIntExtSheetsSupported] = useState<boolean>(true);
 
   const esAdmin = esRolAdmin(sesion);
   const puedeVerMaestro = puedeVerHojaMaestro(sesion);
+  const puedeVerIntExt = puedeVerSolicitudIntExt(sesion);
 
-  // Si el usuario no es admin o no tiene permiso de Maestro, redirigir al formulario
+  // Redirigir al formulario si el usuario no tiene permiso para la pestaña actual
   useEffect(() => {
     if (!sesion) return;
-    if (!esAdmin && activeTab !== 'formulario') {
+    if (activeTab === 'int-ext' && !puedeVerIntExt) {
+      setActiveTab('formulario');
+    } else if ((activeTab === 'solicitudes' || activeTab === 'maestro') && !esAdmin) {
       setActiveTab('formulario');
     } else if (activeTab === 'maestro' && !puedeVerMaestro) {
       setActiveTab('formulario');
     }
-  }, [sesion, esAdmin, puedeVerMaestro, activeTab]);
+  }, [sesion, esAdmin, puedeVerMaestro, puedeVerIntExt, activeTab]);
 
   // Mostrar toast temporal
   const mostrarToast = (mensaje: string) => {
@@ -85,14 +93,19 @@ export default function App() {
   useEffect(() => {
     const cargarDatosIniciales = async () => {
       try {
-        const [solis, maest, cfg] = await Promise.all([
+        const [solis, intExtRes, maest, cfg] = await Promise.all([
           fetchSolicitudesApi(),
+          fetchSolicitudesIntExtApi(),
           fetchMaestroApi(),
           getDriveConfigApi(),
         ]);
 
         if (Array.isArray(solis)) {
           setSolicitudes(solis);
+        }
+        if (intExtRes && Array.isArray(intExtRes.solicitudes)) {
+          setSolicitudesIntExt(intExtRes.solicitudes);
+          setIntExtSheetsSupported(intExtRes.sheetsSupported || intExtRes.source === 'sheets');
         }
         if (maest && maest.length > 0) {
           setMaestro(maest);
@@ -154,6 +167,41 @@ export default function App() {
       } catch {}
       return { success: false, error: err.message || 'Error al guardar la solicitud' };
     }
+  };
+
+  const handleGuardarSolicitudIntExt = async (
+    nueva: SolicitudIntExt
+  ): Promise<{
+    success: boolean;
+    error?: string;
+    solicitud?: SolicitudIntExt;
+    pendingAppsScriptUpdate?: boolean;
+  }> => {
+    try {
+      const res = await createSolicitudIntExtApi(nueva);
+      const guardada = res.solicitud;
+      setSolicitudesIntExt((prev) => [guardada, ...prev.filter((s) => s.id !== guardada.id)]);
+      if (res.pendingAppsScriptUpdate) {
+        setIntExtSheetsSupported(false);
+        mostrarToast('Solicitud Extra guardada localmente (requiere actualizar versión de Apps Script)');
+      } else {
+        setIntExtSheetsSupported(true);
+        mostrarToast('Solicitud registrada en la hoja Solicitud Extra');
+      }
+      return {
+        success: true,
+        solicitud: guardada,
+        pendingAppsScriptUpdate: res.pendingAppsScriptUpdate,
+      };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Error al guardar la solicitud Extra' };
+    }
+  };
+
+  const handleRecargarIntExt = async () => {
+    const res = await fetchSolicitudesIntExtApi();
+    setSolicitudesIntExt(res.solicitudes || []);
+    setIntExtSheetsSupported(res.sheetsSupported || res.source === 'sheets');
   };
 
   const handleAgregarTrabajador = async (nuevo: TrabajadorMaestro) => {
@@ -231,8 +279,12 @@ export default function App() {
     }
   };
 
-  const handleSetActiveTab = (tab: 'formulario' | 'solicitudes' | 'maestro') => {
-    if (!esAdmin && tab !== 'formulario') {
+  const handleSetActiveTab = (tab: 'formulario' | 'int-ext' | 'solicitudes' | 'maestro') => {
+    if (tab === 'int-ext' && !puedeVerIntExt) {
+      setActiveTab('formulario');
+      return;
+    }
+    if ((tab === 'solicitudes' || tab === 'maestro') && !esAdmin) {
       setActiveTab('formulario');
       return;
     }
@@ -288,7 +340,7 @@ export default function App() {
           />
         ) : (
           <>
-            {(activeTab === 'formulario' || !esAdmin) && (
+            {activeTab === 'formulario' && (
               <SolicitudForm
                 maestro={maestro}
                 solicitudes={solicitudes}
@@ -297,6 +349,20 @@ export default function App() {
                 spreadsheetLink={esAdmin ? spreadsheetLink || driveConfig.spreadsheetUrl : null}
                 onRecargarMaestroDeDrive={esAdmin ? handleRecargarDeDrive : undefined}
                 sesion={sesion}
+                onCerrarSesion={() => {
+                  setSesion(null);
+                  setActiveTab('formulario');
+                }}
+              />
+            )}
+
+            {puedeVerIntExt && activeTab === 'int-ext' && (
+              <SolicitudIntExtForm
+                sesion={sesion}
+                solicitudesIntExt={solicitudesIntExt}
+                sheetsSupported={intExtSheetsSupported}
+                onGuardarSolicitudIntExt={handleGuardarSolicitudIntExt}
+                onRecargarIntExt={handleRecargarIntExt}
                 onCerrarSesion={() => {
                   setSesion(null);
                   setActiveTab('formulario');

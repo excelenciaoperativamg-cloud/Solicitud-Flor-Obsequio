@@ -115,3 +115,29 @@ export function tieneFormularioTodosLosDias(trabajador?: TrabajadorMaestro | nul
     cargo.includes('informacion')
   );
 }
+
+/**
+ * Controla si el usuario puede acceder al formulario "Solicitud Int-Ext":
+ * - AUXILIAR GESTIÓN HUMANA EAI
+ * - ANALISTA GESTIÓN DE INFORMACIÓN EAI (administrador con todas las pestañas visibles)
+ */
+export function puedeVerSolicitudIntExt(trabajador?: TrabajadorMaestro | null): boolean {
+  if (!trabajador) return false;
+
+  const cargo = String(trabajador.cargo || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (cargo.includes('auxiliar') && cargo.includes('gestion') && cargo.includes('humana')) {
+    return true;
+  }
+
+  if (cargo.includes('analista') && cargo.includes('gestion') && cargo.includes('informacion')) {
+    return true;
+  }
+
+  return false;
+}

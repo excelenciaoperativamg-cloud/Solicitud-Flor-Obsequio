@@ -1,13 +1,13 @@
 import React from 'react';
-import { Flower, Users, FileText, Cloud, Settings } from 'lucide-react';
+import { Flower, Users, FileText, Cloud, Settings, FilePlus2 } from 'lucide-react';
 import { User } from 'firebase/auth';
 import { DriveConfig } from '../services/apiClient';
 import { TrabajadorMaestro } from '../types';
-import { esRolAdmin, puedeVerHojaMaestro } from '../utils/roles';
+import { esRolAdmin, puedeVerHojaMaestro, puedeVerSolicitudIntExt } from '../utils/roles';
 
 interface NavbarProps {
-  activeTab: 'formulario' | 'solicitudes' | 'maestro';
-  setActiveTab: (tab: 'formulario' | 'solicitudes' | 'maestro') => void;
+  activeTab: 'formulario' | 'int-ext' | 'solicitudes' | 'maestro';
+  setActiveTab: (tab: 'formulario' | 'int-ext' | 'solicitudes' | 'maestro') => void;
   user: User | null;
   spreadsheetLink: string | null;
   driveConfig: DriveConfig;
@@ -31,6 +31,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   const isDriveActive = !!(driveConfig.webhookUrl || user);
   const esAdmin = esRolAdmin(sesion);
   const verMaestro = puedeVerHojaMaestro(sesion);
+  const verIntExt = puedeVerSolicitudIntExt(sesion);
   // En pantalla de login no se muestran pestañas ni accesos a Drive
   const mostrarTabs = !!sesion;
   // Hoja de Drive y config solo para roles admin
@@ -131,44 +132,56 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
 
             {esAdmin && (
-              <>
-                <button
-                  onClick={() => setActiveTab('solicitudes')}
-                  className={`flex items-center gap-2 px-3.5 py-2 text-xs sm:text-sm font-bold rounded-lg transition whitespace-nowrap cursor-pointer ${
-                    activeTab === 'solicitudes'
-                      ? 'bg-[#0a2958] text-white shadow-xs'
-                      : 'text-slate-600 hover:text-[#0a2958] hover:bg-slate-100'
-                  }`}
-                >
-                  <FileText className="w-4 h-4" />
-                  <span>Registro de Solicitudes</span>
-                  {totalSolicitudes > 0 && (
-                    <span
-                      className={`ml-1 px-1.5 py-0.2 rounded-full text-[11px] font-bold ${
-                        activeTab === 'solicitudes'
-                          ? 'bg-[#E60000] text-white'
-                          : 'bg-slate-200 text-slate-700'
-                      }`}
-                    >
-                      {totalSolicitudes}
-                    </span>
-                  )}
-                </button>
-
-                {verMaestro && (
-                  <button
-                    onClick={() => setActiveTab('maestro')}
-                    className={`flex items-center gap-2 px-3.5 py-2 text-xs sm:text-sm font-bold rounded-lg transition whitespace-nowrap cursor-pointer ${
-                      activeTab === 'maestro'
-                        ? 'bg-[#0a2958] text-white shadow-xs'
-                        : 'text-slate-600 hover:text-[#0a2958] hover:bg-slate-100'
+              <button
+                onClick={() => setActiveTab('solicitudes')}
+                className={`flex items-center gap-2 px-3.5 py-2 text-xs sm:text-sm font-bold rounded-lg transition whitespace-nowrap cursor-pointer ${
+                  activeTab === 'solicitudes'
+                    ? 'bg-[#0a2958] text-white shadow-xs'
+                    : 'text-slate-600 hover:text-[#0a2958] hover:bg-slate-100'
+                }`}
+              >
+                <FileText className="w-4 h-4" />
+                <span>Resumen Solicitudes</span>
+                {totalSolicitudes > 0 && (
+                  <span
+                    className={`ml-1 px-1.5 py-0.2 rounded-full text-[11px] font-bold ${
+                      activeTab === 'solicitudes'
+                        ? 'bg-[#E60000] text-white'
+                        : 'bg-slate-200 text-slate-700'
                     }`}
                   >
-                    <Users className="w-4 h-4" />
-                    <span>Actualizar Maestro</span>
-                  </button>
+                    {totalSolicitudes}
+                  </span>
                 )}
-              </>
+              </button>
+            )}
+
+            {verIntExt && (
+              <button
+                onClick={() => setActiveTab('int-ext')}
+                className={`flex items-center gap-2 px-3.5 py-2 text-xs sm:text-sm font-bold rounded-lg transition whitespace-nowrap cursor-pointer ${
+                  activeTab === 'int-ext'
+                    ? 'bg-[#0a2958] text-white shadow-xs'
+                    : 'text-slate-600 hover:text-[#0a2958] hover:bg-slate-100'
+                }`}
+              >
+                <FilePlus2 className={`w-4 h-4 ${activeTab === 'int-ext' ? 'text-[#E60000]' : ''}`} />
+                <span>Solicitud Extra</span>
+              </button>
+            )}
+
+            {esAdmin && verMaestro && (
+              <button
+                onClick={() => setActiveTab('maestro')}
+                className={`flex items-center gap-2 px-3.5 py-2 text-xs sm:text-sm font-bold rounded-lg transition whitespace-nowrap cursor-pointer ${
+                  activeTab === 'maestro'
+                    ? 'bg-[#0a2958] text-white shadow-xs'
+                    : 'text-slate-600 hover:text-[#0a2958] hover:bg-slate-100'
+                }`}
+              >
+                <Users className="w-4 h-4" />
+                <span>Actualizar Maestro</span>
+              </button>
             )}
           </nav>
         )}

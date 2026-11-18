@@ -14,6 +14,7 @@ export const DEFAULT_CONFIG = {
 };
 
 let cacheSolicitudes = null;
+let cacheSolicitudesIntExt = null;
 let cacheMaestro = null;
 let cacheConfig = null;
 
@@ -60,6 +61,17 @@ export function getSolicitudesStorage() {
 export function saveSolicitudesStorage(data) {
   cacheSolicitudes = data;
   safeWrite('solicitudes.json', data);
+}
+
+export function getSolicitudesIntExtStorage() {
+  if (cacheSolicitudesIntExt) return cacheSolicitudesIntExt;
+  cacheSolicitudesIntExt = safeRead('solicitudes-int-ext.json', []);
+  return cacheSolicitudesIntExt;
+}
+
+export function saveSolicitudesIntExtStorage(data) {
+  cacheSolicitudesIntExt = data;
+  safeWrite('solicitudes-int-ext.json', data);
 }
 
 export function getMaestroStorage() {

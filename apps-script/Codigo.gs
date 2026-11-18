@@ -58,7 +58,8 @@ function leerTrabajadores(ss) {
   var sheets = ss.getSheets();
   var sheetMaestro = null;
   for (var i = 0; i < sheets.length; i++) {
-    if (sheets[i].getName() === "Solicitudes") continue;
+    var sName = sheets[i].getName();
+    if (sName === "Solicitudes" || sName === "Solicitud Extra" || sName === "Solicitud_Int-Ext") continue;
     var val = sheets[i].getRange(1, 1).getValue();
     if (val && String(val).toUpperCase().indexOf("ID") !== -1) {
       sheetMaestro = sheets[i];
@@ -96,7 +97,7 @@ function leerSolicitudes(ss) {
       var i = indiceColumnaEstricto(headers, pistas);
       return i >= 0 ? row[i] : "";
     }
-    var id = String(cel(["ID", "ID"]) || row[0] || "").trim();
+    var id = String(cel(["ID"]) || row[0] || "").trim();
     if (!id) continue;
     var producto = String(cel(["PRODUCTO"]) || "");
     var fechaEntrega = cel(["FECHA ENTREGA", "ENTREGA"]);
@@ -143,6 +144,52 @@ function leerSolicitudes(ss) {
   return out;
 }
 
+function leerSolicitudesIntExt(ss) {
+  var sheet = ss.getSheetByName("Solicitud Extra") || ss.getSheetByName("Solicitud_Int-Ext");
+  if (!sheet) return [];
+  var values = sheet.getDataRange().getValues();
+  if (!values || values.length < 2) return [];
+  var headers = values[0];
+  var out = [];
+  for (var r = 1; r < values.length; r++) {
+    var row = values[r];
+    function cel(pistas) {
+      var i = indiceColumnaEstricto(headers, pistas);
+      return i >= 0 ? row[i] : "";
+    }
+    var id = String(cel(["ID"]) || row[0] || "").trim();
+    if (!id) continue;
+    var fechaSolicitud = cel(["FECHA SOLICITUD", "FECHA DE SOLICITUD", "FECHA"]);
+    if (fechaSolicitud instanceof Date) {
+      fechaSolicitud = Utilities.formatDate(fechaSolicitud, Session.getScriptTimeZone(), "yyyy-MM-dd");
+    }
+    var fechaEntrega = cel(["FECHA ENTREGA", "FECHA DE ENTREGA", "ENTREGA"]);
+    if (fechaEntrega instanceof Date) {
+      fechaEntrega = Utilities.formatDate(fechaEntrega, Session.getScriptTimeZone(), "yyyy-MM-dd");
+    }
+    var cantidadRaw = cel(["CANTIDAD"]);
+    var cantidadNum = Number(cantidadRaw);
+    if (!cantidadNum || isNaN(cantidadNum)) cantidadNum = 1;
+    out.push({
+      id: id,
+      fechaSolicitud: String(fechaSolicitud || ""),
+      codigo: String(cel(["CÓDIGO", "CODIGO"]) || ""),
+      nombre: String(cel(["NOMBRE"]) || ""),
+      sede: String(cel(["SEDE"]) || ""),
+      area: String(cel(["ÁREA", "AREA"]) || ""),
+      producto: String(cel(["PRODUCTO"]) || ""),
+      cantidad: cantidadNum,
+      motivo: String(cel(["MOTIVO"]) || ""),
+      semana: String(cel(["SEMANA"]) || ""),
+      fechaEntrega: String(fechaEntrega || ""),
+      observacion: String(cel(["OBSERVACIÓN", "OBSERVACION", "OBSERVACIONES"]) || ""),
+      estado: String(cel(["ESTADO"]) || "Registrada"),
+      creadoEn: new Date().getTime()
+    });
+  }
+  return out;
+}
+
 function responder(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
 }
@@ -153,13 +200,16 @@ function doGet(e) {
     if (!ss) return responder({ status: "error", message: "No se pudo abrir la hoja" });
     var workers = leerTrabajadores(ss);
     var solicitudes = leerSolicitudes(ss);
+    var solicitudesIntExt = leerSolicitudesIntExt(ss);
     return responder({
       status: "success",
       message: "Conexión exitosa",
       spreadsheetName: ss.getName(),
       totalWorkers: workers.length,
       workers: workers,
-      solicitudes: solicitudes
+      solicitudes: solicitudes,
+      solicitudesIntExt: solicitudesIntExt,
+      supportsIntExt: true
     });
   } catch (err) {
     return responder({ status: "error", message: String(err) });
@@ -213,6 +263,50 @@ function escribirSolicitud(sheet, data) {
   sheet.appendRow(fila);
 }
 
+/**
+ * Escribe una fila en la hoja Solicitud Extra:
+ * Id | Fecha Solicitud | Código | Nombre | Sede | Area | Producto | Cantidad | Motivo | Semana | Fecha Entrega | Observación | Estado
+ */
+function escribirSolicitudIntExt(sheet, data) {
+  var headers = sheet.getLastRow() > 0 ? sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0] : [];
+  var headersDefault = [
+    "Id", "Fecha Solicitud", "Código", "Nombre", "Sede", "Area",
+    "Producto", "Cantidad", "Motivo", "Semana", "Fecha Entrega", "Observación", "Estado"
+  ];
+  if (!headers.length || !headers[0]) {
+    headers = headersDefault;
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.getRange(1, 1, 1, headers.length).setFontWeight("bold").setBackground("#0a2958").setFontColor("#ffffff");
+  }
+
+  var cantidadNum = Number(data.cantidad);
+  if (!cantidadNum || isNaN(cantidadNum)) cantidadNum = 1;
+
+  function valorParaHeader(headerRaw) {
+    var h = String(headerRaw || "").toUpperCase().replace(/\s+/g, " ").trim();
+    if (h === "ID" || h === "ID.") return data.id || ("SIE-" + new Date().getTime());
+    if (h.indexOf("ENTREGA") !== -1) return data.fechaEntrega || "";
+    if (h.indexOf("SOLICITUD") !== -1 || h === "FECHA") return data.fechaSolicitud || "";
+    if (h.indexOf("CÓDIGO") !== -1 || h.indexOf("CODIGO") !== -1) return data.codigo || "";
+    if (h.indexOf("NOMBRE") !== -1) return data.nombre || "";
+    if (h.indexOf("SEDE") !== -1) return data.sede || "";
+    if (h.indexOf("ÁREA") !== -1 || h.indexOf("AREA") !== -1) return data.area || "";
+    if (h.indexOf("PRODUCTO") !== -1) return data.producto || "";
+    if (h.indexOf("CANTIDAD") !== -1) return cantidadNum;
+    if (h.indexOf("MOTIVO") !== -1) return data.motivo || "";
+    if (h.indexOf("SEMANA") !== -1) return data.semana || "";
+    if (h.indexOf("OBSERVACI") !== -1) return data.observacion || "";
+    if (h.indexOf("ESTADO") !== -1) return data.estado || "Registrada";
+    return "";
+  }
+
+  var fila = [];
+  for (var c = 0; c < headers.length; c++) {
+    fila.push(valorParaHeader(headers[c]));
+  }
+  sheet.appendRow(fila);
+}
+
 function doPost(e) {
   try {
     var ss = getSpreadsheet();
@@ -229,7 +323,21 @@ function doPost(e) {
         spreadsheetName: ss.getName(),
         totalWorkers: workers.length,
         workers: workers,
-        solicitudes: leerSolicitudes(ss)
+        solicitudes: leerSolicitudes(ss),
+        solicitudesIntExt: leerSolicitudesIntExt(ss),
+        supportsIntExt: true
+      });
+    }
+
+    if (data.action === "registrar_int_ext" || data.hoja === "Solicitud Extra" || data.hoja === "Solicitud_Int-Ext") {
+      var sheetIntExt = ss.getSheetByName("Solicitud Extra") || ss.insertSheet("Solicitud Extra");
+      escribirSolicitudIntExt(sheetIntExt, data);
+      return responder({
+        status: "success",
+        message: "Solicitud registrada en Solicitud Extra",
+        id: data.id,
+        solicitudesIntExt: leerSolicitudesIntExt(ss),
+        supportsIntExt: true
       });
     }
 

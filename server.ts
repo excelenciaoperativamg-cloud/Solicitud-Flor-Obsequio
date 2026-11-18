@@ -9,6 +9,7 @@ import driveTestHandler from './api/drive-test.js';
 import maestroHandler from './api/maestro.js';
 import pingHandler from './api/ping.js';
 import solicitudesHandler from './api/solicitudes.js';
+import solicitudesIntExtHandler from './api/solicitudes-int-ext.js';
 import maestroSyncHandler from './api/maestro/sync-from-drive.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -28,6 +29,7 @@ app.all('/api/drive-config', (req, res) => driveConfigHandler(req, res));
 app.all('/api/drive-test', (req, res) => driveTestHandler(req, res));
 app.all('/api/maestro', (req, res) => maestroHandler(req, res));
 app.all('/api/solicitudes', (req, res) => solicitudesHandler(req, res));
+app.all('/api/solicitudes-int-ext', (req, res) => solicitudesIntExtHandler(req, res));
 app.all('/api/maestro/sync-from-drive', (req, res) => maestroSyncHandler(req, res));
 
 // Iniciar servidor Vite o estático

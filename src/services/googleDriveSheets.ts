@@ -1,7 +1,7 @@
 /**
  * Servicio de sincronización e integración con Google Drive y Google Sheets
  */
-import { SolicitudFlor, TrabajadorMaestro } from '../types';
+import { SolicitudFlor, SolicitudIntExt, TrabajadorMaestro } from '../types';
 
 export const SPREADSHEET_TITLE = 'Solicitud Flor Obsequio';
 
@@ -409,4 +409,94 @@ export const fetchMaestroFromDrive = async (
         activo: (r[4] || 'Activo').toLowerCase() !== 'inactivo',
       };
     });
+};
+
+/**
+ * Agrega una fila a la pestaña "Solicitud Extra" de Google Sheets
+ */
+export const appendSolicitudIntExtToDrive = async (
+  accessToken: string,
+  spreadsheetId: string,
+  solicitud: SolicitudIntExt
+): Promise<boolean> => {
+  const rowValues = [
+    [
+      solicitud.id,
+      solicitud.fechaSolicitud,
+      solicitud.codigo,
+      solicitud.nombre,
+      solicitud.sede,
+      solicitud.area,
+      solicitud.producto,
+      solicitud.cantidad,
+      solicitud.motivo,
+      solicitud.semana || '',
+      solicitud.fechaEntrega,
+      solicitud.observacion || '',
+      solicitud.estado || 'Registrada',
+    ],
+  ];
+
+  const sheetRange = encodeURIComponent('Solicitud Extra!A:M');
+  const res = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${sheetRange}:append?valueInputOption=USER_ENTERED`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ values: rowValues }),
+    }
+  );
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error?.message || 'Error al guardar en Solicitud Extra');
+  }
+
+  return true;
+};
+
+/**
+ * Lee todas las filas registradas en la hoja "Solicitud Extra" de Google Sheets
+ */
+export const fetchSolicitudesIntExtFromDrive = async (
+  accessToken: string,
+  spreadsheetId: string
+): Promise<SolicitudIntExt[]> => {
+  const sheetRange = encodeURIComponent('Solicitud Extra!A2:M');
+  const res = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${sheetRange}`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    }
+  );
+
+  if (!res.ok) return [];
+
+  const data = await res.json();
+  const rows: string[][] = data.values || [];
+
+  return rows
+    .filter((r) => r.length >= 4 && r[0])
+    .map((r) => ({
+      id: String(r[0] || '').trim(),
+      fechaSolicitud: String(r[1] || '').trim(),
+      codigo: String(r[2] || '').trim(),
+      nombre: String(r[3] || '').trim(),
+      sede: String(r[4] || '').trim(),
+      area: String(r[5] || '').trim(),
+      producto: String(r[6] || '').trim(),
+      cantidad: Math.max(1, parseInt(r[7], 10) || 1),
+      motivo: String(r[8] || '').trim(),
+      semana: String(r[9] || '').trim(),
+      fechaEntrega: String(r[10] || '').trim(),
+      observacion: String(r[11] || '').trim(),
+      estado: String(r[12] || 'Registrada').trim(),
+      syncedToDrive: true,
+      creadoEn: Date.now(),
+    }));
 };
