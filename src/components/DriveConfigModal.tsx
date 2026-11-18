@@ -224,7 +224,7 @@ function leerSolicitudes(ss) {
 }
 
 function leerSolicitudesIntExt(ss) {
-  var sheet = ss.getSheetByName("Solicitud Extra") || ss.getSheetByName("Solicitud_Int-Ext");
+  var sheet = ss.getSheetByName("Especiales Empresa") || ss.getSheetByName("Solicitud Extra") || ss.getSheetByName("Solicitud_Int-Ext");
   if (!sheet) return [];
   var values = sheet.getDataRange().getValues();
   if (!values || values.length < 2) return [];
@@ -404,12 +404,12 @@ function doPost(e) {
       });
     }
 
-    if (data.action === "registrar_int_ext" || data.hoja === "Solicitud Extra" || data.hoja === "Solicitud_Int-Ext") {
-      var sheetIntExt = ss.getSheetByName("Solicitud Extra") || ss.insertSheet("Solicitud Extra");
+    if (data.action === "registrar_int_ext" || data.hoja === "Especiales Empresa" || data.hoja === "Solicitud Extra" || data.hoja === "Solicitud_Int-Ext") {
+      var sheetIntExt = ss.getSheetByName("Especiales Empresa") || ss.getSheetByName("Solicitud Extra") || ss.insertSheet("Especiales Empresa");
       escribirSolicitudIntExt(sheetIntExt, data);
       return responder({
         status: "success",
-        message: "Solicitud registrada en Solicitud Extra",
+        message: "Solicitud registrada en Especiales Empresa",
         id: data.id,
         solicitudesIntExt: leerSolicitudesIntExt(ss),
         supportsIntExt: true

@@ -209,7 +209,7 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
           });
         } catch {}
       } else {
-        setErrores({ general: res.error || 'No se pudo registrar la solicitud Extra.' });
+        setErrores({ general: res.error || 'No se pudo registrar la solicitud en Especiales Empresa.' });
       }
     } catch (err: any) {
       setErrores({ general: err.message || 'Error inesperado al registrar.' });
@@ -260,8 +260,8 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
     }));
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Solicitud Extra');
-    XLSX.writeFile(wb, `Solicitud_Extra_${getTodayString()}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, ws, 'Especiales Empresa');
+    XLSX.writeFile(wb, `Especiales_Empresa_${getTodayString()}.xlsx`);
   };
 
   return (
@@ -275,12 +275,12 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
             <div className="text-center mb-4">
               <h3 className="text-xl font-extrabold text-[#0a2958] mb-1">¡Registro Exitoso!</h3>
               <p className="text-xs text-slate-600">
-                La solicitud fue registrada en <strong>Solicitud Extra</strong>.
+                La solicitud fue registrada en <strong>Especiales Empresa</strong>.
               </p>
               {avisoPendienteScript && (
                 <div className="mt-3 p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[11px] text-left">
                   Se guardó en el respaldo del servidor. Para que escriba directamente en la pestaña{' '}
-                  <strong>Solicitud Extra</strong> de Google Sheets, actualice la versión del código en{' '}
+                  <strong>Especiales Empresa</strong> de Google Sheets, actualice la versión del código en{' '}
                   <strong>Conexión con Drive</strong>.
                 </div>
               )}
@@ -344,7 +344,7 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
         </div>
       )}
 
-      {/* Formulario principal SOLICITUD EXTRA */}
+      {/* Formulario principal ESPECIALES EMPRESA */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3 bg-gradient-to-r from-slate-50 to-white">
           <div className="flex items-center gap-3">
@@ -352,7 +352,7 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
               <FilePlus2 className="w-5 h-5 text-[#E60000]" />
             </div>
             <h2 className="text-base font-extrabold text-[#0a2958] uppercase tracking-wide">
-              SOLICITUD EXTRA
+              ESPECIALES EMPRESA
             </h2>
           </div>
 
@@ -375,7 +375,7 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
           <div className="mx-6 mt-5 p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start gap-2.5">
             <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
             <div>
-              La hoja <strong>Solicitud Extra</strong> aún no responde desde el webhook activo de Apps Script. Para sincronizar en tiempo real con Google Sheets, copie el código actualizado desde <strong>Conexión con Drive</strong> e implemente una <strong>Nueva versión</strong>.
+              La hoja <strong>Especiales Empresa</strong> aún no responde desde el webhook activo de Apps Script. Para sincronizar en tiempo real con Google Sheets, copie el código actualizado desde <strong>Conexión con Drive</strong> e implemente una <strong>Nueva versión</strong>.
             </div>
           </div>
         )}
@@ -712,7 +712,7 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
               ) : (
                 <>
                   <Send className="w-4 h-4 text-[#E60000]" />
-                  <span>Registrar Solicitud Extra</span>
+                  <span>Registrar Especiales Empresa</span>
                 </>
               )}
             </button>
@@ -720,15 +720,15 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
         </form>
       </div>
 
-      {/* Historial de registros en hoja Solicitud Extra */}
+      {/* Historial de registros en hoja Especiales Empresa */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 className="text-sm font-extrabold text-[#0a2958]">
-              Registros en Solicitud Extra ({solicitudesFiltradas.length})
+              Registros en Especiales Empresa ({solicitudesFiltradas.length})
             </h3>
             <p className="text-xs text-slate-500">
-              Historial de solicitudes internas y externas registradas
+              Historial de solicitudes registradas en Especiales Empresa
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -795,7 +795,7 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
               {solicitudesFiltradas.length === 0 ? (
                 <tr>
                   <td colSpan={13} className="py-8 text-center text-slate-400">
-                    No hay registros en Solicitud Extra todavía.
+                    No hay registros en Especiales Empresa todavía.
                   </td>
                 </tr>
               ) : (

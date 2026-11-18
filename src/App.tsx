@@ -12,6 +12,7 @@ import { SolicitudesTable } from './components/SolicitudesTable';
 import { MaestroTrabajadores } from './components/MaestroTrabajadores';
 import { LoginCodigo } from './components/LoginCodigo';
 import { DriveConfigModal } from './components/DriveConfigModal';
+import { SidebarNavegacion, TabNavegacion } from './components/SidebarNavegacion';
 import { SolicitudFlor, SolicitudIntExt, TrabajadorMaestro } from './types';
 import {
   TRABAJADORES_INICIALES,
@@ -38,10 +39,16 @@ import {
   getOrCreateSpreadsheet,
   fetchMaestroFromDrive,
 } from './services/googleDriveSheets';
-import { esRolAdmin, puedeVerHojaMaestro, puedeVerSolicitudIntExt } from './utils/roles';
+import {
+  esRolAdmin,
+  esAdministradorSistema,
+  puedeVerHojaMaestro,
+  puedeVerSolicitudIntExt,
+} from './utils/roles';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'formulario' | 'int-ext' | 'solicitudes' | 'maestro'>('formulario');
+  const [activeTab, setActiveTab] = useState<TabNavegacion>('formulario');
+  const [menuMovilAbierto, setMenuMovilAbierto] = useState(false);
 
   // Estados de autenticación Google (opcional para administrador)
   const [user, setUser] = useState<User | null>(null);
@@ -67,6 +74,7 @@ export default function App() {
   const [intExtSheetsSupported, setIntExtSheetsSupported] = useState<boolean>(true);
 
   const esAdmin = esRolAdmin(sesion);
+  const esAdminSistema = esAdministradorSistema(sesion);
   const puedeVerMaestro = puedeVerHojaMaestro(sesion);
   const puedeVerIntExt = puedeVerSolicitudIntExt(sesion);
 
@@ -191,10 +199,10 @@ export default function App() {
       setSolicitudesIntExt((prev) => [guardada, ...prev.filter((s) => s.id !== guardada.id)]);
       if (res.pendingAppsScriptUpdate) {
         setIntExtSheetsSupported(false);
-        mostrarToast('Solicitud Extra guardada localmente (requiere actualizar versión de Apps Script)');
+        mostrarToast('Especiales Empresa guardado localmente (requiere actualizar versión de Apps Script)');
       } else {
         setIntExtSheetsSupported(true);
-        mostrarToast('Solicitud registrada en la hoja Solicitud Extra');
+        mostrarToast('Solicitud registrada en la hoja Especiales Empresa');
       }
       return {
         success: true,
@@ -202,7 +210,7 @@ export default function App() {
         pendingAppsScriptUpdate: res.pendingAppsScriptUpdate,
       };
     } catch (err: any) {
-      return { success: false, error: err.message || 'Error al guardar la solicitud Extra' };
+      return { success: false, error: err.message || 'Error al guardar en Especiales Empresa' };
     }
   };
 
@@ -293,7 +301,7 @@ export default function App() {
     }
   };
 
-  const handleSetActiveTab = (tab: 'formulario' | 'int-ext' | 'solicitudes' | 'maestro') => {
+  const handleSetActiveTab = (tab: TabNavegacion) => {
     if (tab === 'int-ext' && !puedeVerIntExt) {
       setActiveTab('formulario');
       return;
@@ -309,8 +317,14 @@ export default function App() {
     setActiveTab(tab);
   };
 
+  const handleCerrarSesion = () => {
+    setSesion(null);
+    setMenuMovilAbierto(false);
+    setActiveTab('formulario');
+  };
+
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans">
+    <div className="min-h-screen bg-slate-50 text-slate-800 flex font-sans">
       {syncToast && (
         <div className="fixed bottom-4 right-4 z-50 bg-[#0a2958] text-white text-xs font-bold py-2.5 px-4 rounded-xl shadow-xl border border-white/20 animate-in fade-in slide-in-from-bottom-2 duration-200">
           {syncToast}
@@ -318,107 +332,117 @@ export default function App() {
       )}
 
       <DriveConfigModal
-        isOpen={isDriveModalOpen && esAdmin}
+        isOpen={isDriveModalOpen && esAdminSistema}
         onClose={() => setIsDriveModalOpen(false)}
         config={driveConfig}
         onGuardarConfig={handleGuardarDriveConfig}
         onProbarConexion={handleProbarConexionDrive}
       />
 
-      <Navbar
-        activeTab={activeTab}
-        setActiveTab={handleSetActiveTab}
-        user={user}
-        spreadsheetLink={spreadsheetLink || driveConfig.spreadsheetUrl}
-        driveConfig={driveConfig}
-        onOpenDriveModal={() => {
-          if (esAdmin) setIsDriveModalOpen(true);
-        }}
-        totalSolicitudes={solicitudes.length}
-        sesion={sesion}
-        onCerrarSesion={() => {
-          setSesion(null);
-          setActiveTab('formulario');
-        }}
-      />
+      {/* Menú lateral izquierdo fijo (visible al iniciar sesión) */}
+      {sesion && (
+        <SidebarNavegacion
+          activeTab={activeTab}
+          onSelectTab={handleSetActiveTab}
+          sesion={sesion}
+          onCerrarSesion={handleCerrarSesion}
+          totalSolicitudes={solicitudes.length}
+          driveConfig={driveConfig}
+          userGoogleConnected={!!user}
+          onOpenDriveModal={() => {
+            if (esAdminSistema) setIsDriveModalOpen(true);
+          }}
+          abiertoMovil={menuMovilAbierto}
+          onCerrarMovil={() => setMenuMovilAbierto(false)}
+        />
+      )}
 
-      <main className="flex-1">
-        {!sesion ? (
-          <LoginCodigo
-            maestro={maestro}
-            cargando={maestro.length === 0}
-            onIngresar={(t) => {
-              setSesion(t);
-              setActiveTab('formulario');
-            }}
-          />
-        ) : (
-          <>
-            {activeTab === 'formulario' && (
-              <SolicitudForm
-                maestro={maestro}
-                solicitudes={solicitudes}
-                onGuardarSolicitud={handleGuardarSolicitud}
-                isDriveConnected={!!driveConfig.webhookUrl}
-                spreadsheetLink={esAdmin ? spreadsheetLink || driveConfig.spreadsheetUrl : null}
-                onRecargarMaestroDeDrive={esAdmin ? handleRecargarDeDrive : undefined}
-                sesion={sesion}
-                onCerrarSesion={() => {
-                  setSesion(null);
-                  setActiveTab('formulario');
-                }}
-              />
-            )}
+      {/* Área principal a la derecha del menú lateral */}
+      <div className="flex-1 min-w-0 flex flex-col min-h-screen">
+        <Navbar
+          activeTab={activeTab}
+          user={user}
+          driveConfig={driveConfig}
+          onOpenDriveModal={() => {
+            if (esAdminSistema) setIsDriveModalOpen(true);
+          }}
+          sesion={sesion}
+          onToggleMenuMovil={() => setMenuMovilAbierto((prev) => !prev)}
+        />
 
-            {puedeVerIntExt && activeTab === 'int-ext' && (
-              <SolicitudIntExtForm
-                sesion={sesion}
-                solicitudesIntExt={solicitudesIntExt}
-                sheetsSupported={intExtSheetsSupported}
-                onGuardarSolicitudIntExt={handleGuardarSolicitudIntExt}
-                onRecargarIntExt={handleRecargarIntExt}
-                onCerrarSesion={() => {
-                  setSesion(null);
-                  setActiveTab('formulario');
-                }}
-              />
-            )}
+        <main className="flex-1 min-w-0">
+          {!sesion ? (
+            <LoginCodigo
+              maestro={maestro}
+              cargando={maestro.length === 0}
+              onIngresar={(t) => {
+                setSesion(t);
+                setMenuMovilAbierto(false);
+                setActiveTab('formulario');
+              }}
+            />
+          ) : (
+            <>
+              {activeTab === 'formulario' && (
+                <SolicitudForm
+                  maestro={maestro}
+                  solicitudes={solicitudes}
+                  onGuardarSolicitud={handleGuardarSolicitud}
+                  isDriveConnected={esAdminSistema && !!driveConfig.webhookUrl}
+                  spreadsheetLink={esAdminSistema ? spreadsheetLink || driveConfig.spreadsheetUrl : null}
+                  onRecargarMaestroDeDrive={esAdminSistema ? handleRecargarDeDrive : undefined}
+                  sesion={sesion}
+                  onCerrarSesion={handleCerrarSesion}
+                />
+              )}
 
-            {esAdmin && activeTab === 'solicitudes' && (
-              <SolicitudesTable
-                solicitudes={solicitudes}
-                isDriveConnected={!!(driveConfig.webhookUrl || user)}
-                spreadsheetLink={spreadsheetLink || driveConfig.spreadsheetUrl}
-                onSincronizarConDrive={async () => {
-                  setIsDriveModalOpen(true);
-                }}
-                isSyncing={isSyncing}
-              />
-            )}
+              {puedeVerIntExt && activeTab === 'int-ext' && (
+                <SolicitudIntExtForm
+                  sesion={sesion}
+                  solicitudesIntExt={solicitudesIntExt}
+                  sheetsSupported={intExtSheetsSupported}
+                  onGuardarSolicitudIntExt={handleGuardarSolicitudIntExt}
+                  onRecargarIntExt={handleRecargarIntExt}
+                  onCerrarSesion={handleCerrarSesion}
+                />
+              )}
 
-            {puedeVerMaestro && activeTab === 'maestro' && (
-              <MaestroTrabajadores
-                maestro={maestro}
-                onAgregarTrabajador={handleAgregarTrabajador}
-                onImportarCSV={handleImportarCSV}
-                isDriveConnected={!!(driveConfig.webhookUrl || user)}
-                onRecargarDeDrive={handleRecargarDeDrive}
-                isSyncing={isSyncing}
-              />
-            )}
-          </>
-        )}
-      </main>
+              {esAdmin && activeTab === 'solicitudes' && (
+                <SolicitudesTable
+                  solicitudes={solicitudes}
+                  isDriveConnected={esAdminSistema && !!(driveConfig.webhookUrl || user)}
+                  spreadsheetLink={esAdminSistema ? spreadsheetLink || driveConfig.spreadsheetUrl : null}
+                  onSincronizarConDrive={async () => {
+                    if (esAdminSistema) setIsDriveModalOpen(true);
+                  }}
+                  isSyncing={isSyncing}
+                />
+              )}
 
-      <footer className="bg-white border-t border-slate-200 py-4 px-4 text-center text-xs text-slate-500">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <span className="font-bold text-[#0a2958]">MG Consultores S.A.S.</span>
-            <span>•</span>
-            <span>Sistema de Flor de Obsequio (Sedes MG, HA, SC)</span>
+              {puedeVerMaestro && activeTab === 'maestro' && (
+                <MaestroTrabajadores
+                  maestro={maestro}
+                  onAgregarTrabajador={handleAgregarTrabajador}
+                  onImportarCSV={handleImportarCSV}
+                  isDriveConnected={!!(driveConfig.webhookUrl || user)}
+                  onRecargarDeDrive={handleRecargarDeDrive}
+                  isSyncing={isSyncing}
+                />
+              )}
+            </>
+          )}
+        </main>
+
+        <footer className="bg-white border-t border-slate-200 py-3.5 px-4 sm:px-6 text-xs text-slate-500">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-[#0a2958]">MG Consultores S.A.S.</span>
+              <span>•</span>
+              <span>Sistema de Flor de Obsequio (Sedes MG, HA, SC)</span>
+            </div>
           </div>
-        </div>
-      </footer>
+        </footer>
+      </div>
     </div>
   );
 }

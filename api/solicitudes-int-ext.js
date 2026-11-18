@@ -70,7 +70,7 @@ export default async function handler(req, res) {
       ) {
         return res.status(400).json({
           success: false,
-          error: 'Faltan campos obligatorios para registrar la Solicitud Extra.',
+          error: 'Faltan campos obligatorios para registrar en Especiales Empresa.',
         });
       }
 
@@ -102,7 +102,7 @@ export default async function handler(req, res) {
 
       const payload = {
         action: 'registrar_int_ext',
-        hoja: 'Solicitud Extra',
+        hoja: 'Especiales Empresa',
         id: idFinal,
         fechaSolicitud: String(nueva.fechaSolicitud || '').trim(),
         codigo: String(nueva.codigo).trim(),
@@ -180,7 +180,7 @@ export default async function handler(req, res) {
   } catch (err) {
     return res.status(500).json({
       success: false,
-      error: err.message || 'Error en Solicitud Extra',
+      error: err.message || 'Error en Especiales Empresa',
     });
   }
 }

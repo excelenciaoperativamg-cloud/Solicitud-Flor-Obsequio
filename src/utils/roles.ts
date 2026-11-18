@@ -117,9 +117,9 @@ export function tieneFormularioTodosLosDias(trabajador?: TrabajadorMaestro | nul
 }
 
 /**
- * Controla si el usuario puede acceder al formulario "Solicitud Int-Ext":
+ * Controla si el usuario puede acceder al formulario "Especiales Empresa" (antes Solicitud Extra):
  * - AUXILIAR GESTIÓN HUMANA EAI
- * - ANALISTA GESTIÓN DE INFORMACIÓN EAI (administrador con todas las pestañas visibles)
+ * - ANALISTA GESTIÓN DE INFORMACIÓN EAI (administrador)
  */
 export function puedeVerSolicitudIntExt(trabajador?: TrabajadorMaestro | null): boolean {
   if (!trabajador) return false;
@@ -140,4 +140,38 @@ export function puedeVerSolicitudIntExt(trabajador?: TrabajadorMaestro | null): 
   }
 
   return false;
+}
+
+/**
+ * Controla si el usuario visualiza el menú lateral derecho de módulos:
+ * - AUXILIAR GESTIÓN HUMANA EAI
+ * - ANALISTA GESTIÓN DE INFORMACIÓN EAI
+ */
+export function puedeVerMenuLateral(trabajador?: TrabajadorMaestro | null): boolean {
+  return puedeVerSolicitudIntExt(trabajador);
+}
+
+/**
+ * Administradores del sistema (ANALISTA GESTIÓN DE INFORMACIÓN EAI):
+ * Únicos usuarios autorizados para visualizar el estado y configuración de Google Drive.
+ */
+export function esAdministradorSistema(trabajador?: TrabajadorMaestro | null): boolean {
+  if (!trabajador) return false;
+
+  const cargo = String(trabajador.cargo || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (
+    cargo.includes('analista') &&
+    cargo.includes('gestion') &&
+    cargo.includes('informacion')
+  ) {
+    return true;
+  }
+
+  return cargo === 'administrador' || cargo.startsWith('administrador ');
 }

@@ -412,7 +412,7 @@ export const fetchMaestroFromDrive = async (
 };
 
 /**
- * Agrega una fila a la pestaña "Solicitud Extra" de Google Sheets
+ * Agrega una fila a la pestaña "Especiales Empresa" de Google Sheets
  */
 export const appendSolicitudIntExtToDrive = async (
   accessToken: string,
@@ -437,7 +437,7 @@ export const appendSolicitudIntExtToDrive = async (
     ],
   ];
 
-  const sheetRange = encodeURIComponent('Solicitud Extra!A:M');
+  const sheetRange = encodeURIComponent('Especiales Empresa!A:M');
   const res = await fetch(
     `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${sheetRange}:append?valueInputOption=USER_ENTERED`,
     {
@@ -452,20 +452,20 @@ export const appendSolicitudIntExtToDrive = async (
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.error?.message || 'Error al guardar en Solicitud Extra');
+    throw new Error(err.error?.message || 'Error al guardar en Especiales Empresa');
   }
 
   return true;
 };
 
 /**
- * Lee todas las filas registradas en la hoja "Solicitud Extra" de Google Sheets
+ * Lee todas las filas registradas en la hoja "Especiales Empresa" de Google Sheets
  */
 export const fetchSolicitudesIntExtFromDrive = async (
   accessToken: string,
   spreadsheetId: string
 ): Promise<SolicitudIntExt[]> => {
-  const sheetRange = encodeURIComponent('Solicitud Extra!A2:M');
+  const sheetRange = encodeURIComponent('Especiales Empresa!A2:M');
   const res = await fetch(
     `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${sheetRange}`,
     {

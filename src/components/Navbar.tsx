@@ -1,190 +1,153 @@
 import React from 'react';
-import { Flower, Users, FileText, Cloud, Settings, FilePlus2 } from 'lucide-react';
+import { Cloud, Settings, Menu, ChevronRight } from 'lucide-react';
 import { User } from 'firebase/auth';
 import { DriveConfig } from '../services/apiClient';
 import { TrabajadorMaestro } from '../types';
-import { esRolAdmin, puedeVerHojaMaestro, puedeVerSolicitudIntExt } from '../utils/roles';
+import { esAdministradorSistema } from '../utils/roles';
+import type { TabNavegacion } from './SidebarNavegacion';
 
 interface NavbarProps {
-  activeTab: 'formulario' | 'int-ext' | 'solicitudes' | 'maestro';
-  setActiveTab: (tab: 'formulario' | 'int-ext' | 'solicitudes' | 'maestro') => void;
+  activeTab: TabNavegacion;
   user: User | null;
-  spreadsheetLink: string | null;
   driveConfig: DriveConfig;
   onOpenDriveModal: () => void;
-  totalSolicitudes: number;
   sesion?: TrabajadorMaestro | null;
-  onCerrarSesion?: () => void;
+  onToggleMenuMovil?: () => void;
 }
+
+const CONTEXTO_POR_TAB: Record<TabNavegacion, { seccion: string; modulo: string; pagina: string }> = {
+  formulario: {
+    seccion: 'Gestión de Solicitudes',
+    modulo: 'Solicitud Personal',
+    pagina: 'Formulario de Solicitud',
+  },
+  solicitudes: {
+    seccion: 'Gestión de Solicitudes',
+    modulo: 'Solicitud Personal',
+    pagina: 'Resumen Solicitud',
+  },
+  'int-ext': {
+    seccion: 'Gestión de Solicitudes',
+    modulo: 'Especiales Empresa',
+    pagina: 'Formulario Especiales Empresa',
+  },
+  maestro: {
+    seccion: 'Administración',
+    modulo: 'Personal',
+    pagina: 'Actualizar Maestro',
+  },
+};
 
 export const Navbar: React.FC<NavbarProps> = ({
   activeTab,
-  setActiveTab,
   user,
-  spreadsheetLink,
   driveConfig,
   onOpenDriveModal,
-  totalSolicitudes,
   sesion,
-  onCerrarSesion,
+  onToggleMenuMovil,
 }) => {
   const isDriveActive = !!(driveConfig.webhookUrl || user);
-  const esAdmin = esRolAdmin(sesion);
-  const verMaestro = puedeVerHojaMaestro(sesion);
-  const verIntExt = puedeVerSolicitudIntExt(sesion);
-  // En pantalla de login no se muestran pestañas ni accesos a Drive
-  const mostrarTabs = !!sesion;
-  // Hoja de Drive y config solo para roles admin
-  const mostrarDrive = !!sesion && esAdmin;
+  const puedeVerDrive = esAdministradorSistema(sesion);
+  const contexto = CONTEXTO_POR_TAB[activeTab];
 
-  return (
-    <header className="bg-white border-b-2 border-[#0a2958]/10 shadow-xs sticky top-0 z-30">
-      {/* Barra superior de acento con color azul y rojo institucional */}
-      <div className="h-1.5 w-full bg-[#0a2958] flex">
-        <div className="w-1/3 bg-[#E60000]"></div>
-      </div>
-
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex flex-col md:flex-row md:items-center justify-between py-3 gap-3">
-          {/* Logo Oficial MG Consultores y Título */}
-          <div className="flex items-center gap-4">
-            <div className="flex items-center bg-white p-1 rounded-xl shadow-xs border border-slate-200">
-              <img
-                src="/assets/aistudio/logo_639f00ab.png"
-                alt="MG Consultores S.A.S."
-                className="h-10 sm:h-12 w-auto object-contain"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).src = '/public/assets/aistudio/logo_639f00ab.png';
-                }}
-              />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-lg sm:text-xl font-extrabold text-[#0a2958] tracking-tight">
-                  Flor de Obsequio
-                </h1>
-                <span className="px-2.5 py-0.5 text-xs font-bold bg-[#E60000]/10 text-[#E60000] rounded-full border border-[#E60000]/20">
-                  Poscosecha
-                </span>
-              </div>
-              <p className="text-xs text-slate-500 font-medium">
-                Gestión de solicitudes y cupos semanales
-              </p>
-            </div>
+  // Encabezado limpio para la pantalla de inicio de sesión (antes de autenticar)
+  if (!sesion) {
+    return (
+      <header className="bg-white border-b border-slate-200 shadow-xs sticky top-0 z-30">
+        <div className="h-1.5 w-full bg-[#0a2958] flex">
+          <div className="w-1/3 bg-[#E60000]"></div>
+        </div>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center gap-4">
+          <div className="flex items-center bg-white p-1 rounded-xl shadow-xs border border-slate-200">
+            <img
+              src="/assets/aistudio/logo_639f00ab.png"
+              alt="MG Consultores S.A.S."
+              className="h-10 sm:h-11 w-auto object-contain"
+              onError={(e) => {
+                (e.target as HTMLImageElement).src = '/public/assets/aistudio/logo_639f00ab.png';
+              }}
+            />
           </div>
-
-          <div className="flex items-center gap-2 flex-wrap">
-            {sesion && (
-              <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-slate-50">
-                <div className="text-left leading-tight">
-                  <div className="text-xs font-bold text-[#0a2958]">{sesion.nombre}</div>
-                  <div className="text-[10px] text-slate-500">
-                    {sesion.codigo} · {sesion.cargo || 'Sin cargo'}
-                  </div>
-                </div>
-                <button type="button" onClick={onCerrarSesion} className="text-[11px] font-bold text-[#E60000]">
-                  Salir
-                </button>
-              </div>
-            )}
-
-            {/* Drive / Ver Hoja solo para Auxiliar de Gestión humana y Poscosecha (admin) */}
-            {mostrarDrive && (
-              <>
-                <button
-                  onClick={onOpenDriveModal}
-                  className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition shadow-xs cursor-pointer border ${
-                    isDriveActive
-                      ? 'bg-emerald-50 text-emerald-900 border-emerald-300 hover:bg-emerald-100'
-                      : 'bg-[#0a2958]/5 text-[#0a2958] border-[#0a2958]/20 hover:bg-[#0a2958]/10'
-                  }`}
-                >
-                  <Cloud className={`w-4 h-4 ${isDriveActive ? 'text-emerald-600' : 'text-[#0a2958]'}`} />
-                  <div className="text-left leading-tight">
-                    <div className="flex items-center gap-1.5">
-                      <span>{isDriveActive ? 'Google Drive Conectado' : 'Conectar Google Drive'}</span>
-                      <span className={`w-2 h-2 rounded-full ${isDriveActive ? 'bg-emerald-500' : 'bg-amber-400'}`}></span>
-                    </div>
-                    <span className="text-[10px] text-slate-500 font-normal block">
-                      {isDriveActive ? 'Guardado automático activo' : 'Configurar sin pedir correo'}
-                    </span>
-                  </div>
-                  <Settings className="w-3.5 h-3.5 text-slate-400 ml-1" />
-                </button>
-              </>
-            )}
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-lg sm:text-xl font-extrabold text-[#0a2958] tracking-tight">
+                Flor de Obsequio
+              </h1>
+              <span className="text-xs font-bold text-[#E60000]">
+                · Poscosecha
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 font-medium">
+              Gestión de solicitudes y cupos semanales
+            </p>
           </div>
         </div>
+      </header>
+    );
+  }
 
-        {/* Pestañas: ocultas en login. Tras ingresar, solo Formulario para no-admin. */}
-        {mostrarTabs && (
-          <nav className="flex space-x-1 sm:space-x-2 border-t border-slate-100 pt-2 overflow-x-auto scrollbar-none">
+  return (
+    <header className="bg-white border-b border-slate-200 sticky top-0 z-20">
+      {/* Barra superior fina de acento corporativo */}
+      <div className="h-1 w-full bg-[#0a2958] flex">
+        <div className="w-1/4 bg-[#E60000]"></div>
+      </div>
+
+      <div className="px-4 sm:px-6 py-2.5 flex items-center justify-between gap-3">
+        {/* Izquierda: botón hamburguesa en móvil/tableta + ruta de navegación contextual */}
+        <div className="flex items-center gap-3 min-w-0">
+          <button
+            type="button"
+            onClick={onToggleMenuMovil}
+            className="lg:hidden inline-flex items-center justify-center w-10 h-10 rounded-xl border border-slate-200 bg-slate-50 text-[#0a2958] hover:bg-slate-100 transition-colors cursor-pointer shrink-0"
+            aria-label="Abrir menú lateral"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+
+          <nav
+            aria-label="Ubicación actual"
+            className="flex items-center gap-1.5 text-xs sm:text-sm min-w-0 truncate"
+          >
+            <span className="hidden sm:inline font-medium text-slate-500 whitespace-nowrap">
+              {contexto.seccion}
+            </span>
+            <ChevronRight className="hidden sm:inline w-3.5 h-3.5 text-slate-400 shrink-0" />
+            <span className="hidden md:inline font-semibold text-slate-700 whitespace-nowrap">
+              {contexto.modulo}
+            </span>
+            <ChevronRight className="hidden md:inline w-3.5 h-3.5 text-slate-400 shrink-0" />
+            <span className="font-extrabold text-[#0a2958] truncate">
+              {contexto.pagina}
+            </span>
+          </nav>
+        </div>
+
+        {/* Derecha: Acceso rápido a Google Drive solo para administradores */}
+        <div className="flex items-center gap-2 shrink-0">
+          {puedeVerDrive && (
             <button
-              onClick={() => setActiveTab('formulario')}
-              className={`flex items-center gap-2 px-3.5 py-2 text-xs sm:text-sm font-bold rounded-lg transition whitespace-nowrap cursor-pointer ${
-                activeTab === 'formulario'
-                  ? 'bg-[#0a2958] text-white shadow-xs'
-                  : 'text-slate-600 hover:text-[#0a2958] hover:bg-slate-100'
+              type="button"
+              onClick={onOpenDriveModal}
+              className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer border whitespace-nowrap ${
+                isDriveActive
+                  ? 'bg-emerald-50 text-emerald-900 border-emerald-300 hover:bg-emerald-100'
+                  : 'bg-[#0a2958]/5 text-[#0a2958] border-[#0a2958]/20 hover:bg-[#0a2958]/10'
               }`}
             >
-              <Flower className={`w-4 h-4 ${activeTab === 'formulario' ? 'text-[#E60000]' : ''}`} />
-              <span>Formulario de Solicitud</span>
+              <Cloud
+                className={`w-4 h-4 shrink-0 ${
+                  isDriveActive ? 'text-emerald-600' : 'text-[#0a2958]'
+                }`}
+              />
+              <span className="hidden sm:inline">
+                {isDriveActive ? 'Google Drive Conectado' : 'Conectar Google Drive'}
+              </span>
+              <span className="sm:hidden">Drive</span>
+              <Settings className="w-3.5 h-3.5 text-slate-400 shrink-0" />
             </button>
-
-            {esAdmin && (
-              <button
-                onClick={() => setActiveTab('solicitudes')}
-                className={`flex items-center gap-2 px-3.5 py-2 text-xs sm:text-sm font-bold rounded-lg transition whitespace-nowrap cursor-pointer ${
-                  activeTab === 'solicitudes'
-                    ? 'bg-[#0a2958] text-white shadow-xs'
-                    : 'text-slate-600 hover:text-[#0a2958] hover:bg-slate-100'
-                }`}
-              >
-                <FileText className="w-4 h-4" />
-                <span>Resumen Solicitudes</span>
-                {totalSolicitudes > 0 && (
-                  <span
-                    className={`ml-1 px-1.5 py-0.2 rounded-full text-[11px] font-bold ${
-                      activeTab === 'solicitudes'
-                        ? 'bg-[#E60000] text-white'
-                        : 'bg-slate-200 text-slate-700'
-                    }`}
-                  >
-                    {totalSolicitudes}
-                  </span>
-                )}
-              </button>
-            )}
-
-            {verIntExt && (
-              <button
-                onClick={() => setActiveTab('int-ext')}
-                className={`flex items-center gap-2 px-3.5 py-2 text-xs sm:text-sm font-bold rounded-lg transition whitespace-nowrap cursor-pointer ${
-                  activeTab === 'int-ext'
-                    ? 'bg-[#0a2958] text-white shadow-xs'
-                    : 'text-slate-600 hover:text-[#0a2958] hover:bg-slate-100'
-                }`}
-              >
-                <FilePlus2 className={`w-4 h-4 ${activeTab === 'int-ext' ? 'text-[#E60000]' : ''}`} />
-                <span>Solicitud Extra</span>
-              </button>
-            )}
-
-            {esAdmin && verMaestro && (
-              <button
-                onClick={() => setActiveTab('maestro')}
-                className={`flex items-center gap-2 px-3.5 py-2 text-xs sm:text-sm font-bold rounded-lg transition whitespace-nowrap cursor-pointer ${
-                  activeTab === 'maestro'
-                    ? 'bg-[#0a2958] text-white shadow-xs'
-                    : 'text-slate-600 hover:text-[#0a2958] hover:bg-slate-100'
-                }`}
-              >
-                <Users className="w-4 h-4" />
-                <span>Actualizar Maestro</span>
-              </button>
-            )}
-          </nav>
-        )}
+          )}
+        </div>
       </div>
     </header>
   );

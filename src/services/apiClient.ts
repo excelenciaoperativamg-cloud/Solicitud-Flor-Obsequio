@@ -48,7 +48,7 @@ export const fetchSolicitudesIntExtApi = async (): Promise<{
 }> => {
   try {
     const res = await fetch('/api/solicitudes-int-ext');
-    if (!res.ok) throw new Error('Error al consultar Solicitud Extra');
+    if (!res.ok) throw new Error('Error al consultar Especiales Empresa');
     const data = await res.json();
     return {
       solicitudes: data.solicitudes || [],
@@ -56,7 +56,7 @@ export const fetchSolicitudesIntExtApi = async (): Promise<{
       source: data.source || 'local',
     };
   } catch (error) {
-    console.warn('Error consultando Solicitud Extra:', error);
+    console.warn('Error consultando Especiales Empresa:', error);
     return { solicitudes: [], sheetsSupported: false, source: 'error' };
   }
 };
@@ -74,7 +74,7 @@ export const createSolicitudIntExtApi = async (
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || 'Error al guardar en Solicitud Extra');
+    throw new Error(err.error || 'Error al guardar en Especiales Empresa');
   }
   const data = await res.json();
   return {
