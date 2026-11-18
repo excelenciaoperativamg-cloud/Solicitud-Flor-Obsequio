@@ -15,6 +15,9 @@ import {
   Search,
   Download,
   RefreshCw,
+  Check,
+  X,
+  ChevronDown,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import * as XLSX from 'xlsx';
@@ -25,13 +28,18 @@ interface SolicitudIntExtFormProps {
   sesion: TrabajadorMaestro;
   solicitudesIntExt: SolicitudIntExt[];
   sheetsSupported: boolean;
+  intExtSheetActual?: string;
+  needsAppsScriptSheetUpdate?: boolean;
   onGuardarSolicitudIntExt: (
-    nueva: SolicitudIntExt
+    nueva: SolicitudIntExt | SolicitudIntExt[]
   ) => Promise<{
     success: boolean;
     error?: string;
     solicitud?: SolicitudIntExt;
+    solicitudes?: SolicitudIntExt[];
     pendingAppsScriptUpdate?: boolean;
+    intExtSheetName?: string;
+    needsAppsScriptSheetUpdate?: boolean;
   }>;
   onRecargarIntExt?: () => Promise<void>;
   onCerrarSesion?: () => void;
@@ -52,6 +60,8 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
   sesion,
   solicitudesIntExt,
   sheetsSupported,
+  intExtSheetActual = '',
+  needsAppsScriptSheetUpdate = false,
   onGuardarSolicitudIntExt,
   onRecargarIntExt,
   onCerrarSesion,
@@ -71,8 +81,8 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
   const [mostrandoInputArea, setMostrandoInputArea] = useState(false);
   const [nuevaAreaInput, setNuevaAreaInput] = useState('');
 
-  const [producto, setProducto] = useState('');
-  const [cantidad, setCantidad] = useState<string>('1');
+  // Mapa de productos seleccionados -> cantidad ingresada como string
+  const [productosCantidades, setProductosCantidades] = useState<Record<string, string>>({});
   const [motivoSeleccionado, setMotivoSeleccionado] = useState('');
   const [otroMotivo, setOtroMotivo] = useState('');
   const [fechaEntrega, setFechaEntrega] = useState(getTodayString());
@@ -80,7 +90,7 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
 
   const [errores, setErrores] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [solicitudExitosa, setSolicitudExitosa] = useState<SolicitudIntExt | null>(null);
+  const [solicitudesExitosas, setSolicitudesExitosas] = useState<SolicitudIntExt[]>([]);
   const [avisoPendienteScript, setAvisoPendienteScript] = useState(false);
   const [copiadoId, setCopiadoId] = useState(false);
 
@@ -93,18 +103,29 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
     } catch {}
   }, [areasPersonalizadas]);
 
-  const proximoId = useMemo(() => {
+  const siguienteNumeroId = useMemo(() => {
     const year = new Date().getFullYear();
     let maxNum = 0;
     for (const s of solicitudesIntExt) {
-      const m = String(s.id || '').match(/^SIE-(\d{4})-(\d+)$/i);
+      const m = String(s.id || '').match(/^(?:SIE|SE)-(\d{4})-(\d+)$/i);
       if (m && Number(m[1]) === year) {
         maxNum = Math.max(maxNum, Number(m[2]));
       }
     }
-    const nextNum = Math.max(maxNum + 1, solicitudesIntExt.length + 1);
-    return `SIE-${year}-${String(nextNum).padStart(3, '0')}`;
+    return Math.max(maxNum + 1, solicitudesIntExt.length + 1);
   }, [solicitudesIntExt]);
+
+  const productosSeleccionadosOrdenados = useMemo(
+    () => PRODUCTOS_INT_EXT.filter((p) => Object.prototype.hasOwnProperty.call(productosCantidades, p)),
+    [productosCantidades]
+  );
+
+  const totalRamosSeleccionados = useMemo(() => {
+    return productosSeleccionadosOrdenados.reduce((acc, prod) => {
+      const n = Number(productosCantidades[prod]);
+      return acc + (!Number.isNaN(n) && n > 0 ? Math.floor(n) : 0);
+    }, 0);
+  }, [productosSeleccionadosOrdenados, productosCantidades]);
 
   const sedeFinal = sedeTipo || '';
   const areaFinal = mostrandoInputArea && nuevaAreaInput.trim()
@@ -116,6 +137,38 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
     const set = new Set<string>([...AREAS_BASE, ...areasPersonalizadas]);
     return Array.from(set);
   }, [areasPersonalizadas]);
+
+  const toggleProducto = (prod: string) => {
+    setProductosCantidades((prev) => {
+      const next = { ...prev };
+      if (Object.prototype.hasOwnProperty.call(next, prod)) {
+        delete next[prod];
+      } else {
+        next[prod] = '1';
+      }
+      return next;
+    });
+    setErrores((prev) => {
+      const next = { ...prev };
+      delete next.producto;
+      delete next.cantidad;
+      delete next[`cant_${prod}`];
+      return next;
+    });
+  };
+
+  const cambiarCantidadProducto = (prod: string, valor: string) => {
+    setProductosCantidades((prev) => ({
+      ...prev,
+      [prod]: valor,
+    }));
+    setErrores((prev) => {
+      const next = { ...prev };
+      delete next.cantidad;
+      delete next[`cant_${prod}`];
+      return next;
+    });
+  };
 
   const handleAgregarAreaPersonalizada = () => {
     const limpia = nuevaAreaInput.trim();
@@ -138,8 +191,7 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
     setAreaSeleccionada('');
     setMostrandoInputArea(false);
     setNuevaAreaInput('');
-    setProducto('');
-    setCantidad('1');
+    setProductosCantidades({});
     setMotivoSeleccionado('');
     setOtroMotivo('');
     setFechaEntrega(getTodayString());
@@ -152,11 +204,20 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
     if (!fechaSolicitud) nuevos.fechaSolicitud = 'La fecha de solicitud es obligatoria.';
     if (!sedeTipo) nuevos.sede = 'Seleccione la sede (MG, HA o SC).';
     if (!areaFinal) nuevos.area = 'Seleccione o ingrese el área.';
-    if (!producto) nuevos.producto = 'Seleccione un producto.';
-    const cantNum = Number(cantidad);
-    if (!cantidad || Number.isNaN(cantNum) || cantNum < 1 || !Number.isInteger(cantNum)) {
-      nuevos.cantidad = 'Ingrese una cantidad válida (mínimo 1 ramo).';
+
+    if (productosSeleccionadosOrdenados.length === 0) {
+      nuevos.producto = 'Seleccione al menos un producto.';
+    } else {
+      for (const prod of productosSeleccionadosOrdenados) {
+        const rawCant = productosCantidades[prod];
+        const cantNum = Number(rawCant);
+        if (!rawCant || Number.isNaN(cantNum) || cantNum < 1 || !Number.isInteger(cantNum)) {
+          nuevos[`cant_${prod}`] = `Ingrese una cantidad válida (mínimo 1) para ${prod}.`;
+          nuevos.cantidad = 'Verifique las cantidades ingresadas en los productos seleccionados.';
+        }
+      }
     }
+
     if (!motivoFinal) nuevos.motivo = 'Seleccione o especifique el motivo.';
     if (!fechaEntrega) nuevos.fechaEntrega = 'Seleccione la fecha de entrega.';
 
@@ -176,28 +237,38 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
     }
 
     setIsSubmitting(true);
+    const year = new Date().getFullYear();
     const semanaCalculada = fechaEntrega ? String(getISOWeekNumber(fechaEntrega)) : '';
-    const nueva: SolicitudIntExt = {
-      id: proximoId,
+    const ahora = Date.now();
+
+    // Un registro independiente por cada producto seleccionado (producto y cantidad por separado)
+    const registrosAEnviar: SolicitudIntExt[] = productosSeleccionadosOrdenados.map((prod, idx) => ({
+      id: `SIE-${year}-${String(siguienteNumeroId + idx).padStart(3, '0')}`,
       fechaSolicitud,
       codigo: sesion.codigo.trim(),
       nombre: sesion.nombre.trim(),
       sede: sedeFinal,
       area: areaFinal,
-      producto,
-      cantidad: Math.max(1, Math.floor(Number(cantidad) || 1)),
+      producto: prod,
+      cantidad: Math.max(1, Math.floor(Number(productosCantidades[prod]) || 1)),
       motivo: motivoFinal,
       semana: semanaCalculada,
       fechaEntrega,
       observacion: observacion.trim(),
       estado: 'Registrada',
-      creadoEn: Date.now(),
-    };
+      creadoEn: ahora + idx,
+    }));
 
     try {
-      const res = await onGuardarSolicitudIntExt(nueva);
-      if (res.success && res.solicitud) {
-        setSolicitudExitosa(res.solicitud);
+      const res = await onGuardarSolicitudIntExt(registrosAEnviar);
+      const guardadas =
+        res.solicitudes && res.solicitudes.length > 0
+          ? res.solicitudes
+          : res.solicitud
+          ? [res.solicitud]
+          : [];
+      if (res.success && guardadas.length > 0) {
+        setSolicitudesExitosas(guardadas);
         setAvisoPendienteScript(!!res.pendingAppsScriptUpdate);
         limpiarFormulario();
         try {
@@ -218,9 +289,10 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
     }
   };
 
-  const copiarIdComprobante = () => {
-    if (solicitudExitosa?.id) {
-      navigator.clipboard.writeText(solicitudExitosa.id);
+  const copiarIdsComprobante = () => {
+    if (solicitudesExitosas.length > 0) {
+      const idsTexto = solicitudesExitosas.map((s) => s.id).join(', ');
+      navigator.clipboard.writeText(idsTexto);
       setCopiadoId(true);
       setTimeout(() => setCopiadoId(false), 2000);
     }
@@ -264,52 +336,162 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
     XLSX.writeFile(wb, `Especiales_Empresa_${getTodayString()}.xlsx`);
   };
 
+  const primeraExitosa = solicitudesExitosas[0];
+  const totalExitosaRamos = solicitudesExitosas.reduce((sum, s) => sum + (Number(s.cantidad) || 0), 0);
+
   return (
     <div className="max-w-5xl mx-auto py-6 px-4 sm:px-6 space-y-6">
-      {solicitudExitosa && (
+      {solicitudesExitosas.length > 0 && primeraExitosa && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto">
             <div className="w-14 h-14 rounded-2xl bg-[#0a2958]/10 text-[#0a2958] flex items-center justify-center mx-auto mb-4 ring-8 ring-[#0a2958]/5">
               <CheckCircle2 className="w-8 h-8 text-[#0a2958]" />
             </div>
             <div className="text-center mb-4">
               <h3 className="text-xl font-extrabold text-[#0a2958] mb-1">¡Registro Exitoso!</h3>
               <p className="text-xs text-slate-600">
-                La solicitud fue registrada en <strong>Especiales Empresa</strong>.
+                {solicitudesExitosas.length > 1 ? (
+                  <>
+                    Se registraron <strong>{solicitudesExitosas.length} productos</strong> por separado en{' '}
+                    <strong>Especiales Empresa</strong>.
+                  </>
+                ) : (
+                  <>
+                    La solicitud fue registrada en <strong>Especiales Empresa</strong>.
+                  </>
+                )}
               </p>
-              {avisoPendienteScript && (
+              {avisoPendienteScript ? (
                 <div className="mt-3 p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[11px] text-left">
                   Se guardó en el respaldo del servidor. Para que escriba directamente en la pestaña{' '}
-                  <strong>Especiales Empresa</strong> de Google Sheets, actualice la versión del código en{' '}
-                  <strong>Conexión con Drive</strong>.
+                  <strong>Especiales Empresa</strong> de Google Sheets, el administrador debe actualizar la versión del código en{' '}
+                  <strong>Administración → Google Drive</strong>.
                 </div>
-              )}
+              ) : needsAppsScriptSheetUpdate ? (
+                <div className="mt-3 p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[11px] text-left">
+                  Se guardó en Google Sheets en la pestaña{' '}
+                  <strong>{intExtSheetActual || 'Solicitud Extra'}</strong> porque el script publicado aún apunta a esa pestaña. Para guardar directamente en{' '}
+                  <strong>Especiales Empresa</strong>, el administrador debe copiar el código actualizado desde{' '}
+                  <strong>Administración → Google Drive</strong> e implementar una <strong>Nueva versión</strong>.
+                </div>
+              ) : null}
             </div>
 
             <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 text-xs text-slate-700 space-y-2 mb-5">
-              <div className="flex justify-between items-center pb-2 border-b border-slate-200">
-                <span className="text-slate-500">Id:</span>
-                <div className="flex items-center gap-1.5 font-mono font-bold text-[#0a2958] text-sm">
-                  <span>{solicitudExitosa.id}</span>
-                  <button type="button" onClick={copiarIdComprobante} className="p-1 hover:bg-slate-200 rounded">
+              <div className="flex justify-between items-center pb-2 border-b border-slate-200 gap-2">
+                <span className="text-slate-500">
+                  {solicitudesExitosas.length > 1 ? 'Ids generados:' : 'Id:'}
+                </span>
+                <div className="flex items-center gap-1.5 font-mono font-bold text-[#0a2958] text-xs sm:text-sm flex-wrap justify-end">
+                  <span>{solicitudesExitosas.map((s) => s.id).join(', ')}</span>
+                  <button
+                    type="button"
+                    onClick={copiarIdsComprobante}
+                    className="p-1 hover:bg-slate-200 rounded cursor-pointer"
+                    title="Copiar Id(s)"
+                  >
                     <Copy className="w-3.5 h-3.5" />
                   </button>
                   {copiadoId && <span className="text-[10px] text-[#E60000] font-sans font-bold">¡Copiado!</span>}
                 </div>
               </div>
-              <div className="flex justify-between"><span className="text-slate-500">Fecha Solicitud:</span><span className="font-semibold text-slate-900">{solicitudExitosa.fechaSolicitud}</span></div>
-              <div className="flex justify-between"><span className="text-slate-500">Registrado por:</span><span className="font-bold text-slate-900">{solicitudExitosa.nombre} ({solicitudExitosa.codigo})</span></div>
-              <div className="flex justify-between"><span className="text-slate-500">Sede / Área:</span><span className="font-bold text-slate-900">{solicitudExitosa.sede} · {solicitudExitosa.area}</span></div>
-              <div className="flex justify-between"><span className="text-slate-500">Producto:</span><span className="font-bold text-slate-900">{solicitudExitosa.producto}</span></div>
-              <div className="flex justify-between"><span className="text-slate-500">Cantidad:</span><span className="font-bold text-[#0a2958]">{solicitudExitosa.cantidad} ramos</span></div>
-              <div className="flex justify-between"><span className="text-slate-500">Motivo:</span><span className="font-bold text-slate-900">{solicitudExitosa.motivo}</span></div>
-              <div className="flex justify-between"><span className="text-slate-500">Semana:</span><span className="font-bold text-[#E60000]">Semana {solicitudExitosa.semana || getISOWeekNumber(solicitudExitosa.fechaEntrega)}</span></div>
-              <div className="flex justify-between"><span className="text-slate-500">Fecha Entrega:</span><span className="font-semibold text-slate-900">{formatDateSpanish(solicitudExitosa.fechaEntrega)}</span></div>
-              <div className="flex justify-between"><span className="text-slate-500">Estado:</span><span className="font-bold text-emerald-700">{solicitudExitosa.estado || 'Registrada'}</span></div>
-              {solicitudExitosa.observacion && (
+
+              <div className="flex justify-between">
+                <span className="text-slate-500">Fecha Solicitud:</span>
+                <span className="font-semibold text-slate-900">{primeraExitosa.fechaSolicitud}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Registrado por:</span>
+                <span className="font-bold text-slate-900">
+                  {primeraExitosa.nombre} ({primeraExitosa.codigo})
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Sede / Área:</span>
+                <span className="font-bold text-slate-900">
+                  {primeraExitosa.sede} · {primeraExitosa.area}
+                </span>
+              </div>
+
+              {solicitudesExitosas.length === 1 ? (
+                <>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Producto:</span>
+                    <span className="font-bold text-slate-900">{primeraExitosa.producto}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Cantidad:</span>
+                    <span className="font-bold font-mono tabular-nums text-[#0a2958]">
+                      {primeraExitosa.cantidad} ramos
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <div className="pt-1 pb-1">
+                  <span className="text-slate-500 block mb-1.5 font-semibold">
+                    Detalle por producto (un registro por producto):
+                  </span>
+                  <div className="rounded-lg border border-slate-200 bg-white overflow-hidden">
+                    <table className="w-full text-[11px] text-left">
+                      <thead className="bg-slate-100 text-slate-600 font-bold">
+                        <tr>
+                          <th className="py-1.5 px-2.5">Id</th>
+                          <th className="py-1.5 px-2.5">Producto</th>
+                          <th className="py-1.5 px-2.5 text-right">Cantidad</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {solicitudesExitosas.map((item) => (
+                          <tr key={item.id}>
+                            <td className="py-1.5 px-2.5 font-mono font-bold text-[#0a2958]">{item.id}</td>
+                            <td className="py-1.5 px-2.5 font-semibold text-slate-800">{item.producto}</td>
+                            <td className="py-1.5 px-2.5 text-right font-mono tabular-nums font-bold text-[#0a2958]">
+                              {item.cantidad}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot className="bg-slate-50 border-t border-slate-200 font-extrabold text-[#0a2958]">
+                        <tr>
+                          <td colSpan={2} className="py-1.5 px-2.5">
+                            Total ramos ({solicitudesExitosas.length} registros)
+                          </td>
+                          <td className="py-1.5 px-2.5 text-right font-mono tabular-nums">
+                            {totalExitosaRamos}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex justify-between">
+                <span className="text-slate-500">Motivo:</span>
+                <span className="font-bold text-slate-900">{primeraExitosa.motivo}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Semana:</span>
+                <span className="font-bold text-[#E60000]">
+                  Semana {primeraExitosa.semana || getISOWeekNumber(primeraExitosa.fechaEntrega)}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Fecha Entrega:</span>
+                <span className="font-semibold text-slate-900">
+                  {formatDateSpanish(primeraExitosa.fechaEntrega)}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Estado:</span>
+                <span className="font-bold text-emerald-700">
+                  {primeraExitosa.estado || 'Registrada'}
+                </span>
+              </div>
+              {primeraExitosa.observacion && (
                 <div className="pt-2 border-t border-slate-200">
                   <span className="text-slate-500 block mb-0.5">Observación:</span>
-                  <p className="text-slate-800 font-medium">{solicitudExitosa.observacion}</p>
+                  <p className="text-slate-800 font-medium">{primeraExitosa.observacion}</p>
                 </div>
               )}
             </div>
@@ -324,7 +506,7 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
               </button>
               <button
                 type="button"
-                onClick={() => setSolicitudExitosa(null)}
+                onClick={() => setSolicitudesExitosas([])}
                 className="flex-1 py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold flex items-center justify-center gap-2 cursor-pointer"
               >
                 <Plus className="w-4 h-4" /> Nueva Solicitud
@@ -332,7 +514,7 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
               <button
                 type="button"
                 onClick={() => {
-                  setSolicitudExitosa(null);
+                  setSolicitudesExitosas([]);
                   onCerrarSesion?.();
                 }}
                 className="flex-1 py-2.5 px-4 rounded-xl bg-[#0a2958] hover:bg-[#0d346e] text-white text-xs font-bold flex items-center justify-center gap-2 cursor-pointer"
@@ -371,14 +553,21 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
           </div>
         </div>
 
-        {!sheetsSupported && (
+        {!sheetsSupported ? (
           <div className="mx-6 mt-5 p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start gap-2.5">
             <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
             <div>
-              La hoja <strong>Especiales Empresa</strong> aún no responde desde el webhook activo de Apps Script. Para sincronizar en tiempo real con Google Sheets, copie el código actualizado desde <strong>Conexión con Drive</strong> e implemente una <strong>Nueva versión</strong>.
+              La hoja <strong>Especiales Empresa</strong> aún no responde desde el webhook activo de Apps Script. Para sincronizar en tiempo real con Google Sheets, el administrador debe copiar el código actualizado desde <strong>Administración → Google Drive</strong> e implementar una <strong>Nueva versión</strong>.
             </div>
           </div>
-        )}
+        ) : needsAppsScriptSheetUpdate ? (
+          <div className="mx-6 mt-5 p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start gap-2.5">
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+            <div>
+              El webhook actual de Google Apps Script sigue leyendo y escribiendo en la pestaña <strong>{intExtSheetActual || 'Solicitud Extra'}</strong> en lugar de <strong>Especiales Empresa</strong>. Para que los registros aparezcan en <strong>Especiales Empresa</strong>, el administrador debe actualizar el script en Google Sheets (<em>Administración → Google Drive → Copiar código</em> e implementar una <strong>Nueva versión</strong>).
+            </div>
+          </div>
+        ) : null}
 
         {errores.general && (
           <div className="mx-6 mt-5 p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-3">
@@ -508,75 +697,131 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
             )}
           </div>
 
-          {/* 2. Producto y Cantidad */}
+          {/* 2. PRODUCTO Y CANTIDAD (múltiple, registro separado por cada producto) */}
           <div className="space-y-4">
-            <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
-              <Sparkles className="w-4 h-4 text-[#0a2958]" />
-              <h3 className="text-sm font-extrabold text-[#0a2958] uppercase tracking-wider">
-                2. Producto y Cantidad
-              </h3>
+            <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-100 flex-wrap">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-[#0a2958]" />
+                <h3 className="text-sm font-extrabold text-[#0a2958] uppercase tracking-wider">
+                  2. Producto y Cantidad
+                </h3>
+              </div>
+              <span className="text-[11px] text-slate-500 font-medium">
+                Puede elegir varios productos; se guardará un registro por cada producto.
+              </span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-start">
-              <div className="sm:col-span-2">
-                <label className="block text-xs font-bold text-slate-700 mb-2">
-                  Producto <span className="text-[#E60000]">*</span>
-                </label>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                  {PRODUCTOS_INT_EXT.map((prod) => (
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-2">
+                Productos <span className="text-[#E60000]">*</span>
+              </label>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                {PRODUCTOS_INT_EXT.map((prod) => {
+                  const estaSeleccionado = Object.prototype.hasOwnProperty.call(
+                    productosCantidades,
+                    prod
+                  );
+                  return (
                     <button
                       key={prod}
                       type="button"
-                      onClick={() => {
-                        setProducto(prod);
-                        setErrores((prev) => {
-                          const next = { ...prev };
-                          delete next.producto;
-                          return next;
-                        });
-                      }}
-                      className={`px-3 py-2.5 rounded-xl border text-xs font-bold transition cursor-pointer ${
-                        producto === prod
+                      onClick={() => toggleProducto(prod)}
+                      aria-pressed={estaSeleccionado}
+                      className={`px-3.5 py-2.5 rounded-xl border text-xs font-bold transition cursor-pointer flex items-center justify-between gap-2 ${
+                        estaSeleccionado
                           ? 'bg-[#0a2958] text-white border-[#0a2958] shadow-xs'
                           : 'bg-white text-slate-700 border-slate-200 hover:border-[#0a2958]/40'
                       }`}
                     >
-                      {prod}
+                      <span>{prod}</span>
+                      <span
+                        className={`w-4 h-4 rounded flex items-center justify-center border shrink-0 ${
+                          estaSeleccionado
+                            ? 'bg-[#E60000] border-[#E60000] text-white'
+                            : 'border-slate-300 bg-slate-50 text-transparent'
+                        }`}
+                      >
+                        <Check className="w-3 h-3" />
+                      </span>
                     </button>
-                  ))}
-                </div>
-                {errores.producto && (
-                  <p className="text-[11px] text-[#E60000] font-semibold mt-1.5">{errores.producto}</p>
-                )}
+                  );
+                })}
               </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-2">
-                  Cantidad <span className="text-[#E60000]">*</span>
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  step={1}
-                  value={cantidad}
-                  onChange={(e) => {
-                    setCantidad(e.target.value);
-                    setErrores((prev) => {
-                      const next = { ...prev };
-                      delete next.cantidad;
-                      return next;
-                    });
-                  }}
-                  placeholder="Ej. 10"
-                  className={`w-full px-3.5 py-2.5 text-xs rounded-xl border font-bold text-slate-900 outline-hidden ${
-                    errores.cantidad ? 'border-rose-400 bg-rose-50/40' : 'border-slate-300 focus:border-[#0a2958]'
-                  }`}
-                />
-                {errores.cantidad && (
-                  <p className="text-[11px] text-[#E60000] font-semibold mt-1">{errores.cantidad}</p>
-                )}
-              </div>
+              {errores.producto && (
+                <p className="text-[11px] text-[#E60000] font-semibold mt-1.5">{errores.producto}</p>
+              )}
             </div>
+
+            {/* Cantidades individuales por producto seleccionado */}
+            {productosSeleccionadosOrdenados.length > 0 && (
+              <div className="rounded-xl border border-slate-200 bg-slate-50/70 overflow-hidden">
+                <div className="px-4 py-2.5 bg-slate-100/80 border-b border-slate-200 flex items-center justify-between text-[11px] font-bold text-[#0a2958]">
+                  <span>Cantidad solicitada por producto</span>
+                  <span className="font-mono tabular-nums text-slate-600">
+                    {productosSeleccionadosOrdenados.length}{' '}
+                    {productosSeleccionadosOrdenados.length === 1 ? 'registro' : 'registros'} · Total:{' '}
+                    {totalRamosSeleccionados} ramos
+                  </span>
+                </div>
+
+                <div className="divide-y divide-slate-200/80 bg-white">
+                  {productosSeleccionadosOrdenados.map((prod) => {
+                    const errorCant = errores[`cant_${prod}`];
+                    return (
+                      <div
+                        key={prod}
+                        className="px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5"
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <span className="text-xs font-extrabold text-[#0a2958]">{prod}</span>
+                          {errorCant && (
+                            <span className="text-[11px] font-semibold text-[#E60000]">
+                              {errorCant}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <label
+                            htmlFor={`cantidad-${prod}`}
+                            className="text-xs font-semibold text-slate-600 whitespace-nowrap"
+                          >
+                            Cantidad <span className="text-[#E60000]">*</span>
+                          </label>
+                          <input
+                            id={`cantidad-${prod}`}
+                            type="number"
+                            min={1}
+                            step={1}
+                            value={productosCantidades[prod] ?? '1'}
+                            onChange={(e) => cambiarCantidadProducto(prod, e.target.value)}
+                            placeholder="Ej. 10"
+                            className={`w-28 px-3 py-2 text-xs rounded-xl border font-mono tabular-nums font-bold text-slate-900 text-right outline-hidden ${
+                              errorCant
+                                ? 'border-rose-400 bg-rose-50/40'
+                                : 'border-slate-300 focus:border-[#0a2958]'
+                            }`}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => toggleProducto(prod)}
+                            title={`Quitar ${prod}`}
+                            aria-label={`Quitar ${prod}`}
+                            className="p-2 rounded-lg text-slate-400 hover:text-[#E60000] hover:bg-rose-50 transition cursor-pointer"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {errores.cantidad && (
+              <p className="text-[11px] text-[#E60000] font-semibold">{errores.cantidad}</p>
+            )}
           </div>
 
           {/* 3. Motivo, Fecha de Entrega y Observación */}
@@ -588,73 +833,64 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
               </h3>
             </div>
 
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-2">
-                Motivo <span className="text-[#E60000]">*</span>
-              </label>
-              <div className="flex flex-wrap gap-2">
-                {MOTIVOS_INT_EXT.map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    onClick={() => {
-                      setMotivoSeleccionado(m);
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
+              <div>
+                <label
+                  htmlFor="select-motivo-especiales"
+                  className="block text-xs font-bold text-slate-700 mb-1.5"
+                >
+                  Motivo <span className="text-[#E60000]">*</span>
+                </label>
+                <div className="relative">
+                  <select
+                    id="select-motivo-especiales"
+                    value={motivoSeleccionado}
+                    onChange={(e) => {
+                      setMotivoSeleccionado(e.target.value);
                       setErrores((prev) => {
                         const next = { ...prev };
                         delete next.motivo;
                         return next;
                       });
                     }}
-                    className={`px-3.5 py-2 rounded-xl border text-xs font-bold transition cursor-pointer ${
-                      motivoSeleccionado === m
-                        ? 'bg-[#0a2958] text-white border-[#0a2958] shadow-xs'
-                        : 'bg-white text-slate-700 border-slate-200 hover:border-[#0a2958]/40'
+                    className={`w-full appearance-none pl-3.5 pr-9 py-2.5 text-xs rounded-xl border font-bold bg-white outline-hidden cursor-pointer ${
+                      errores.motivo
+                        ? 'border-rose-400 bg-rose-50/40 text-slate-900'
+                        : 'border-slate-300 focus:border-[#0a2958] text-slate-800'
                     }`}
                   >
-                    {m}
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMotivoSeleccionado('Otro');
-                    setErrores((prev) => {
-                      const next = { ...prev };
-                      delete next.motivo;
-                      return next;
-                    });
-                  }}
-                  className={`px-3.5 py-2 rounded-xl border text-xs font-bold transition cursor-pointer ${
-                    motivoSeleccionado === 'Otro'
-                      ? 'bg-[#E60000]/10 text-[#E60000] border-[#E60000]/40'
-                      : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-[#0a2958]/40'
-                  }`}
-                >
-                  Otro motivo
-                </button>
-              </div>
-              {motivoSeleccionado === 'Otro' && (
-                <input
-                  type="text"
-                  value={otroMotivo}
-                  onChange={(e) => {
-                    setOtroMotivo(e.target.value);
-                    setErrores((prev) => {
-                      const next = { ...prev };
-                      delete next.motivo;
-                      return next;
-                    });
-                  }}
-                  placeholder="Especifique el motivo…"
-                  className="mt-2.5 w-full sm:max-w-md px-3.5 py-2.5 text-xs rounded-xl border border-slate-300 focus:border-[#0a2958] outline-hidden font-medium"
-                />
-              )}
-              {errores.motivo && (
-                <p className="text-[11px] text-[#E60000] font-semibold mt-1.5">{errores.motivo}</p>
-              )}
-            </div>
+                    <option value="">Seleccione un motivo…</option>
+                    {MOTIVOS_INT_EXT.map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                    <option value="Otro">Otro motivo…</option>
+                  </select>
+                  <ChevronDown className="w-4 h-4 text-slate-500 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-start">
+                {motivoSeleccionado === 'Otro' && (
+                  <input
+                    type="text"
+                    value={otroMotivo}
+                    onChange={(e) => {
+                      setOtroMotivo(e.target.value);
+                      setErrores((prev) => {
+                        const next = { ...prev };
+                        delete next.motivo;
+                        return next;
+                      });
+                    }}
+                    placeholder="Especifique el motivo…"
+                    className="mt-2.5 w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-300 focus:border-[#0a2958] outline-hidden font-medium"
+                  />
+                )}
+                {errores.motivo && (
+                  <p className="text-[11px] text-[#E60000] font-semibold mt-1.5">{errores.motivo}</p>
+                )}
+              </div>
+
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1.5">
                   Fecha Entrega <span className="text-[#E60000]">*</span>
@@ -678,20 +914,20 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
                   <p className="text-[11px] text-[#E60000] font-semibold mt-1">{errores.fechaEntrega}</p>
                 )}
               </div>
+            </div>
 
-              <div className="sm:col-span-2">
-                <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
-                  <MessageSquare className="w-3.5 h-3.5 text-slate-400" />
-                  <span>Observación</span>
-                </label>
-                <textarea
-                  rows={2}
-                  value={observacion}
-                  onChange={(e) => setObservacion(e.target.value)}
-                  placeholder="Escriba observaciones o detalles adicionales…"
-                  className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-300 focus:border-[#0a2958] outline-hidden font-medium resize-y"
-                />
-              </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
+                <MessageSquare className="w-3.5 h-3.5 text-slate-400" />
+                <span>Observación</span>
+              </label>
+              <textarea
+                rows={2}
+                value={observacion}
+                onChange={(e) => setObservacion(e.target.value)}
+                placeholder="Escriba observaciones o detalles adicionales…"
+                className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-300 focus:border-[#0a2958] outline-hidden font-medium resize-y"
+              />
             </div>
           </div>
 
@@ -712,7 +948,11 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
               ) : (
                 <>
                   <Send className="w-4 h-4 text-[#E60000]" />
-                  <span>Registrar Especiales Empresa</span>
+                  <span>
+                    {productosSeleccionadosOrdenados.length > 1
+                      ? `Registrar ${productosSeleccionadosOrdenados.length} productos`
+                      : 'Registrar Especiales Empresa'}
+                  </span>
                 </>
               )}
             </button>
@@ -808,7 +1048,7 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
                     <td className="py-2.5 px-3 font-bold">{s.sede}</td>
                     <td className="py-2.5 px-3">{s.area}</td>
                     <td className="py-2.5 px-3 font-semibold">{s.producto}</td>
-                    <td className="py-2.5 px-3 text-right font-bold text-[#0a2958]">{s.cantidad}</td>
+                    <td className="py-2.5 px-3 text-right font-mono tabular-nums font-bold text-[#0a2958]">{s.cantidad}</td>
                     <td className="py-2.5 px-3">{s.motivo}</td>
                     <td className="py-2.5 px-3 font-bold text-[#E60000]">
                       {s.semana || (s.fechaEntrega ? String(getISOWeekNumber(s.fechaEntrega)) : '—')}

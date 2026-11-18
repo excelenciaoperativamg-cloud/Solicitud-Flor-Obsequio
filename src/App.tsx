@@ -72,6 +72,8 @@ export default function App() {
   const [solicitudes, setSolicitudes] = useState<SolicitudFlor[]>([]);
   const [solicitudesIntExt, setSolicitudesIntExt] = useState<SolicitudIntExt[]>([]);
   const [intExtSheetsSupported, setIntExtSheetsSupported] = useState<boolean>(true);
+  const [intExtSheetActual, setIntExtSheetActual] = useState<string>('');
+  const [intExtSheetMismatch, setIntExtSheetMismatch] = useState<boolean>(false);
 
   const esAdminSistema = esAdministradorSistema(sesion);
   const puedeVerMaestro = puedeVerHojaMaestro(sesion);
@@ -115,6 +117,8 @@ export default function App() {
         if (intExtRes && Array.isArray(intExtRes.solicitudes)) {
           setSolicitudesIntExt(intExtRes.solicitudes);
           setIntExtSheetsSupported(intExtRes.sheetsSupported || intExtRes.source === 'sheets');
+          setIntExtSheetActual(intExtRes.intExtSheetName || '');
+          setIntExtSheetMismatch(!!intExtRes.needsAppsScriptSheetUpdate);
         }
         if (maest && maest.length > 0) {
           const mapa = new Map<string, TrabajadorMaestro>();
@@ -186,28 +190,56 @@ export default function App() {
   };
 
   const handleGuardarSolicitudIntExt = async (
-    nueva: SolicitudIntExt
+    nuevaOLista: SolicitudIntExt | SolicitudIntExt[]
   ): Promise<{
     success: boolean;
     error?: string;
     solicitud?: SolicitudIntExt;
+    solicitudes?: SolicitudIntExt[];
     pendingAppsScriptUpdate?: boolean;
+    intExtSheetName?: string;
+    needsAppsScriptSheetUpdate?: boolean;
   }> => {
     try {
-      const res = await createSolicitudIntExtApi(nueva);
-      const guardada = res.solicitud;
-      setSolicitudesIntExt((prev) => [guardada, ...prev.filter((s) => s.id !== guardada.id)]);
+      const res = await createSolicitudIntExtApi(nuevaOLista);
+      const guardadas = res.solicitudes.length > 0 ? res.solicitudes : [res.solicitud];
+      const idsGuardados = new Set(guardadas.map((g) => g.id));
+      setSolicitudesIntExt((prev) => [
+        ...guardadas,
+        ...prev.filter((s) => !idsGuardados.has(s.id)),
+      ]);
+      const total = guardadas.length;
+      setIntExtSheetActual(res.intExtSheetName || '');
+      setIntExtSheetMismatch(!!res.needsAppsScriptSheetUpdate);
+
       if (res.pendingAppsScriptUpdate) {
         setIntExtSheetsSupported(false);
-        mostrarToast('Especiales Empresa guardado localmente (requiere actualizar versión de Apps Script)');
+        mostrarToast(
+          total > 1
+            ? `${total} registros guardados en respaldo local (requiere actualizar Apps Script)`
+            : 'Guardado en respaldo local (requiere actualizar Apps Script)'
+        );
+      } else if (res.needsAppsScriptSheetUpdate) {
+        setIntExtSheetsSupported(true);
+        const destino = res.intExtSheetName || 'Solicitud Extra';
+        mostrarToast(
+          `Guardado en la pestaña "${destino}" de Drive (actualice Apps Script para apuntar a Especiales Empresa)`
+        );
       } else {
         setIntExtSheetsSupported(true);
-        mostrarToast('Solicitud registrada en la hoja Especiales Empresa');
+        mostrarToast(
+          total > 1
+            ? `${total} registros guardados en la hoja Especiales Empresa`
+            : 'Solicitud registrada en la hoja Especiales Empresa'
+        );
       }
       return {
         success: true,
-        solicitud: guardada,
+        solicitud: guardadas[0],
+        solicitudes: guardadas,
         pendingAppsScriptUpdate: res.pendingAppsScriptUpdate,
+        intExtSheetName: res.intExtSheetName,
+        needsAppsScriptSheetUpdate: res.needsAppsScriptSheetUpdate,
       };
     } catch (err: any) {
       return { success: false, error: err.message || 'Error al guardar en Especiales Empresa' };
@@ -218,6 +250,8 @@ export default function App() {
     const res = await fetchSolicitudesIntExtApi();
     setSolicitudesIntExt(res.solicitudes || []);
     setIntExtSheetsSupported(res.sheetsSupported || res.source === 'sheets');
+    setIntExtSheetActual(res.intExtSheetName || '');
+    setIntExtSheetMismatch(!!res.needsAppsScriptSheetUpdate);
   };
 
   const handleAgregarTrabajador = async (nuevo: TrabajadorMaestro) => {
@@ -401,6 +435,8 @@ export default function App() {
                   sesion={sesion}
                   solicitudesIntExt={solicitudesIntExt}
                   sheetsSupported={intExtSheetsSupported}
+                  intExtSheetActual={intExtSheetActual}
+                  needsAppsScriptSheetUpdate={intExtSheetMismatch}
                   onGuardarSolicitudIntExt={handleGuardarSolicitudIntExt}
                   onRecargarIntExt={handleRecargarIntExt}
                   onCerrarSesion={handleCerrarSesion}

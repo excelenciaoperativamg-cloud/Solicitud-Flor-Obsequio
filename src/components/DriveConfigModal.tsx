@@ -223,8 +223,25 @@ function leerSolicitudes(ss) {
   return out;
 }
 
+function buscarHojaPorNombre(ss, nombres) {
+  for (var i = 0; i < nombres.length; i++) {
+    var exact = ss.getSheetByName(nombres[i]);
+    if (exact) return exact;
+  }
+  var sheets = ss.getSheets();
+  for (var j = 0; j < nombres.length; j++) {
+    var target = String(nombres[j]).toLowerCase().trim();
+    for (var s = 0; s < sheets.length; s++) {
+      if (String(sheets[s].getName() || "").toLowerCase().trim() === target) {
+        return sheets[s];
+      }
+    }
+  }
+  return null;
+}
+
 function leerSolicitudesIntExt(ss) {
-  var sheet = ss.getSheetByName("Especiales Empresa") || ss.getSheetByName("Solicitud Extra") || ss.getSheetByName("Solicitud_Int-Ext");
+  var sheet = buscarHojaPorNombre(ss, ["Especiales Empresa", "Solicitud Extra", "Solicitud_Int-Ext"]);
   if (!sheet) return [];
   var values = sheet.getDataRange().getValues();
   if (!values || values.length < 2) return [];
@@ -280,6 +297,7 @@ function doGet(e) {
     var workers = leerTrabajadores(ss);
     var solicitudes = leerSolicitudes(ss);
     var solicitudesIntExt = leerSolicitudesIntExt(ss);
+    var hojaIntExt = buscarHojaPorNombre(ss, ["Especiales Empresa", "Solicitud Extra", "Solicitud_Int-Ext"]);
     return responder({
       status: "success",
       message: "Conexión exitosa",
@@ -288,7 +306,8 @@ function doGet(e) {
       workers: workers,
       solicitudes: solicitudes,
       solicitudesIntExt: solicitudesIntExt,
-      supportsIntExt: true
+      supportsIntExt: true,
+      intExtSheetName: hojaIntExt ? hojaIntExt.getName() : "Especiales Empresa"
     });
   } catch (err) {
     return responder({ status: "error", message: String(err) });
@@ -405,14 +424,15 @@ function doPost(e) {
     }
 
     if (data.action === "registrar_int_ext" || data.hoja === "Especiales Empresa" || data.hoja === "Solicitud Extra" || data.hoja === "Solicitud_Int-Ext") {
-      var sheetIntExt = ss.getSheetByName("Especiales Empresa") || ss.getSheetByName("Solicitud Extra") || ss.insertSheet("Especiales Empresa");
+      var sheetIntExt = buscarHojaPorNombre(ss, ["Especiales Empresa", "Solicitud Extra", "Solicitud_Int-Ext"]) || ss.insertSheet("Especiales Empresa");
       escribirSolicitudIntExt(sheetIntExt, data);
       return responder({
         status: "success",
-        message: "Solicitud registrada en Especiales Empresa",
+        message: "Solicitud registrada en " + sheetIntExt.getName(),
         id: data.id,
         solicitudesIntExt: leerSolicitudesIntExt(ss),
-        supportsIntExt: true
+        supportsIntExt: true,
+        intExtSheetName: sheetIntExt.getName()
       });
     }
 

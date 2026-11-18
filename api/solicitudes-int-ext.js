@@ -57,32 +57,48 @@ export default async function handler(req, res) {
     const driveCfg = getDriveConfigStorage();
 
     if (req.method === 'POST') {
-      const nueva = req.body;
-      if (
-        !nueva ||
-        !nueva.codigo ||
-        !nueva.nombre ||
-        !nueva.sede ||
-        !nueva.area ||
-        !nueva.producto ||
-        !nueva.motivo ||
-        !nueva.fechaEntrega
-      ) {
+      const body = req.body;
+      const itemsInput = Array.isArray(body?.items)
+        ? body.items
+        : Array.isArray(body)
+        ? body
+        : [body];
+
+      if (itemsInput.length === 0) {
         return res.status(400).json({
           success: false,
-          error: 'Faltan campos obligatorios para registrar en Especiales Empresa.',
+          error: 'Debe enviar al menos un producto para registrar en Especiales Empresa.',
         });
       }
 
-      const cantidadNum = Math.max(1, Math.floor(Number(nueva.cantidad) || 1));
+      for (const item of itemsInput) {
+        if (
+          !item ||
+          !item.codigo ||
+          !item.nombre ||
+          !item.sede ||
+          !item.area ||
+          !item.producto ||
+          !item.motivo ||
+          !item.fechaEntrega
+        ) {
+          return res.status(400).json({
+            success: false,
+            error: 'Faltan campos obligatorios para registrar en Especiales Empresa.',
+          });
+        }
+      }
+
       let existentes = getSolicitudesIntExtStorage();
       let sheetsSupported = false;
+      let intExtSheetName = '';
 
       if (driveCfg.webhookUrl) {
         try {
           const sheetData = await callAppsScript(driveCfg.webhookUrl);
           if (sheetData?.supportsIntExt === true || Array.isArray(sheetData?.solicitudesIntExt)) {
             sheetsSupported = true;
+            intExtSheetName = String(sheetData?.intExtSheetName || '').trim();
             if (Array.isArray(sheetData.solicitudesIntExt)) {
               const deHoja = sheetData.solicitudesIntExt.map((r) =>
                 normalizarIntExt({ ...r, syncedToDrive: true })
@@ -98,51 +114,67 @@ export default async function handler(req, res) {
         }
       }
 
-      const idFinal = generarIdIntExtUnico(existentes, nueva.id);
-
-      const payload = {
-        action: 'registrar_int_ext',
-        hoja: 'Especiales Empresa',
-        id: idFinal,
-        fechaSolicitud: String(nueva.fechaSolicitud || '').trim(),
-        codigo: String(nueva.codigo).trim(),
-        nombre: String(nueva.nombre).trim(),
-        sede: String(nueva.sede).trim(),
-        area: String(nueva.area).trim(),
-        producto: String(nueva.producto).trim(),
-        cantidad: cantidadNum,
-        motivo: String(nueva.motivo).trim(),
-        semana: String(nueva.semana || '').match(/(\d+)/)?.[1] || String(nueva.semana || '').trim(),
-        fechaEntrega: String(nueva.fechaEntrega).trim(),
-        observacion: String(nueva.observacion || '').trim(),
-        estado: String(nueva.estado || 'Registrada').trim(),
-      };
-
-      let syncedToDrive = false;
+      const existentesAcumulados = [...existentes];
+      const creadas = [];
       let pendingAppsScriptUpdate = false;
 
-      if (driveCfg.webhookUrl && sheetsSupported) {
-        await callAppsScript(driveCfg.webhookUrl, payload);
-        syncedToDrive = true;
-      } else if (driveCfg.webhookUrl && !sheetsSupported) {
-        // Evitamos enviar POST a una versión anterior del Apps Script que escribiría en la hoja "Solicitudes"
-        pendingAppsScriptUpdate = true;
+      for (const item of itemsInput) {
+        const cantidadNum = Math.max(1, Math.floor(Number(item.cantidad) || 1));
+        const idFinal = generarIdIntExtUnico(existentesAcumulados, item.id);
+
+        const payload = {
+          action: 'registrar_int_ext',
+          hoja: 'Especiales Empresa',
+          id: idFinal,
+          fechaSolicitud: String(item.fechaSolicitud || '').trim(),
+          codigo: String(item.codigo).trim(),
+          nombre: String(item.nombre).trim(),
+          sede: String(item.sede).trim(),
+          area: String(item.area).trim(),
+          producto: String(item.producto).trim(),
+          cantidad: cantidadNum,
+          motivo: String(item.motivo).trim(),
+          semana: String(item.semana || '').match(/(\d+)/)?.[1] || String(item.semana || '').trim(),
+          fechaEntrega: String(item.fechaEntrega).trim(),
+          observacion: String(item.observacion || '').trim(),
+          estado: String(item.estado || 'Registrada').trim(),
+        };
+
+        let syncedToDrive = false;
+
+        if (driveCfg.webhookUrl && sheetsSupported) {
+          await callAppsScript(driveCfg.webhookUrl, payload);
+          syncedToDrive = true;
+        } else if (driveCfg.webhookUrl && !sheetsSupported) {
+          // Evitamos enviar POST a una versión anterior del Apps Script que escribiría en la hoja "Solicitudes"
+          pendingAppsScriptUpdate = true;
+        }
+
+        const finalNueva = normalizarIntExt({
+          ...payload,
+          syncedToDrive,
+          creadoEn: Date.now(),
+        });
+
+        creadas.push(finalNueva);
+        existentesAcumulados.unshift(finalNueva);
       }
 
-      const finalNueva = normalizarIntExt({
-        ...payload,
-        syncedToDrive,
-        creadoEn: Date.now(),
-      });
-
-      const actualizadas = [finalNueva, ...existentes.filter((s) => s.id !== idFinal)];
+      const idsNuevos = new Set(creadas.map((c) => c.id));
+      const actualizadas = [...creadas, ...existentes.filter((s) => !idsNuevos.has(s.id))];
       saveSolicitudesIntExtStorage(actualizadas);
+
+      const needsAppsScriptSheetUpdate =
+        sheetsSupported && intExtSheetName.toLowerCase() !== 'especiales empresa';
 
       return res.status(200).json({
         success: true,
-        solicitud: finalNueva,
+        solicitud: creadas[0],
+        solicitudes: creadas,
         pendingAppsScriptUpdate,
         sheetsSupported,
+        intExtSheetName: intExtSheetName || (sheetsSupported ? 'Solicitud Extra' : ''),
+        needsAppsScriptSheetUpdate,
       });
     }
 
@@ -152,6 +184,8 @@ export default async function handler(req, res) {
       try {
         const data = await callAppsScript(driveCfg.webhookUrl);
         if (data?.supportsIntExt === true || Array.isArray(data?.solicitudesIntExt)) {
+          const intExtSheetName = String(data?.intExtSheetName || '').trim();
+          const needsAppsScriptSheetUpdate = intExtSheetName.toLowerCase() !== 'especiales empresa';
           const deHoja = (data.solicitudesIntExt || []).map((r) =>
             normalizarIntExt({ ...r, syncedToDrive: true })
           );
@@ -164,6 +198,8 @@ export default async function handler(req, res) {
             solicitudes: combinadas,
             source: 'sheets',
             sheetsSupported: true,
+            intExtSheetName: intExtSheetName || 'Solicitud Extra',
+            needsAppsScriptSheetUpdate,
           });
         }
       } catch (e) {
@@ -176,6 +212,8 @@ export default async function handler(req, res) {
       solicitudes: locales,
       source: 'local',
       sheetsSupported: false,
+      intExtSheetName: '',
+      needsAppsScriptSheetUpdate: false,
     });
   } catch (err) {
     return res.status(500).json({

@@ -45,6 +45,8 @@ export const fetchSolicitudesIntExtApi = async (): Promise<{
   solicitudes: SolicitudIntExt[];
   sheetsSupported: boolean;
   source: string;
+  intExtSheetName?: string;
+  needsAppsScriptSheetUpdate?: boolean;
 }> => {
   try {
     const res = await fetch('/api/solicitudes-int-ext');
@@ -54,32 +56,55 @@ export const fetchSolicitudesIntExtApi = async (): Promise<{
       solicitudes: data.solicitudes || [],
       sheetsSupported: !!data.sheetsSupported,
       source: data.source || 'local',
+      intExtSheetName: data.intExtSheetName || '',
+      needsAppsScriptSheetUpdate: !!data.needsAppsScriptSheetUpdate,
     };
   } catch (error) {
     console.warn('Error consultando Especiales Empresa:', error);
-    return { solicitudes: [], sheetsSupported: false, source: 'error' };
+    return {
+      solicitudes: [],
+      sheetsSupported: false,
+      source: 'error',
+      intExtSheetName: '',
+      needsAppsScriptSheetUpdate: false,
+    };
   }
 };
 
 export const createSolicitudIntExtApi = async (
-  solicitud: SolicitudIntExt
+  solicitudOrList: SolicitudIntExt | SolicitudIntExt[]
 ): Promise<{
   solicitud: SolicitudIntExt;
+  solicitudes: SolicitudIntExt[];
   pendingAppsScriptUpdate?: boolean;
+  intExtSheetName?: string;
+  needsAppsScriptSheetUpdate?: boolean;
 }> => {
+  const payload = Array.isArray(solicitudOrList)
+    ? { items: solicitudOrList }
+    : solicitudOrList;
+
   const res = await fetch('/api/solicitudes-int-ext', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(solicitud),
+    body: JSON.stringify(payload),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || 'Error al guardar en Especiales Empresa');
   }
   const data = await res.json();
+  const solicitudes: SolicitudIntExt[] = Array.isArray(data.solicitudes)
+    ? data.solicitudes
+    : data.solicitud
+    ? [data.solicitud]
+    : [];
   return {
-    solicitud: data.solicitud,
+    solicitud: data.solicitud || solicitudes[0],
+    solicitudes,
     pendingAppsScriptUpdate: !!data.pendingAppsScriptUpdate,
+    intExtSheetName: data.intExtSheetName || '',
+    needsAppsScriptSheetUpdate: !!data.needsAppsScriptSheetUpdate,
   };
 };
 
