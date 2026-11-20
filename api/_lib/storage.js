@@ -176,7 +176,7 @@ export async function callAppsScript(webhookUrl, payload) {
     throw new Error(limpio.slice(0, 220) || `Google respondió HTTP ${res.status} sin JSON`);
   }
   if (data.status && data.status !== 'success') {
-    throw new Error(data.message || 'Google Sheets rechazó la operación');
+    throw new Error(data.message || data.emailError || 'Google Sheets rechazó la operación');
   }
   return data;
 }

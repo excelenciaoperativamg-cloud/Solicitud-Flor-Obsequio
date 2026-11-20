@@ -18,20 +18,24 @@ import {
   Check,
   X,
   ChevronDown,
+  Mail,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import * as XLSX from 'xlsx';
 import { SolicitudIntExt, TrabajadorMaestro } from '../types';
+import { EmailNotificationResult, retryEmailIntExtApi } from '../services/apiClient';
 import { getTodayString, formatDateSpanish, getISOWeekNumber } from '../utils/dateUtils';
 
 interface SolicitudIntExtFormProps {
   sesion: TrabajadorMaestro;
   solicitudesIntExt: SolicitudIntExt[];
   sheetsSupported: boolean;
+  emailSupported?: boolean;
   intExtSheetActual?: string;
   needsAppsScriptSheetUpdate?: boolean;
   onGuardarSolicitudIntExt: (
-    nueva: SolicitudIntExt | SolicitudIntExt[]
+    nueva: SolicitudIntExt | SolicitudIntExt[],
+    correoNotificacion?: string
   ) => Promise<{
     success: boolean;
     error?: string;
@@ -40,6 +44,7 @@ interface SolicitudIntExtFormProps {
     pendingAppsScriptUpdate?: boolean;
     intExtSheetName?: string;
     needsAppsScriptSheetUpdate?: boolean;
+    emailNotification?: EmailNotificationResult;
   }>;
   onRecargarIntExt?: () => Promise<void>;
   onCerrarSesion?: () => void;
@@ -51,15 +56,19 @@ const PRODUCTOS_INT_EXT = ['Rosa', 'Clavel', 'Alstroemeria', 'Bouquet'] as const
 const MOTIVOS_INT_EXT = [
   'Cumpleaños',
   'Grados',
-  'Ingresos',
+  'Día de la Mujer',
+  'San Valentín',
   'Día Madre',
   'Día del Padre',
+  'Festival de Talentos',
+  'Homenaje a Pensionados',
 ] as const;
 
 export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
   sesion,
   solicitudesIntExt,
   sheetsSupported,
+  emailSupported = true,
   intExtSheetActual = '',
   needsAppsScriptSheetUpdate = false,
   onGuardarSolicitudIntExt,
@@ -86,11 +95,14 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
   const [motivoSeleccionado, setMotivoSeleccionado] = useState('');
   const [otroMotivo, setOtroMotivo] = useState('');
   const [fechaEntrega, setFechaEntrega] = useState(getTodayString());
+  const [correoNotificacion, setCorreoNotificacion] = useState('');
   const [observacion, setObservacion] = useState('');
 
   const [errores, setErrores] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [solicitudesExitosas, setSolicitudesExitosas] = useState<SolicitudIntExt[]>([]);
+  const [emailResultado, setEmailResultado] = useState<EmailNotificationResult | null>(null);
+  const [reintentandoCorreo, setReintentandoCorreo] = useState(false);
   const [avisoPendienteScript, setAvisoPendienteScript] = useState(false);
   const [copiadoId, setCopiadoId] = useState(false);
 
@@ -195,6 +207,7 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
     setMotivoSeleccionado('');
     setOtroMotivo('');
     setFechaEntrega(getTodayString());
+    setCorreoNotificacion('');
     setObservacion('');
     setErrores({});
   };
@@ -221,6 +234,13 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
     if (!motivoFinal) nuevos.motivo = 'Seleccione o especifique el motivo.';
     if (!fechaEntrega) nuevos.fechaEntrega = 'Seleccione la fecha de entrega.';
 
+    const correoLimpio = correoNotificacion.trim();
+    if (!correoLimpio) {
+      nuevos.correoNotificacion = 'Ingrese el correo electrónico corporativo para notificar.';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correoLimpio)) {
+      nuevos.correoNotificacion = 'Ingrese un correo electrónico válido (ej. nombre@mgconsultores.com).';
+    }
+
     setErrores(nuevos);
     return Object.keys(nuevos).length === 0;
   };
@@ -240,8 +260,9 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
     const year = new Date().getFullYear();
     const semanaCalculada = fechaEntrega ? String(getISOWeekNumber(fechaEntrega)) : '';
     const ahora = Date.now();
+    const correoDestino = correoNotificacion.trim();
 
-    // Un registro independiente por cada producto seleccionado (producto y cantidad por separado)
+    // Un registro independiente por cada producto seleccionado; el correo notificado se aloja en Notificado
     const registrosAEnviar: SolicitudIntExt[] = productosSeleccionadosOrdenados.map((prod, idx) => ({
       id: `SIE-${year}-${String(siguienteNumeroId + idx).padStart(3, '0')}`,
       fechaSolicitud,
@@ -255,12 +276,13 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
       semana: semanaCalculada,
       fechaEntrega,
       observacion: observacion.trim(),
-      estado: 'Registrada',
+      notificado: correoDestino,
+      estado: correoDestino,
       creadoEn: ahora + idx,
     }));
 
     try {
-      const res = await onGuardarSolicitudIntExt(registrosAEnviar);
+      const res = await onGuardarSolicitudIntExt(registrosAEnviar, correoDestino);
       const guardadas =
         res.solicitudes && res.solicitudes.length > 0
           ? res.solicitudes
@@ -269,6 +291,7 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
           : [];
       if (res.success && guardadas.length > 0) {
         setSolicitudesExitosas(guardadas);
+        setEmailResultado(res.emailNotification || null);
         setAvisoPendienteScript(!!res.pendingAppsScriptUpdate);
         limpiarFormulario();
         try {
@@ -310,7 +333,8 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
         s.area.toLowerCase().includes(q) ||
         s.producto.toLowerCase().includes(q) ||
         s.motivo.toLowerCase().includes(q) ||
-        s.observacion.toLowerCase().includes(q)
+        s.observacion.toLowerCase().includes(q) ||
+        (s.notificado || s.estado || '').toLowerCase().includes(q)
     );
   }, [solicitudesIntExt, busquedaTabla]);
 
@@ -328,7 +352,7 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
       Semana: s.semana || (s.fechaEntrega ? String(getISOWeekNumber(s.fechaEntrega)) : ''),
       'Fecha Entrega': s.fechaEntrega,
       Observación: s.observacion,
-      Estado: s.estado || 'Registrada',
+      Notificado: s.notificado || s.estado || 'Registrada',
     }));
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
@@ -369,12 +393,66 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
                 </div>
               ) : needsAppsScriptSheetUpdate ? (
                 <div className="mt-3 p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[11px] text-left">
-                  Se guardó en Google Sheets en la pestaña{' '}
-                  <strong>{intExtSheetActual || 'Solicitud Extra'}</strong> porque el script publicado aún apunta a esa pestaña. Para guardar directamente en{' '}
+                  El script publicado en Google Apps Script aún corresponde a la versión anterior. Para guardar directamente en{' '}
                   <strong>Especiales Empresa</strong>, el administrador debe copiar el código actualizado desde{' '}
                   <strong>Administración → Google Drive</strong> e implementar una <strong>Nueva versión</strong>.
                 </div>
               ) : null}
+
+              {emailResultado?.requested && emailResultado.sent && (
+                <div className="mt-3 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-[11px] text-left flex items-start gap-2">
+                  <Mail className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <div>
+                      <strong>Notificación enviada por correo:</strong> Se envió el detalle completo de la solicitud a{' '}
+                      <span className="font-mono font-bold">{emailResultado.to}</span>
+                      {emailResultado.senderEmail ? (
+                        <>
+                          {' '}desde <span className="font-mono font-semibold">{emailResultado.senderEmail}</span>
+                        </>
+                      ) : null}
+                      .
+                    </div>
+                    <p className="text-[10px] text-emerald-800/90">
+                      Si no aparece en la bandeja principal, revise <strong>Correo no deseado (Spam)</strong> o <strong>Otros</strong> (los correos corporativos pueden filtrar mensajes automáticos externos).
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {emailResultado?.requested && !emailResultado.sent && (
+                <div className="mt-3 p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[11px] text-left flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div className="flex-1 space-y-2">
+                    <div>
+                      <strong>Notificación pendiente para {emailResultado.to}:</strong>{' '}
+                      {emailResultado.error ||
+                        'El administrador debe autorizar el permiso de envío de correos en Google Apps Script e implementar una Nueva versión.'}
+                    </div>
+                    <button
+                      type="button"
+                      disabled={reintentandoCorreo}
+                      onClick={async () => {
+                        if (!emailResultado.to || solicitudesExitosas.length === 0) return;
+                        setReintentandoCorreo(true);
+                        try {
+                          const resRetry = await retryEmailIntExtApi(
+                            solicitudesExitosas,
+                            emailResultado.to
+                          );
+                          setEmailResultado(resRetry);
+                        } finally {
+                          setReintentandoCorreo(false);
+                        }
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-900 hover:bg-amber-950 text-white font-bold text-[11px] cursor-pointer disabled:opacity-60 transition"
+                    >
+                      <RefreshCw className={`w-3 h-3 ${reintentandoCorreo ? 'animate-spin' : ''}`} />
+                      <span>{reintentandoCorreo ? 'Reintentando envío…' : 'Reintentar envío de correo'}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 text-xs text-slate-700 space-y-2 mb-5">
@@ -482,10 +560,10 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
                   {formatDateSpanish(primeraExitosa.fechaEntrega)}
                 </span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Estado:</span>
-                <span className="font-bold text-emerald-700">
-                  {primeraExitosa.estado || 'Registrada'}
+              <div className="flex justify-between gap-3">
+                <span className="text-slate-500 shrink-0">Notificado:</span>
+                <span className="font-bold text-emerald-700 break-all text-right">
+                  {primeraExitosa.notificado || primeraExitosa.estado || 'Registrada'}
                 </span>
               </div>
               {primeraExitosa.observacion && (
@@ -506,7 +584,10 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
               </button>
               <button
                 type="button"
-                onClick={() => setSolicitudesExitosas([])}
+                onClick={() => {
+                  setSolicitudesExitosas([]);
+                  setEmailResultado(null);
+                }}
                 className="flex-1 py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold flex items-center justify-center gap-2 cursor-pointer"
               >
                 <Plus className="w-4 h-4" /> Nueva Solicitud
@@ -515,6 +596,7 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
                 type="button"
                 onClick={() => {
                   setSolicitudesExitosas([]);
+                  setEmailResultado(null);
                   onCerrarSesion?.();
                 }}
                 className="flex-1 py-2.5 px-4 rounded-xl bg-[#0a2958] hover:bg-[#0d346e] text-white text-xs font-bold flex items-center justify-center gap-2 cursor-pointer"
@@ -564,7 +646,14 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
           <div className="mx-6 mt-5 p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start gap-2.5">
             <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
             <div>
-              El webhook actual de Google Apps Script sigue leyendo y escribiendo en la pestaña <strong>{intExtSheetActual || 'Solicitud Extra'}</strong> en lugar de <strong>Especiales Empresa</strong>. Para que los registros aparezcan en <strong>Especiales Empresa</strong>, el administrador debe actualizar el script en Google Sheets (<em>Administración → Google Drive → Copiar código</em> e implementar una <strong>Nueva versión</strong>).
+              El webhook actual de Google Apps Script aún no está actualizado para usar únicamente la pestaña <strong>Especiales Empresa</strong>{intExtSheetActual ? ` (apuntando actualmente a ${intExtSheetActual})` : ''}. Para que los registros se guarden en <strong>Especiales Empresa</strong>, el administrador debe copiar el código ajustado desde <em>Administración → Google Drive → Copiar código</em> e implementar una <strong>Nueva versión</strong> en Google Sheets.
+            </div>
+          </div>
+        ) : !emailSupported ? (
+          <div className="mx-6 mt-5 p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start gap-2.5">
+            <Mail className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+            <div>
+              Para activar el <strong>envío automático de notificaciones por correo electrónico</strong> desde Google Sheets, el administrador debe copiar el código actualizado desde <em>Administración → Google Drive → Copiar código</em>, implementar una <strong>Nueva versión</strong> y autorizar el permiso de envío de correos.
             </div>
           </div>
         ) : null}
@@ -917,6 +1006,42 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
             </div>
 
             <div>
+              <label
+                htmlFor="correo-notificacion-especiales"
+                className="flex items-center gap-1.5 text-xs font-bold text-slate-700 mb-1.5"
+              >
+                <Mail className="w-3.5 h-3.5 text-[#0a2958]" />
+                <span>Notificar al correo electrónico</span>
+                <span className="text-[#E60000]">*</span>
+              </label>
+              <input
+                id="correo-notificacion-especiales"
+                type="email"
+                value={correoNotificacion}
+                onChange={(e) => {
+                  setCorreoNotificacion(e.target.value);
+                  setErrores((prev) => {
+                    const next = { ...prev };
+                    delete next.correoNotificacion;
+                    return next;
+                  });
+                }}
+                placeholder="Ej. notificaciones@mgconsultores.com"
+                className={`w-full px-3.5 py-2.5 text-xs rounded-xl border font-semibold outline-hidden ${
+                  errores.correoNotificacion
+                    ? 'border-rose-400 bg-rose-50/40 text-slate-900'
+                    : 'border-slate-300 focus:border-[#0a2958] text-slate-800'
+                }`}
+              />
+              <p className="text-[11px] text-slate-500 mt-1">
+                Este correo recibirá el detalle completo de la solicitud y quedará registrado en la columna <strong>Notificado</strong>.
+              </p>
+              {errores.correoNotificacion && (
+                <p className="text-[11px] text-[#E60000] font-semibold mt-1">{errores.correoNotificacion}</p>
+              )}
+            </div>
+
+            <div>
               <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
                 <MessageSquare className="w-3.5 h-3.5 text-slate-400" />
                 <span>Observación</span>
@@ -1028,7 +1153,7 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
                 <th className="py-2.5 px-3">Semana</th>
                 <th className="py-2.5 px-3">Fecha Entrega</th>
                 <th className="py-2.5 px-3">Observación</th>
-                <th className="py-2.5 px-3">Estado</th>
+                <th className="py-2.5 px-3">Notificado</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -1039,27 +1164,35 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
                   </td>
                 </tr>
               ) : (
-                solicitudesFiltradas.map((s, idx) => (
-                  <tr key={`${s.id}-${s.codigo}-${idx}`} className="hover:bg-slate-50/80">
-                    <td className="py-2.5 px-3 font-mono font-bold text-[#0a2958] whitespace-nowrap">{s.id}</td>
-                    <td className="py-2.5 px-3 whitespace-nowrap">{s.fechaSolicitud}</td>
-                    <td className="py-2.5 px-3 font-mono">{s.codigo}</td>
-                    <td className="py-2.5 px-3 font-semibold text-slate-800">{s.nombre}</td>
-                    <td className="py-2.5 px-3 font-bold">{s.sede}</td>
-                    <td className="py-2.5 px-3">{s.area}</td>
-                    <td className="py-2.5 px-3 font-semibold">{s.producto}</td>
-                    <td className="py-2.5 px-3 text-right font-mono tabular-nums font-bold text-[#0a2958]">{s.cantidad}</td>
-                    <td className="py-2.5 px-3">{s.motivo}</td>
-                    <td className="py-2.5 px-3 font-bold text-[#E60000]">
-                      {s.semana || (s.fechaEntrega ? String(getISOWeekNumber(s.fechaEntrega)) : '—')}
-                    </td>
-                    <td className="py-2.5 px-3 whitespace-nowrap">{s.fechaEntrega}</td>
-                    <td className="py-2.5 px-3 max-w-xs truncate" title={s.observacion}>
-                      {s.observacion || '—'}
-                    </td>
-                    <td className="py-2.5 px-3 font-semibold text-emerald-700">{s.estado || 'Registrada'}</td>
-                  </tr>
-                ))
+                solicitudesFiltradas.map((s, idx) => {
+                  const notificadoMostrar = s.notificado || s.estado || 'Registrada';
+                  return (
+                    <tr key={`${s.id}-${s.codigo}-${idx}`} className="hover:bg-slate-50/80">
+                      <td className="py-2.5 px-3 font-mono font-bold text-[#0a2958] whitespace-nowrap">{s.id}</td>
+                      <td className="py-2.5 px-3 whitespace-nowrap">{s.fechaSolicitud}</td>
+                      <td className="py-2.5 px-3 font-mono">{s.codigo}</td>
+                      <td className="py-2.5 px-3 font-semibold text-slate-800">{s.nombre}</td>
+                      <td className="py-2.5 px-3 font-bold">{s.sede}</td>
+                      <td className="py-2.5 px-3">{s.area}</td>
+                      <td className="py-2.5 px-3 font-semibold">{s.producto}</td>
+                      <td className="py-2.5 px-3 text-right font-mono tabular-nums font-bold text-[#0a2958]">{s.cantidad}</td>
+                      <td className="py-2.5 px-3">{s.motivo}</td>
+                      <td className="py-2.5 px-3 font-bold text-[#E60000]">
+                        {s.semana || (s.fechaEntrega ? String(getISOWeekNumber(s.fechaEntrega)) : '—')}
+                      </td>
+                      <td className="py-2.5 px-3 whitespace-nowrap">{s.fechaEntrega}</td>
+                      <td className="py-2.5 px-3 max-w-xs truncate" title={s.observacion}>
+                        {s.observacion || '—'}
+                      </td>
+                      <td
+                        className="py-2.5 px-3 font-semibold text-emerald-700 max-w-[220px] truncate"
+                        title={notificadoMostrar}
+                      >
+                        {notificadoMostrar}
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>

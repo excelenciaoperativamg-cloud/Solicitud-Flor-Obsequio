@@ -44,6 +44,7 @@ export interface SolicitudIntExt {
   semana?: string;
   fechaEntrega: string;
   observacion: string;
+  notificado?: string;
   estado?: string;
   syncedToDrive?: boolean;
   creadoEn?: number;

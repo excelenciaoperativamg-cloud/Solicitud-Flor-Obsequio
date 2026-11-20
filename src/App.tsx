@@ -34,6 +34,7 @@ import {
   testDriveWebhookApi,
   syncMaestroFromDriveApi,
   DriveConfig,
+  EmailNotificationResult,
 } from './services/apiClient';
 import {
   getOrCreateSpreadsheet,
@@ -72,6 +73,7 @@ export default function App() {
   const [solicitudes, setSolicitudes] = useState<SolicitudFlor[]>([]);
   const [solicitudesIntExt, setSolicitudesIntExt] = useState<SolicitudIntExt[]>([]);
   const [intExtSheetsSupported, setIntExtSheetsSupported] = useState<boolean>(true);
+  const [intExtEmailSupported, setIntExtEmailSupported] = useState<boolean>(true);
   const [intExtSheetActual, setIntExtSheetActual] = useState<string>('');
   const [intExtSheetMismatch, setIntExtSheetMismatch] = useState<boolean>(false);
 
@@ -117,6 +119,7 @@ export default function App() {
         if (intExtRes && Array.isArray(intExtRes.solicitudes)) {
           setSolicitudesIntExt(intExtRes.solicitudes);
           setIntExtSheetsSupported(intExtRes.sheetsSupported || intExtRes.source === 'sheets');
+          setIntExtEmailSupported(!!intExtRes.supportsEmailNotification);
           setIntExtSheetActual(intExtRes.intExtSheetName || '');
           setIntExtSheetMismatch(!!intExtRes.needsAppsScriptSheetUpdate);
         }
@@ -190,7 +193,8 @@ export default function App() {
   };
 
   const handleGuardarSolicitudIntExt = async (
-    nuevaOLista: SolicitudIntExt | SolicitudIntExt[]
+    nuevaOLista: SolicitudIntExt | SolicitudIntExt[],
+    correoNotificacion?: string
   ): Promise<{
     success: boolean;
     error?: string;
@@ -199,9 +203,10 @@ export default function App() {
     pendingAppsScriptUpdate?: boolean;
     intExtSheetName?: string;
     needsAppsScriptSheetUpdate?: boolean;
+    emailNotification?: EmailNotificationResult;
   }> => {
     try {
-      const res = await createSolicitudIntExtApi(nuevaOLista);
+      const res = await createSolicitudIntExtApi(nuevaOLista, correoNotificacion);
       const guardadas = res.solicitudes.length > 0 ? res.solicitudes : [res.solicitud];
       const idsGuardados = new Set(guardadas.map((g) => g.id));
       setSolicitudesIntExt((prev) => [
@@ -211,6 +216,9 @@ export default function App() {
       const total = guardadas.length;
       setIntExtSheetActual(res.intExtSheetName || '');
       setIntExtSheetMismatch(!!res.needsAppsScriptSheetUpdate);
+      if (typeof res.supportsEmailNotification === 'boolean') {
+        setIntExtEmailSupported(res.supportsEmailNotification);
+      }
 
       if (res.pendingAppsScriptUpdate) {
         setIntExtSheetsSupported(false);
@@ -221,9 +229,22 @@ export default function App() {
         );
       } else if (res.needsAppsScriptSheetUpdate) {
         setIntExtSheetsSupported(true);
-        const destino = res.intExtSheetName || 'Solicitud Extra';
         mostrarToast(
-          `Guardado en la pestaña "${destino}" de Drive (actualice Apps Script para apuntar a Especiales Empresa)`
+          'Actualice el script en Google Drive (Nueva versión) para escribir directamente en Especiales Empresa'
+        );
+      } else if (res.emailNotification?.requested && res.emailNotification.sent) {
+        setIntExtSheetsSupported(true);
+        mostrarToast(
+          total > 1
+            ? `${total} registros guardados y notificación enviada a ${res.emailNotification.to}`
+            : `Solicitud registrada y notificación enviada a ${res.emailNotification.to}`
+        );
+      } else if (res.emailNotification?.requested && !res.emailNotification.sent) {
+        setIntExtSheetsSupported(true);
+        mostrarToast(
+          total > 1
+            ? `${total} registros guardados en Especiales Empresa (notificación por correo pendiente)`
+            : 'Solicitud registrada en Especiales Empresa (notificación por correo pendiente)'
         );
       } else {
         setIntExtSheetsSupported(true);
@@ -240,6 +261,7 @@ export default function App() {
         pendingAppsScriptUpdate: res.pendingAppsScriptUpdate,
         intExtSheetName: res.intExtSheetName,
         needsAppsScriptSheetUpdate: res.needsAppsScriptSheetUpdate,
+        emailNotification: res.emailNotification,
       };
     } catch (err: any) {
       return { success: false, error: err.message || 'Error al guardar en Especiales Empresa' };
@@ -250,6 +272,7 @@ export default function App() {
     const res = await fetchSolicitudesIntExtApi();
     setSolicitudesIntExt(res.solicitudes || []);
     setIntExtSheetsSupported(res.sheetsSupported || res.source === 'sheets');
+    setIntExtEmailSupported(!!res.supportsEmailNotification);
     setIntExtSheetActual(res.intExtSheetName || '');
     setIntExtSheetMismatch(!!res.needsAppsScriptSheetUpdate);
   };
@@ -435,6 +458,7 @@ export default function App() {
                   sesion={sesion}
                   solicitudesIntExt={solicitudesIntExt}
                   sheetsSupported={intExtSheetsSupported}
+                  emailSupported={intExtEmailSupported}
                   intExtSheetActual={intExtSheetActual}
                   needsAppsScriptSheetUpdate={intExtSheetMismatch}
                   onGuardarSolicitudIntExt={handleGuardarSolicitudIntExt}

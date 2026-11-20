@@ -41,9 +41,20 @@ export const createSolicitudApi = async (solicitud: SolicitudFlor): Promise<Soli
   }
 };
 
+export interface EmailNotificationResult {
+  requested: boolean;
+  sent: boolean;
+  to: string;
+  senderEmail?: string;
+  quotaRemaining?: number;
+  error?: string;
+  needsAppsScriptUpdate?: boolean;
+}
+
 export const fetchSolicitudesIntExtApi = async (): Promise<{
   solicitudes: SolicitudIntExt[];
   sheetsSupported: boolean;
+  supportsEmailNotification?: boolean;
   source: string;
   intExtSheetName?: string;
   needsAppsScriptSheetUpdate?: boolean;
@@ -55,6 +66,7 @@ export const fetchSolicitudesIntExtApi = async (): Promise<{
     return {
       solicitudes: data.solicitudes || [],
       sheetsSupported: !!data.sheetsSupported,
+      supportsEmailNotification: !!data.supportsEmailNotification,
       source: data.source || 'local',
       intExtSheetName: data.intExtSheetName || '',
       needsAppsScriptSheetUpdate: !!data.needsAppsScriptSheetUpdate,
@@ -64,6 +76,7 @@ export const fetchSolicitudesIntExtApi = async (): Promise<{
     return {
       solicitudes: [],
       sheetsSupported: false,
+      supportsEmailNotification: false,
       source: 'error',
       intExtSheetName: '',
       needsAppsScriptSheetUpdate: false,
@@ -72,17 +85,20 @@ export const fetchSolicitudesIntExtApi = async (): Promise<{
 };
 
 export const createSolicitudIntExtApi = async (
-  solicitudOrList: SolicitudIntExt | SolicitudIntExt[]
+  solicitudOrList: SolicitudIntExt | SolicitudIntExt[],
+  correoNotificacion?: string
 ): Promise<{
   solicitud: SolicitudIntExt;
   solicitudes: SolicitudIntExt[];
   pendingAppsScriptUpdate?: boolean;
+  supportsEmailNotification?: boolean;
   intExtSheetName?: string;
   needsAppsScriptSheetUpdate?: boolean;
+  emailNotification?: EmailNotificationResult;
 }> => {
   const payload = Array.isArray(solicitudOrList)
-    ? { items: solicitudOrList }
-    : solicitudOrList;
+    ? { items: solicitudOrList, correoNotificacion: correoNotificacion || '' }
+    : { ...solicitudOrList, correoNotificacion: correoNotificacion || '' };
 
   const res = await fetch('/api/solicitudes-int-ext', {
     method: 'POST',
@@ -103,8 +119,33 @@ export const createSolicitudIntExtApi = async (
     solicitud: data.solicitud || solicitudes[0],
     solicitudes,
     pendingAppsScriptUpdate: !!data.pendingAppsScriptUpdate,
+    supportsEmailNotification: !!data.supportsEmailNotification,
     intExtSheetName: data.intExtSheetName || '',
     needsAppsScriptSheetUpdate: !!data.needsAppsScriptSheetUpdate,
+    emailNotification: data.emailNotification,
+  };
+};
+
+export const retryEmailIntExtApi = async (
+  items: SolicitudIntExt[],
+  correoNotificacion: string
+): Promise<EmailNotificationResult> => {
+  const res = await fetch('/api/solicitudes-int-ext', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      action: 'notificar',
+      items,
+      correoNotificacion,
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (data?.emailNotification) return data.emailNotification;
+  return {
+    requested: true,
+    sent: false,
+    to: correoNotificacion,
+    error: data?.error || 'No se pudo reintentar el envío de correo.',
   };
 };
 

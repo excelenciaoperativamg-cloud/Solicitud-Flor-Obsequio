@@ -8,6 +8,7 @@ import {
 function normalizarIntExt(s) {
   const cantidadNum = Number(s?.cantidad);
   const semanaStr = String(s?.semana || '').match(/(\d+)/)?.[1] || String(s?.semana || '').trim();
+  const notificadoVal = String(s?.notificado || s?.estado || 'Registrada').trim();
   return {
     id: String(s?.id || '').trim(),
     fechaSolicitud: String(s?.fechaSolicitud || s?.fecha || '').trim(),
@@ -21,7 +22,8 @@ function normalizarIntExt(s) {
     semana: semanaStr,
     fechaEntrega: String(s?.fechaEntrega || '').trim(),
     observacion: String(s?.observacion || '').trim(),
-    estado: String(s?.estado || 'Registrada').trim(),
+    notificado: notificadoVal,
+    estado: notificadoVal,
     syncedToDrive: s?.syncedToDrive !== false,
     creadoEn: s?.creadoEn || Date.now(),
   };
@@ -52,12 +54,86 @@ function generarIdIntExtUnico(existentes, idSugerido) {
   return candidate;
 }
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function formatearErrorCorreo(rawErr) {
+  const txt = String(rawErr || '').trim();
+  if (
+    !txt ||
+    /permis|authoriz|autoriz|mailapp|scope|specified permissions|rechazó la operación/i.test(txt)
+  ) {
+    return 'Falta autorizar el envío de correos (MailApp) en Google Apps Script. En Google Sheets abra Extensiones → Apps Script, seleccione la función autorizarEnvioCorreos (o doGet), haga clic en ▶ Ejecutar → Revisar permisos → Permitir, y luego implemente una Nueva versión.';
+  }
+  return txt;
+}
+
 export default async function handler(req, res) {
   try {
     const driveCfg = getDriveConfigStorage();
 
     if (req.method === 'POST') {
       const body = req.body;
+
+      // Reintento de envío de correo para solicitudes ya registradas (sin duplicar filas)
+      if (body?.action === 'notificar') {
+        const itemsRetry = Array.isArray(body?.items) ? body.items : [];
+        const correoRetry = String(
+          body?.correoNotificacion || itemsRetry[0]?.notificado || itemsRetry[0]?.estado || ''
+        ).trim();
+        if (!correoRetry || !EMAIL_REGEX.test(correoRetry)) {
+          return res.status(400).json({
+            success: false,
+            error: 'El correo electrónico de notificación no tiene un formato válido.',
+          });
+        }
+        if (!driveCfg.webhookUrl) {
+          return res.status(200).json({
+            success: true,
+            emailNotification: {
+              requested: true,
+              sent: false,
+              to: correoRetry,
+              error: 'No hay URL de webhook de Google Apps Script configurada.',
+            },
+          });
+        }
+        try {
+          const mailRes = await callAppsScript(driveCfg.webhookUrl, {
+            action: 'notificar_int_ext',
+            correoDestino: correoRetry,
+            items: itemsRetry,
+          });
+          return res.status(200).json({
+            success: true,
+            emailNotification: {
+              requested: true,
+              sent: !!mailRes?.emailSent,
+              to: mailRes?.to || correoRetry,
+              senderEmail: mailRes?.senderEmail || '',
+              quotaRemaining:
+                typeof mailRes?.quotaRemaining === 'number' ? mailRes.quotaRemaining : undefined,
+              error: mailRes?.emailSent
+                ? ''
+                : formatearErrorCorreo(
+                    mailRes?.emailError ||
+                      mailRes?.message ||
+                      'No se recibió confirmación del envío de correo desde Apps Script.'
+                  ),
+            },
+          });
+        } catch (mailErr) {
+          return res.status(200).json({
+            success: true,
+            emailNotification: {
+              requested: true,
+              sent: false,
+              to: correoRetry,
+              error: formatearErrorCorreo(mailErr?.message || mailErr),
+            },
+          });
+        }
+      }
+
       const itemsInput = Array.isArray(body?.items)
         ? body.items
         : Array.isArray(body)
@@ -68,6 +144,18 @@ export default async function handler(req, res) {
         return res.status(400).json({
           success: false,
           error: 'Debe enviar al menos un producto para registrar en Especiales Empresa.',
+        });
+      }
+
+      const candidatoEstado = String(itemsInput[0]?.notificado || itemsInput[0]?.estado || '').trim();
+      const rawCorreo = String(
+        body?.correoNotificacion || (EMAIL_REGEX.test(candidatoEstado) ? candidatoEstado : '')
+      ).trim();
+
+      if (rawCorreo && !EMAIL_REGEX.test(rawCorreo)) {
+        return res.status(400).json({
+          success: false,
+          error: 'El correo electrónico de notificación no tiene un formato válido.',
         });
       }
 
@@ -91,6 +179,7 @@ export default async function handler(req, res) {
 
       let existentes = getSolicitudesIntExtStorage();
       let sheetsSupported = false;
+      let supportsEmailNotification = false;
       let intExtSheetName = '';
 
       if (driveCfg.webhookUrl) {
@@ -98,6 +187,7 @@ export default async function handler(req, res) {
           const sheetData = await callAppsScript(driveCfg.webhookUrl);
           if (sheetData?.supportsIntExt === true || Array.isArray(sheetData?.solicitudesIntExt)) {
             sheetsSupported = true;
+            supportsEmailNotification = !!sheetData?.supportsEmailNotification;
             intExtSheetName = String(sheetData?.intExtSheetName || '').trim();
             if (Array.isArray(sheetData.solicitudesIntExt)) {
               const deHoja = sheetData.solicitudesIntExt.map((r) =>
@@ -114,6 +204,9 @@ export default async function handler(req, res) {
         }
       }
 
+      const targetSheetIsEspeciales =
+        sheetsSupported && intExtSheetName.toLowerCase() === 'especiales empresa';
+
       const existentesAcumulados = [...existentes];
       const creadas = [];
       let pendingAppsScriptUpdate = false;
@@ -121,6 +214,7 @@ export default async function handler(req, res) {
       for (const item of itemsInput) {
         const cantidadNum = Math.max(1, Math.floor(Number(item.cantidad) || 1));
         const idFinal = generarIdIntExtUnico(existentesAcumulados, item.id);
+        const notificadoFinal = rawCorreo || String(item.notificado || item.estado || 'Registrada').trim();
 
         const payload = {
           action: 'registrar_int_ext',
@@ -137,16 +231,17 @@ export default async function handler(req, res) {
           semana: String(item.semana || '').match(/(\d+)/)?.[1] || String(item.semana || '').trim(),
           fechaEntrega: String(item.fechaEntrega).trim(),
           observacion: String(item.observacion || '').trim(),
-          estado: String(item.estado || 'Registrada').trim(),
+          notificado: notificadoFinal,
+          estado: notificadoFinal,
         };
 
         let syncedToDrive = false;
 
-        if (driveCfg.webhookUrl && sheetsSupported) {
+        if (driveCfg.webhookUrl && targetSheetIsEspeciales) {
           await callAppsScript(driveCfg.webhookUrl, payload);
           syncedToDrive = true;
-        } else if (driveCfg.webhookUrl && !sheetsSupported) {
-          // Evitamos enviar POST a una versión anterior del Apps Script que escribiría en la hoja "Solicitudes"
+        } else if (driveCfg.webhookUrl) {
+          // Evitamos enviar POST a una versión anterior del Apps Script que recrearía la hoja "Solicitud Extra"
           pendingAppsScriptUpdate = true;
         }
 
@@ -167,14 +262,78 @@ export default async function handler(req, res) {
       const needsAppsScriptSheetUpdate =
         sheetsSupported && intExtSheetName.toLowerCase() !== 'especiales empresa';
 
+      // Enviar una única notificación consolidada al correo corporativo indicado
+      let emailNotification = {
+        requested: !!rawCorreo,
+        sent: false,
+        to: rawCorreo,
+        error: '',
+        needsAppsScriptUpdate: false,
+      };
+
+      if (rawCorreo) {
+        if (driveCfg.webhookUrl && targetSheetIsEspeciales && supportsEmailNotification) {
+          try {
+            const mailRes = await callAppsScript(driveCfg.webhookUrl, {
+              action: 'notificar_int_ext',
+              correoDestino: rawCorreo,
+              items: creadas,
+            });
+            emailNotification = {
+              requested: true,
+              sent: !!mailRes?.emailSent,
+              to: mailRes?.to || rawCorreo,
+              senderEmail: mailRes?.senderEmail || '',
+              quotaRemaining:
+                typeof mailRes?.quotaRemaining === 'number' ? mailRes.quotaRemaining : undefined,
+              error: mailRes?.emailSent
+                ? ''
+                : formatearErrorCorreo(
+                    mailRes?.emailError ||
+                      mailRes?.message ||
+                      'No se recibió confirmación del envío de correo desde Apps Script.'
+                  ),
+              needsAppsScriptUpdate: false,
+            };
+          } catch (mailErr) {
+            emailNotification = {
+              requested: true,
+              sent: false,
+              to: rawCorreo,
+              error: formatearErrorCorreo(mailErr?.message || mailErr),
+              needsAppsScriptUpdate: false,
+            };
+          }
+        } else if (driveCfg.webhookUrl) {
+          emailNotification = {
+            requested: true,
+            sent: false,
+            to: rawCorreo,
+            error:
+              'La versión activa de Google Apps Script aún no incluye el envío de correos (MailApp). Actualice el código desde Administración → Google Drive e implemente una Nueva versión.',
+            needsAppsScriptUpdate: true,
+          };
+        } else {
+          emailNotification = {
+            requested: true,
+            sent: false,
+            to: rawCorreo,
+            error: 'No hay URL de webhook de Google Apps Script configurada para enviar el correo.',
+            needsAppsScriptUpdate: false,
+          };
+        }
+      }
+
       return res.status(200).json({
         success: true,
         solicitud: creadas[0],
         solicitudes: creadas,
         pendingAppsScriptUpdate,
         sheetsSupported,
-        intExtSheetName: intExtSheetName || (sheetsSupported ? 'Solicitud Extra' : ''),
+        supportsEmailNotification,
+        intExtSheetName,
         needsAppsScriptSheetUpdate,
+        emailNotification,
       });
     }
 
@@ -186,6 +345,7 @@ export default async function handler(req, res) {
         if (data?.supportsIntExt === true || Array.isArray(data?.solicitudesIntExt)) {
           const intExtSheetName = String(data?.intExtSheetName || '').trim();
           const needsAppsScriptSheetUpdate = intExtSheetName.toLowerCase() !== 'especiales empresa';
+          const supportsEmailNotification = !!data?.supportsEmailNotification;
           const deHoja = (data.solicitudesIntExt || []).map((r) =>
             normalizarIntExt({ ...r, syncedToDrive: true })
           );
@@ -198,7 +358,8 @@ export default async function handler(req, res) {
             solicitudes: combinadas,
             source: 'sheets',
             sheetsSupported: true,
-            intExtSheetName: intExtSheetName || 'Solicitud Extra',
+            supportsEmailNotification,
+            intExtSheetName,
             needsAppsScriptSheetUpdate,
           });
         }
@@ -212,6 +373,7 @@ export default async function handler(req, res) {
       solicitudes: locales,
       source: 'local',
       sheetsSupported: false,
+      supportsEmailNotification: false,
       intExtSheetName: '',
       needsAppsScriptSheetUpdate: false,
     });
