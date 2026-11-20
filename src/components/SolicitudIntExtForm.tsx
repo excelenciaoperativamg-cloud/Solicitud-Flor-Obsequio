@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   FilePlus2,
   Building2,
@@ -98,6 +98,13 @@ function parsearListaCorreos(raw: string): {
   };
 }
 
+function obtenerNumSemanaIntExt(s: SolicitudIntExt): number {
+  const m = String(s.semana || '').match(/(\d+)/);
+  if (m) return Number(m[1]);
+  if (s.fechaEntrega) return getISOWeekNumber(s.fechaEntrega);
+  return 0;
+}
+
 export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
   sesion,
   solicitudesIntExt,
@@ -141,6 +148,10 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
   const [copiadoId, setCopiadoId] = useState(false);
 
   const [busquedaTabla, setBusquedaTabla] = useState('');
+  const [filtroSemana, setFiltroSemana] = useState<string>('todas');
+  const [productosFiltro, setProductosFiltro] = useState<string[]>([]);
+  const [dropdownProductoAbierto, setDropdownProductoAbierto] = useState(false);
+  const dropdownProductoRef = useRef<HTMLDivElement | null>(null);
   const [recargandoTabla, setRecargandoTabla] = useState(false);
 
   useEffect(() => {
@@ -148,6 +159,19 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
       localStorage.setItem('sfo_areas_int_ext_custom', JSON.stringify(areasPersonalizadas));
     } catch {}
   }, [areasPersonalizadas]);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        dropdownProductoRef.current &&
+        !dropdownProductoRef.current.contains(e.target as Node)
+      ) {
+        setDropdownProductoAbierto(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const siguienteNumeroId = useMemo(() => {
     const year = new Date().getFullYear();
@@ -358,11 +382,49 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
     }
   };
 
+  const semanasDisponiblesTabla = useMemo(() => {
+    const set = new Set<number>();
+    for (const s of solicitudesIntExt) {
+      const num = obtenerNumSemanaIntExt(s);
+      if (num > 0) set.add(num);
+    }
+    return Array.from(set).sort((a, b) => b - a);
+  }, [solicitudesIntExt]);
+
+  const productosDisponiblesTabla = useMemo(() => {
+    const lista: string[] = [...PRODUCTOS_INT_EXT];
+    const vistos = new Set(lista.map((p) => p.toLowerCase()));
+    for (const s of solicitudesIntExt) {
+      const prod = String(s.producto || '').trim();
+      if (prod && !vistos.has(prod.toLowerCase())) {
+        vistos.add(prod.toLowerCase());
+        lista.push(prod);
+      }
+    }
+    return lista;
+  }, [solicitudesIntExt]);
+
+  const toggleProductoFiltro = (prod: string) => {
+    setProductosFiltro((prev) =>
+      prev.includes(prod) ? prev.filter((p) => p !== prod) : [...prev, prod]
+    );
+  };
+
+  const hayFiltrosTablaActivos =
+    busquedaTabla.trim() !== '' || filtroSemana !== 'todas' || productosFiltro.length > 0;
+
+  const limpiarFiltrosTabla = () => {
+    setBusquedaTabla('');
+    setFiltroSemana('todas');
+    setProductosFiltro([]);
+  };
+
   const solicitudesFiltradas = useMemo(() => {
     const q = busquedaTabla.trim().toLowerCase();
-    if (!q) return solicitudesIntExt;
-    return solicitudesIntExt.filter(
-      (s) =>
+    return solicitudesIntExt.filter((s) => {
+      const semNum = obtenerNumSemanaIntExt(s);
+      const matchBusqueda =
+        !q ||
         s.id.toLowerCase().includes(q) ||
         s.nombre.toLowerCase().includes(q) ||
         s.codigo.toLowerCase().includes(q) ||
@@ -371,9 +433,24 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
         s.producto.toLowerCase().includes(q) ||
         s.motivo.toLowerCase().includes(q) ||
         s.observacion.toLowerCase().includes(q) ||
-        (s.notificado || s.estado || '').toLowerCase().includes(q)
-    );
-  }, [solicitudesIntExt, busquedaTabla]);
+        (semNum > 0 && `semana ${semNum}`.includes(q)) ||
+        (s.notificado || s.estado || '').toLowerCase().includes(q);
+
+      const matchSemana = filtroSemana === 'todas' || String(semNum) === filtroSemana;
+
+      const prodNorm = String(s.producto || '').trim().toLowerCase();
+      const matchProducto =
+        productosFiltro.length === 0 ||
+        productosFiltro.some((p) => p.toLowerCase() === prodNorm);
+
+      return matchBusqueda && matchSemana && matchProducto;
+    });
+  }, [solicitudesIntExt, busquedaTabla, filtroSemana, productosFiltro]);
+
+  const totalRamosFiltrados = useMemo(
+    () => solicitudesFiltradas.reduce((acc, s) => acc + (Number(s.cantidad) || 0), 0),
+    [solicitudesFiltradas]
+  );
 
   const exportarExcel = () => {
     const rows = solicitudesFiltradas.map((s) => ({
@@ -1125,54 +1202,164 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
       </div>
 
       {/* Historial de registros en hoja Especiales Empresa */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h3 className="text-sm font-extrabold text-[#0a2958]">
-              Registros en Especiales Empresa ({solicitudesFiltradas.length})
-            </h3>
-            <p className="text-xs text-slate-500">
-              Historial de solicitudes registradas en Especiales Empresa
-            </p>
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm">
+        <div className="px-6 py-4 border-b border-slate-100 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-extrabold text-[#0a2958]">
+                Registros en Especiales Empresa ({solicitudesFiltradas.length})
+              </h3>
+              <p className="text-xs text-slate-500">
+                Mostrando <strong className="text-slate-700">{solicitudesFiltradas.length}</strong> de{' '}
+                <strong className="text-slate-700">{solicitudesIntExt.length}</strong> registros · Total:{' '}
+                <strong className="font-mono tabular-nums text-[#0a2958]">{totalRamosFiltrados} ramos</strong>
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {onRecargarIntExt && (
+                <button
+                  type="button"
+                  disabled={recargandoTabla}
+                  onClick={async () => {
+                    setRecargandoTabla(true);
+                    try {
+                      await onRecargarIntExt();
+                    } finally {
+                      setRecargandoTabla(false);
+                    }
+                  }}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-50 inline-flex items-center gap-1.5 cursor-pointer"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${recargandoTabla ? 'animate-spin' : ''}`} />
+                  <span>Actualizar</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={exportarExcel}
+                disabled={solicitudesFiltradas.length === 0}
+                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Exportar Excel</span>
+              </button>
+            </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="relative">
+
+          {/* Barra de filtros: Buscar, Semana y Producto */}
+          <div className="flex flex-col md:flex-row md:items-center gap-2.5 pt-2 border-t border-slate-100">
+            <div className="relative flex-1 min-w-[200px]">
               <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
                 value={busquedaTabla}
                 onChange={(e) => setBusquedaTabla(e.target.value)}
-                placeholder="Buscar…"
-                className="pl-8 pr-3 py-1.5 text-xs rounded-lg border border-slate-200 focus:border-[#0a2958] outline-hidden"
+                placeholder="Buscar por ID, nombre, sede, área, motivo o correo…"
+                className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg border border-slate-200 focus:border-[#0a2958] outline-hidden font-medium"
               />
             </div>
-            {onRecargarIntExt && (
+
+            <div className="flex items-center gap-2">
+              <label
+                htmlFor="filtro-semana-especiales"
+                className="text-xs font-bold text-slate-500 shrink-0"
+              >
+                Semana:
+              </label>
+              <select
+                id="filtro-semana-especiales"
+                value={filtroSemana}
+                onChange={(e) => setFiltroSemana(e.target.value)}
+                className="text-xs px-3 py-1.5 rounded-lg border border-slate-200 bg-white focus:border-[#0a2958] outline-hidden font-semibold text-slate-800 cursor-pointer"
+              >
+                <option value="todas">Todas las semanas</option>
+                {semanasDisponiblesTabla.map((sem) => (
+                  <option key={sem} value={String(sem)}>
+                    Semana {sem}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div ref={dropdownProductoRef} className="relative flex items-center gap-2">
+              <span className="text-xs font-bold text-slate-500 shrink-0">Producto:</span>
               <button
                 type="button"
-                disabled={recargandoTabla}
-                onClick={async () => {
-                  setRecargandoTabla(true);
-                  try {
-                    await onRecargarIntExt();
-                  } finally {
-                    setRecargandoTabla(false);
-                  }
-                }}
-                className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-50 inline-flex items-center gap-1.5 cursor-pointer"
+                onClick={() => setDropdownProductoAbierto((prev) => !prev)}
+                aria-expanded={dropdownProductoAbierto}
+                className="flex-1 md:flex-initial min-w-[175px] flex items-center justify-between gap-2 text-xs px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:border-[#0a2958]/40 focus:border-[#0a2958] outline-hidden font-semibold text-slate-800 cursor-pointer"
               >
-                <RefreshCw className={`w-3.5 h-3.5 ${recargandoTabla ? 'animate-spin' : ''}`} />
-                <span>Actualizar</span>
+                <span className="truncate">
+                  {productosFiltro.length === 0
+                    ? 'Todos los productos'
+                    : productosFiltro.length <= 2
+                    ? productosFiltro.join(', ')
+                    : `${productosFiltro.length} productos`}
+                </span>
+                <ChevronDown
+                  className={`w-3.5 h-3.5 text-slate-500 shrink-0 transition-transform ${
+                    dropdownProductoAbierto ? 'rotate-180' : ''
+                  }`}
+                />
+              </button>
+
+              {dropdownProductoAbierto && (
+                <div className="absolute right-0 top-full mt-1.5 w-56 bg-white rounded-xl border border-slate-200 shadow-xl z-30 p-2 space-y-1">
+                  <div className="flex items-center justify-between px-2 py-1 border-b border-slate-100 mb-1">
+                    <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                      Filtrar productos
+                    </span>
+                    {productosFiltro.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setProductosFiltro([])}
+                        className="text-[11px] font-bold text-[#E60000] hover:underline cursor-pointer"
+                      >
+                        Todos
+                      </button>
+                    )}
+                  </div>
+                  {productosDisponiblesTabla.map((prod) => {
+                    const seleccionado = productosFiltro.includes(prod);
+                    return (
+                      <button
+                        key={prod}
+                        type="button"
+                        onClick={() => toggleProductoFiltro(prod)}
+                        className={`w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                          seleccionado
+                            ? 'bg-[#0a2958]/10 text-[#0a2958]'
+                            : 'text-slate-700 hover:bg-slate-50'
+                        }`}
+                      >
+                        <span>{prod}</span>
+                        <span
+                          className={`w-4 h-4 rounded border flex items-center justify-center ${
+                            seleccionado
+                              ? 'bg-[#0a2958] border-[#0a2958] text-white'
+                              : 'border-slate-300 bg-white'
+                          }`}
+                        >
+                          {seleccionado && <Check className="w-3 h-3" />}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {hayFiltrosTablaActivos && (
+              <button
+                type="button"
+                onClick={limpiarFiltrosTabla}
+                className="px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs font-bold text-[#E60000] hover:bg-rose-50 inline-flex items-center gap-1 cursor-pointer shrink-0"
+                title="Limpiar filtros"
+              >
+                <X className="w-3.5 h-3.5" />
+                <span>Limpiar</span>
               </button>
             )}
-            <button
-              type="button"
-              onClick={exportarExcel}
-              disabled={solicitudesFiltradas.length === 0}
-              className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>Exportar Excel</span>
-            </button>
           </div>
         </div>
 
@@ -1199,7 +1386,9 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
               {solicitudesFiltradas.length === 0 ? (
                 <tr>
                   <td colSpan={13} className="py-8 text-center text-slate-400">
-                    No hay registros en Especiales Empresa todavía.
+                    {solicitudesIntExt.length === 0
+                      ? 'No hay registros en Especiales Empresa todavía.'
+                      : 'No hay registros que coincidan con los filtros seleccionados.'}
                   </td>
                 </tr>
               ) : (
