@@ -56,6 +56,35 @@ function generarIdIntExtUnico(existentes, idSugerido) {
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+function parsearCorreos(raw) {
+  const partes = String(raw || '')
+    .split(/[,;]+/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  const correos = [];
+  const vistos = new Set();
+  const invalidos = [];
+
+  for (const correo of partes) {
+    if (!EMAIL_REGEX.test(correo)) {
+      invalidos.push(correo);
+      continue;
+    }
+    const clave = correo.toLowerCase();
+    if (!vistos.has(clave)) {
+      vistos.add(clave);
+      correos.push(correo);
+    }
+  }
+
+  return {
+    correos,
+    invalidos,
+    normalizado: correos.join(', '),
+    esValido: correos.length > 0 && invalidos.length === 0,
+  };
+}
+
 function formatearErrorCorreo(rawErr) {
   const txt = String(rawErr || '').trim();
   if (
@@ -77,15 +106,18 @@ export default async function handler(req, res) {
       // Reintento de envío de correo para solicitudes ya registradas (sin duplicar filas)
       if (body?.action === 'notificar') {
         const itemsRetry = Array.isArray(body?.items) ? body.items : [];
-        const correoRetry = String(
+        const rawRetry = String(
           body?.correoNotificacion || itemsRetry[0]?.notificado || itemsRetry[0]?.estado || ''
         ).trim();
-        if (!correoRetry || !EMAIL_REGEX.test(correoRetry)) {
+        const parsedRetry = parsearCorreos(rawRetry);
+        if (!parsedRetry.esValido) {
           return res.status(400).json({
             success: false,
-            error: 'El correo electrónico de notificación no tiene un formato válido.',
+            error:
+              'Uno o más correos electrónicos de notificación no tienen un formato válido (sepárelos por coma).',
           });
         }
+        const correoRetry = parsedRetry.normalizado;
         if (!driveCfg.webhookUrl) {
           return res.status(200).json({
             success: true,
@@ -148,15 +180,22 @@ export default async function handler(req, res) {
       }
 
       const candidatoEstado = String(itemsInput[0]?.notificado || itemsInput[0]?.estado || '').trim();
-      const rawCorreo = String(
-        body?.correoNotificacion || (EMAIL_REGEX.test(candidatoEstado) ? candidatoEstado : '')
+      const parsedEstado = parsearCorreos(candidatoEstado);
+      const inputCorreoRaw = String(
+        body?.correoNotificacion || (parsedEstado.esValido ? parsedEstado.normalizado : '')
       ).trim();
 
-      if (rawCorreo && !EMAIL_REGEX.test(rawCorreo)) {
-        return res.status(400).json({
-          success: false,
-          error: 'El correo electrónico de notificación no tiene un formato válido.',
-        });
+      let rawCorreo = '';
+      if (inputCorreoRaw) {
+        const parsedCorreo = parsearCorreos(inputCorreoRaw);
+        if (!parsedCorreo.esValido) {
+          return res.status(400).json({
+            success: false,
+            error:
+              'Uno o más correos electrónicos de notificación no tienen un formato válido (sepárelos por coma).',
+          });
+        }
+        rawCorreo = parsedCorreo.normalizado;
       }
 
       for (const item of itemsInput) {

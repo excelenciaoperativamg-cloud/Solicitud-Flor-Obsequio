@@ -271,14 +271,48 @@ function escapeHtml(texto) {
     .replace(/'/g, "&#39;");
 }
 
+var MG_LOGO_BASE64 = "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";
+
+function parsearCorreosDestino(raw) {
+  var partes = String(raw || "").split(/[,;]+/);
+  var validos = [];
+  var vistos = {};
+  var invalidos = [];
+  for (var i = 0; i < partes.length; i++) {
+    var c = String(partes[i] || "").trim();
+    if (!c) continue;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c)) {
+      invalidos.push(c);
+      continue;
+    }
+    var clave = c.toLowerCase();
+    if (!vistos[clave]) {
+      vistos[clave] = true;
+      validos.push(c);
+    }
+  }
+  return {
+    validos: validos,
+    invalidos: invalidos,
+    texto: validos.join(", ")
+  };
+}
+
 /**
  * Envía un correo corporativo HTML con toda la información de la solicitud Especiales Empresa.
  */
 function enviarCorreoNotificacionIntExt(ss, correoDestino, items) {
-  var email = String(correoDestino || "").trim();
-  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return { emailSent: false, emailError: "Correo corporativo de destino inválido." };
+  var parsedCorreos = parsearCorreosDestino(correoDestino);
+  if (parsedCorreos.validos.length === 0 || parsedCorreos.invalidos.length > 0) {
+    return {
+      emailSent: false,
+      emailError: parsedCorreos.invalidos.length > 0
+        ? "Correo corporativo inválido: " + parsedCorreos.invalidos.join(", ")
+        : "Correo corporativo de destino inválido."
+    };
   }
+  var emailTo = parsedCorreos.validos.join(",");
+  var emailDisplay = parsedCorreos.texto;
 
   var lista = (items && items.length) ? items : [];
   if (lista.length === 0) {
@@ -311,13 +345,29 @@ function enviarCorreoNotificacionIntExt(ss, correoDestino, items) {
   var idsTexto = ids.join(", ");
   var semanaTexto = primera.semana ? ("Semana " + primera.semana) : "—";
   var obsTexto = String(primera.observacion || "").trim();
-  var notificadoTexto = String(primera.notificado || primera.estado || email).trim();
+  var notificadoTexto = String(primera.notificado || primera.estado || emailDisplay).trim();
+
+  var inlineImagesObj = {};
+  var tieneLogo = false;
+  try {
+    var logoBytes = Utilities.base64Decode(MG_LOGO_BASE64);
+    inlineImagesObj.logoMg = Utilities.newBlob(logoBytes, "image/png", "logo-mg.png");
+    tieneLogo = true;
+  } catch (logoErr) {
+    tieneLogo = false;
+  }
+
+  var logoHeaderHtml = tieneLogo
+    ? "<div style=\"display:inline-block;background-color:#ffffff;padding:6px 10px;border-radius:8px;border-bottom:3px solid #E60000;\">" +
+        "<img src=\"cid:logoMg\" alt=\"MG Consultores S.A.S.\" width=\"74\" height=\"45\" style=\"display:block;border:0;width:74px;height:auto;\" />" +
+      "</div>"
+    : "<div style=\"display:inline-block;background-color:#ffffff;color:#0a2958;font-weight:800;font-size:13px;padding:6px 10px;border-radius:6px;border-bottom:3px solid #E60000;letter-spacing:0.5px;\">MG</div>";
 
   var asunto = "Flor de Obsequio - Especiales Empresa: " + idsTexto + " (" + String(primera.motivo || "Solicitud") + ")";
 
   var textBody =
-    "FLOR DE OBSEQUIO - ESPECIALES EMPRESA\n" +
-    "NOTIFICACIÓN DE NUEVA SOLICITUD\n" +
+    "MG CONSULTORES S.A.S. - FLOR DE OBSEQUIO\n" +
+    "NUEVA SOLICITUD: ESPECIALES EMPRESA\n" +
     "==================================================\n" +
     "Id(s): " + idsTexto + "\n" +
     "Fecha de Solicitud: " + String(primera.fechaSolicitud || "") + "\n" +
@@ -331,7 +381,7 @@ function enviarCorreoNotificacionIntExt(ss, correoDestino, items) {
     "Observación: " + (obsTexto || "Sin observaciones adicionales.") + "\n\n" +
     "PRODUCTOS SOLICITADOS (" + lista.length + " registro(s) | Total: " + totalRamos + " ramos):\n" +
     filasTexto + "\n" +
-    "Registro almacenado en Google Sheets (hoja Especiales Empresa).\n";
+    "Sistema Flor de Obsequio • Notificación automática.\n";
 
   var htmlBody =
     "<!DOCTYPE html>" +
@@ -346,12 +396,12 @@ function enviarCorreoNotificacionIntExt(ss, correoDestino, items) {
               "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\">" +
                 "<tr>" +
                   "<td style=\"vertical-align:top;\">" +
-                    "<div style=\"font-size:11px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;color:#fca5a5;margin-bottom:6px;\">SISTEMA FLOR DE OBSEQUIO &bull; ESPECIALES EMPRESA</div>" +
-                    "<div style=\"font-size:21px;font-weight:800;line-height:1.25;color:#ffffff;\">Nueva Solicitud Registrada</div>" +
-                    "<div style=\"font-size:13px;color:#cbd5e1;margin-top:4px;\">Notificación automática de registro y entrega</div>" +
+                    "<div style=\"font-size:11px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;color:#fca5a5;margin-bottom:6px;\">MG CONSULTORES S.A.S. &bull; FLOR DE OBSEQUIO</div>" +
+                    "<div style=\"font-size:21px;font-weight:800;line-height:1.25;color:#ffffff;\">Nueva Solicitud: Especiales Empresa</div>" +
+                    "<div style=\"font-size:13px;color:#cbd5e1;margin-top:4px;\">Notificación corporativa automática de registro y entrega</div>" +
                   "</td>" +
                   "<td align=\"right\" style=\"vertical-align:top;padding-left:12px;\">" +
-                    "<div style=\"display:inline-block;background-color:#ffffff;color:#0a2958;font-weight:800;font-size:13px;padding:6px 10px;border-radius:6px;border-bottom:3px solid #E60000;letter-spacing:0.5px;\">FO</div>" +
+                    logoHeaderHtml +
                   "</td>" +
                 "</tr>" +
               "</table>" +
@@ -401,7 +451,7 @@ function enviarCorreoNotificacionIntExt(ss, correoDestino, items) {
                 "</tr>" +
                 "<tr>" +
                   "<td style=\"padding:7px 0;color:#64748b;\">Notificado</td>" +
-                  "<td style=\"padding:7px 0;font-weight:700;color:#047857;text-align:right;\">" + escapeHtml(notificadoTexto) + "</td>" +
+                  "<td style=\"padding:7px 0;font-weight:700;color:#047857;text-align:right;word-break:break-word;\">" + escapeHtml(notificadoTexto) + "</td>" +
                 "</tr>" +
               "</table>" +
             "</td></tr>" +
@@ -436,7 +486,7 @@ function enviarCorreoNotificacionIntExt(ss, correoDestino, items) {
             "</td></tr>" +
 
             "<tr><td style=\"background-color:#f8fafc;border-top:1px solid #e2e8f0;padding:14px 28px;text-align:center;font-size:11px;color:#64748b;\">" +
-              "<strong>Sistema Flor de Obsequio</strong> &bull; Registro guardado en hoja Especiales Empresa &bull; Notificación automática." +
+              "<strong>Sistema Flor de Obsequio</strong> &bull; Notificación automática." +
             "</td></tr>" +
           "</table>" +
         "</td></tr>" +
@@ -450,18 +500,22 @@ function enviarCorreoNotificacionIntExt(ss, correoDestino, items) {
   } catch (ue) {}
 
   try {
-    MailApp.sendEmail({
-      to: email,
+    var mailPayload = {
+      to: emailTo,
       subject: asunto,
       body: textBody,
       htmlBody: htmlBody,
       name: "Notificaciones Flor de Obsequio"
-    });
+    };
+    if (tieneLogo) {
+      mailPayload.inlineImages = inlineImagesObj;
+    }
+    MailApp.sendEmail(mailPayload);
     var quotaRemaining = null;
     try { quotaRemaining = MailApp.getRemainingDailyQuota(); } catch (qe) {}
-    return { emailSent: true, to: email, senderEmail: senderEmail, quotaRemaining: quotaRemaining };
+    return { emailSent: true, to: emailDisplay, senderEmail: senderEmail, quotaRemaining: quotaRemaining };
   } catch (mailErr) {
-    return { emailSent: false, to: email, senderEmail: senderEmail, emailError: String(mailErr) };
+    return { emailSent: false, to: emailDisplay, senderEmail: senderEmail, emailError: String(mailErr) };
   }
 }
 

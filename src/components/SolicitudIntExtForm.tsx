@@ -64,6 +64,40 @@ const MOTIVOS_INT_EXT = [
   'Homenaje a Pensionados',
 ] as const;
 
+const EMAIL_ITEM_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function parsearListaCorreos(raw: string): {
+  correos: string[];
+  invalidos: string[];
+  normalizado: string;
+} {
+  const partes = String(raw || '')
+    .split(/[,;]+/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  const correos: string[] = [];
+  const vistos = new Set<string>();
+  const invalidos: string[] = [];
+
+  for (const correo of partes) {
+    if (!EMAIL_ITEM_REGEX.test(correo)) {
+      invalidos.push(correo);
+      continue;
+    }
+    const clave = correo.toLowerCase();
+    if (!vistos.has(clave)) {
+      vistos.add(clave);
+      correos.push(correo);
+    }
+  }
+
+  return {
+    correos,
+    invalidos,
+    normalizado: correos.join(', '),
+  };
+}
+
 export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
   sesion,
   solicitudesIntExt,
@@ -234,11 +268,14 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
     if (!motivoFinal) nuevos.motivo = 'Seleccione o especifique el motivo.';
     if (!fechaEntrega) nuevos.fechaEntrega = 'Seleccione la fecha de entrega.';
 
-    const correoLimpio = correoNotificacion.trim();
-    if (!correoLimpio) {
-      nuevos.correoNotificacion = 'Ingrese el correo electrónico corporativo para notificar.';
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correoLimpio)) {
-      nuevos.correoNotificacion = 'Ingrese un correo electrónico válido (ej. nombre@mgconsultores.com).';
+    const { correos: correosValidos, invalidos: correosInvalidos } = parsearListaCorreos(
+      correoNotificacion
+    );
+    if (correosValidos.length === 0 && correosInvalidos.length === 0) {
+      nuevos.correoNotificacion =
+        'Ingrese al menos un correo electrónico corporativo para notificar.';
+    } else if (correosInvalidos.length > 0) {
+      nuevos.correoNotificacion = `Correo inválido: "${correosInvalidos[0]}". Si ingresa varios, sepárelos por coma (ej. correo1@mg-consultores.com, correo2@mg-consultores.com).`;
     }
 
     setErrores(nuevos);
@@ -260,7 +297,7 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
     const year = new Date().getFullYear();
     const semanaCalculada = fechaEntrega ? String(getISOWeekNumber(fechaEntrega)) : '';
     const ahora = Date.now();
-    const correoDestino = correoNotificacion.trim();
+    const { normalizado: correoDestino } = parsearListaCorreos(correoNotificacion);
 
     // Un registro independiente por cada producto seleccionado; el correo notificado se aloja en Notificado
     const registrosAEnviar: SolicitudIntExt[] = productosSeleccionadosOrdenados.map((prod, idx) => ({
@@ -1016,7 +1053,9 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
               </label>
               <input
                 id="correo-notificacion-especiales"
-                type="email"
+                type="text"
+                inputMode="email"
+                autoComplete="email"
                 value={correoNotificacion}
                 onChange={(e) => {
                   setCorreoNotificacion(e.target.value);
@@ -1026,7 +1065,7 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
                     return next;
                   });
                 }}
-                placeholder="Ej. notificaciones@mgconsultores.com"
+                placeholder="Ej. correo1@mg-consultores.com, correo2@mg-consultores.com"
                 className={`w-full px-3.5 py-2.5 text-xs rounded-xl border font-semibold outline-hidden ${
                   errores.correoNotificacion
                     ? 'border-rose-400 bg-rose-50/40 text-slate-900'
@@ -1034,7 +1073,7 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
                 }`}
               />
               <p className="text-[11px] text-slate-500 mt-1">
-                Este correo recibirá el detalle completo de la solicitud y quedará registrado en la columna <strong>Notificado</strong>.
+                Puede ingresar uno o varios correos separados por coma (<code className="font-mono font-bold text-slate-700">,</code>). Todos recibirán el detalle completo y quedarán registrados en la columna <strong>Notificado</strong>.
               </p>
               {errores.correoNotificacion && (
                 <p className="text-[11px] text-[#E60000] font-semibold mt-1">{errores.correoNotificacion}</p>
