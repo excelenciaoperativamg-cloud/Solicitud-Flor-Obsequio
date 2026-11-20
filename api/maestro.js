@@ -26,6 +26,7 @@ export default async function handler(req, res) {
   try {
     if (req.method === 'POST') {
       const body = req.body;
+      const driveCfg = getDriveConfigStorage();
 
       // Carga masiva desde Excel / CSV / Google Sheets OAuth
       if (body && Array.isArray(body.workers)) {
@@ -43,7 +44,36 @@ export default async function handler(req, res) {
         }
         const combinado = Array.from(mapa.values());
         saveMaestroStorage(combinado);
-        return res.status(200).json({ success: true, count: nuevosValidos.length, maestro: combinado });
+
+        let syncedToDrive = false;
+        let driveMessage = '';
+        if (driveCfg.webhookUrl && !body.skipDrivePush) {
+          try {
+            const syncRes = await callAppsScript(driveCfg.webhookUrl, {
+              action: 'sincronizar_maestro',
+              workers: nuevosValidos,
+            });
+            syncedToDrive = !!syncRes?.syncedMaestro;
+            if (Array.isArray(syncRes?.workers) && syncRes.workers.length > 0) {
+              const desdeHoja = sanitizeMaestroWorkers(syncRes.workers);
+              if (desdeHoja.length > 0) {
+                saveMaestroStorage(desdeHoja);
+              }
+            }
+            driveMessage = syncRes?.message || '';
+          } catch (syncErr) {
+            driveMessage = syncErr?.message || 'No se pudo sincronizar Maestro en Google Drive';
+            console.warn('[maestro] error sincronizando bulk con Drive:', driveMessage);
+          }
+        }
+
+        return res.status(200).json({
+          success: true,
+          count: nuevosValidos.length,
+          maestro: getMaestroStorage(),
+          syncedToDrive,
+          driveMessage,
+        });
       }
 
       const trabajador = body;
@@ -56,9 +86,35 @@ export default async function handler(req, res) {
       const maestro = getMaestroStorage();
       const codigoUpper = String(trabajador.codigo).trim().toUpperCase();
       const filtrado = maestro.filter((t) => String(t.codigo).trim().toUpperCase() !== codigoUpper);
-      const limpio = sanitizeMaestroWorkers([{ ...trabajador, codigo: codigoUpper, activo: true }, ...filtrado]);
+      const registroNuevo = {
+        ...trabajador,
+        codigo: codigoUpper,
+        cedula: trabajador.cedula ? String(trabajador.cedula).trim() : '',
+        activo: true,
+      };
+      const limpio = sanitizeMaestroWorkers([registroNuevo, ...filtrado]);
       saveMaestroStorage(limpio);
-      return res.status(200).json({ success: true, maestro: limpio });
+
+      let syncedToDrive = false;
+      if (driveCfg.webhookUrl) {
+        try {
+          const syncRes = await callAppsScript(driveCfg.webhookUrl, {
+            action: 'agregar_trabajador_maestro',
+            worker: registroNuevo,
+          });
+          syncedToDrive = !!syncRes?.syncedMaestro;
+          if (Array.isArray(syncRes?.workers) && syncRes.workers.length > 0) {
+            const desdeHoja = sanitizeMaestroWorkers(syncRes.workers);
+            if (desdeHoja.length > 0) {
+              saveMaestroStorage(desdeHoja);
+            }
+          }
+        } catch (syncErr) {
+          console.warn('[maestro] error agregando trabajador en Drive:', syncErr?.message || syncErr);
+        }
+      }
+
+      return res.status(200).json({ success: true, maestro: getMaestroStorage(), syncedToDrive });
     }
 
     let invalidSheet = false;

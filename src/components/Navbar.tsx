@@ -31,6 +31,11 @@ const CONTEXTO_POR_TAB: Record<TabNavegacion, { seccion: string; modulo: string;
     modulo: 'Especiales Empresa',
     pagina: 'Formulario Especiales Empresa',
   },
+  'especiales-personal': {
+    seccion: 'Gestión de Solicitudes',
+    modulo: 'Especiales Personal',
+    pagina: 'Formulario Especiales Personal',
+  },
   maestro: {
     seccion: 'Administración',
     modulo: 'Personal',

@@ -1,4 +1,4 @@
-import { SolicitudFlor, SolicitudIntExt, TrabajadorMaestro } from '../types';
+import { SolicitudFlor, SolicitudIntExt, EspecialPersonal, TrabajadorMaestro } from '../types';
 
 export interface DriveConfig {
   webhookUrl: string;
@@ -131,6 +131,116 @@ export const retryEmailIntExtApi = async (
   correoNotificacion: string
 ): Promise<EmailNotificationResult> => {
   const res = await fetch('/api/solicitudes-int-ext', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      action: 'notificar',
+      items,
+      correoNotificacion,
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (data?.emailNotification) return data.emailNotification;
+  return {
+    requested: true,
+    sent: false,
+    to: correoNotificacion,
+    error: data?.error || 'No se pudo reintentar el envío de correo.',
+  };
+};
+
+export const fetchEspecialesPersonalApi = async (): Promise<{
+  solicitudes: EspecialPersonal[];
+  sheetsSupported: boolean;
+  supportsEmailNotification?: boolean;
+  source: string;
+  especialesPersonalSheetName?: string;
+  needsAppsScriptUpdate?: boolean;
+}> => {
+  try {
+    const res = await fetch('/api/especiales-personal');
+    if (!res.ok) throw new Error('Error al consultar Especiales Personal');
+    const data = await res.json();
+    return {
+      solicitudes: data.solicitudes || [],
+      sheetsSupported: !!data.sheetsSupported,
+      supportsEmailNotification: !!data.supportsEmailNotification,
+      source: data.source || 'local',
+      especialesPersonalSheetName: data.especialesPersonalSheetName || '',
+      needsAppsScriptUpdate: !!data.needsAppsScriptUpdate,
+    };
+  } catch (error) {
+    console.warn('Error consultando Especiales Personal:', error);
+    return {
+      solicitudes: [],
+      sheetsSupported: false,
+      supportsEmailNotification: false,
+      source: 'error',
+      especialesPersonalSheetName: '',
+      needsAppsScriptUpdate: true,
+    };
+  }
+};
+
+export const createEspecialesPersonalApi = async (
+  solicitudOrList: EspecialPersonal | EspecialPersonal[],
+  correoNotificacion?: string,
+  fotoCarta?: { base64: string; mimeType: string; fileName: string } | null
+): Promise<{
+  solicitud: EspecialPersonal;
+  solicitudes: EspecialPersonal[];
+  pendingAppsScriptUpdate?: boolean;
+  supportsEmailNotification?: boolean;
+  especialesPersonalSheetName?: string;
+  needsAppsScriptUpdate?: boolean;
+  fotoCartaDriveError?: string;
+  emailNotification?: EmailNotificationResult;
+}> => {
+  const basePayload = Array.isArray(solicitudOrList)
+    ? { items: solicitudOrList, correoNotificacion: correoNotificacion || '' }
+    : { ...solicitudOrList, correoNotificacion: correoNotificacion || '' };
+
+  const payload = fotoCarta
+    ? {
+        ...basePayload,
+        fotoCartaBase64: fotoCarta.base64,
+        fotoCartaMime: fotoCarta.mimeType,
+        fotoCartaNombre: fotoCarta.fileName,
+      }
+    : basePayload;
+
+  const res = await fetch('/api/especiales-personal', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Error al guardar en Especiales Personal');
+  }
+  const data = await res.json();
+  const solicitudes: EspecialPersonal[] = Array.isArray(data.solicitudes)
+    ? data.solicitudes
+    : data.solicitud
+    ? [data.solicitud]
+    : [];
+  return {
+    solicitud: data.solicitud || solicitudes[0],
+    solicitudes,
+    pendingAppsScriptUpdate: !!data.pendingAppsScriptUpdate,
+    supportsEmailNotification: !!data.supportsEmailNotification,
+    especialesPersonalSheetName: data.especialesPersonalSheetName || '',
+    needsAppsScriptUpdate: !!data.needsAppsScriptUpdate,
+    fotoCartaDriveError: data.fotoCartaDriveError || '',
+    emailNotification: data.emailNotification,
+  };
+};
+
+export const retryEmailEspecialesPersonalApi = async (
+  items: EspecialPersonal[],
+  correoNotificacion: string
+): Promise<EmailNotificationResult> => {
+  const res = await fetch('/api/especiales-personal', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({

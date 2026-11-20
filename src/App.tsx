@@ -8,12 +8,13 @@ import { User } from 'firebase/auth';
 import { Navbar } from './components/Navbar';
 import { SolicitudForm } from './components/SolicitudForm';
 import { SolicitudIntExtForm } from './components/SolicitudIntExtForm';
+import { EspecialesPersonalForm } from './components/EspecialesPersonalForm';
 import { SolicitudesTable } from './components/SolicitudesTable';
 import { MaestroTrabajadores } from './components/MaestroTrabajadores';
 import { LoginCodigo } from './components/LoginCodigo';
 import { DriveConfigModal } from './components/DriveConfigModal';
 import { SidebarNavegacion, TabNavegacion } from './components/SidebarNavegacion';
-import { SolicitudFlor, SolicitudIntExt, TrabajadorMaestro } from './types';
+import { SolicitudFlor, SolicitudIntExt, EspecialPersonal, TrabajadorMaestro } from './types';
 import {
   TRABAJADORES_INICIALES,
 } from './data/initialData';
@@ -26,6 +27,8 @@ import {
   createSolicitudApi,
   fetchSolicitudesIntExtApi,
   createSolicitudIntExtApi,
+  fetchEspecialesPersonalApi,
+  createEspecialesPersonalApi,
   fetchMaestroApi,
   addTrabajadorApi,
   importMaestroBulkApi,
@@ -45,6 +48,7 @@ import {
   puedeVerHojaMaestro,
   puedeVerResumenSolicitud,
   puedeVerSolicitudIntExt,
+  puedeVerEspecialesPersonal,
 } from './utils/roles';
 
 export default function App() {
@@ -77,22 +81,31 @@ export default function App() {
   const [intExtSheetActual, setIntExtSheetActual] = useState<string>('');
   const [intExtSheetMismatch, setIntExtSheetMismatch] = useState<boolean>(false);
 
+  const [solicitudesEspecialesPersonal, setSolicitudesEspecialesPersonal] = useState<EspecialPersonal[]>([]);
+  const [epSheetsSupported, setEpSheetsSupported] = useState<boolean>(true);
+  const [epEmailSupported, setEpEmailSupported] = useState<boolean>(true);
+  const [epSheetActual, setEpSheetActual] = useState<string>('');
+  const [epNeedsAppsScriptUpdate, setEpNeedsAppsScriptUpdate] = useState<boolean>(false);
+
   const esAdminSistema = esAdministradorSistema(sesion);
   const puedeVerMaestro = puedeVerHojaMaestro(sesion);
   const puedeVerResumen = puedeVerResumenSolicitud(sesion);
   const puedeVerIntExt = puedeVerSolicitudIntExt(sesion);
+  const puedeVerEp = puedeVerEspecialesPersonal(sesion);
 
   // Redirigir al formulario si el usuario no tiene permiso para la pestaña actual
   useEffect(() => {
     if (!sesion) return;
     if (activeTab === 'int-ext' && !puedeVerIntExt) {
       setActiveTab('formulario');
+    } else if (activeTab === 'especiales-personal' && !puedeVerEp) {
+      setActiveTab('formulario');
     } else if (activeTab === 'solicitudes' && !puedeVerResumen) {
       setActiveTab('formulario');
     } else if (activeTab === 'maestro' && !puedeVerMaestro) {
       setActiveTab('formulario');
     }
-  }, [sesion, puedeVerResumen, puedeVerMaestro, puedeVerIntExt, activeTab]);
+  }, [sesion, puedeVerResumen, puedeVerMaestro, puedeVerIntExt, puedeVerEp, activeTab]);
 
   // Mostrar toast temporal
   const mostrarToast = (mensaje: string) => {
@@ -106,9 +119,10 @@ export default function App() {
   useEffect(() => {
     const cargarDatosIniciales = async () => {
       try {
-        const [solis, intExtRes, maest, cfg] = await Promise.all([
+        const [solis, intExtRes, epRes, maest, cfg] = await Promise.all([
           fetchSolicitudesApi(),
           fetchSolicitudesIntExtApi(),
+          fetchEspecialesPersonalApi(),
           fetchMaestroApi(),
           getDriveConfigApi(),
         ]);
@@ -122,6 +136,13 @@ export default function App() {
           setIntExtEmailSupported(!!intExtRes.supportsEmailNotification);
           setIntExtSheetActual(intExtRes.intExtSheetName || '');
           setIntExtSheetMismatch(!!intExtRes.needsAppsScriptSheetUpdate);
+        }
+        if (epRes && Array.isArray(epRes.solicitudes)) {
+          setSolicitudesEspecialesPersonal(epRes.solicitudes);
+          setEpSheetsSupported(epRes.sheetsSupported || epRes.source === 'sheets');
+          setEpEmailSupported(!!epRes.supportsEmailNotification);
+          setEpSheetActual(epRes.especialesPersonalSheetName || '');
+          setEpNeedsAppsScriptUpdate(!!epRes.needsAppsScriptUpdate);
         }
         if (maest && maest.length > 0) {
           const mapa = new Map<string, TrabajadorMaestro>();
@@ -146,6 +167,29 @@ export default function App() {
 
     cargarDatosIniciales();
   }, []);
+
+  // Sincronización automática del Maestro al ingresar a Especiales Personal o Maestro
+  useEffect(() => {
+    if (!sesion) return;
+    if (activeTab !== 'especiales-personal' && activeTab !== 'maestro') return;
+    let cancelado = false;
+    fetchMaestroApi()
+      .then((maest) => {
+        if (cancelado || !maest || maest.length === 0) return;
+        const mapa = new Map<string, TrabajadorMaestro>();
+        for (const t of TRABAJADORES_INICIALES) {
+          mapa.set(t.codigo.trim().toUpperCase(), t);
+        }
+        for (const t of maest) {
+          mapa.set(t.codigo.trim().toUpperCase(), t);
+        }
+        setMaestro(Array.from(mapa.values()));
+      })
+      .catch(() => {});
+    return () => {
+      cancelado = true;
+    };
+  }, [sesion, activeTab]);
 
   // Escuchar estado de auth Google si el administrador se autenticó
   useEffect(() => {
@@ -277,6 +321,108 @@ export default function App() {
     setIntExtSheetMismatch(!!res.needsAppsScriptSheetUpdate);
   };
 
+  const handleGuardarEspecialPersonal = async (
+    nuevaOLista: EspecialPersonal | EspecialPersonal[],
+    correoNotificacion?: string,
+    fotoCarta?: { base64: string; mimeType: string; fileName: string } | null
+  ): Promise<{
+    success: boolean;
+    error?: string;
+    solicitud?: EspecialPersonal;
+    solicitudes?: EspecialPersonal[];
+    pendingAppsScriptUpdate?: boolean;
+    especialesPersonalSheetName?: string;
+    needsAppsScriptUpdate?: boolean;
+    fotoCartaDriveError?: string;
+    emailNotification?: EmailNotificationResult;
+  }> => {
+    try {
+      const res = await createEspecialesPersonalApi(nuevaOLista, correoNotificacion, fotoCarta);
+      const guardadas = res.solicitudes.length > 0 ? res.solicitudes : [res.solicitud];
+      const idsGuardados = new Set(guardadas.map((g) => g.id));
+      setSolicitudesEspecialesPersonal((prev) => [
+        ...guardadas,
+        ...prev.filter((s) => !idsGuardados.has(s.id)),
+      ]);
+      const total = guardadas.length;
+      setEpSheetActual(res.especialesPersonalSheetName || '');
+      setEpNeedsAppsScriptUpdate(!!res.needsAppsScriptUpdate);
+      if (typeof res.supportsEmailNotification === 'boolean') {
+        setEpEmailSupported(res.supportsEmailNotification);
+      }
+
+      if (res.pendingAppsScriptUpdate || res.needsAppsScriptUpdate) {
+        setEpSheetsSupported(!res.pendingAppsScriptUpdate);
+        mostrarToast(
+          total > 1
+            ? `${total} registros guardados en respaldo local (actualice Apps Script para Especiales Personal)`
+            : 'Guardado en respaldo local (actualice Apps Script para Especiales Personal)'
+        );
+      } else if (res.emailNotification?.requested && res.emailNotification.sent) {
+        setEpSheetsSupported(true);
+        mostrarToast(
+          total > 1
+            ? `${total} registros guardados en Especiales Personal y notificación enviada a ${res.emailNotification.to}`
+            : `Solicitud guardada en Especiales Personal y notificación enviada a ${res.emailNotification.to}`
+        );
+      } else if (res.emailNotification?.requested && !res.emailNotification.sent) {
+        setEpSheetsSupported(true);
+        mostrarToast(
+          total > 1
+            ? `${total} registros guardados en Especiales Personal (notificación por correo pendiente)`
+            : 'Solicitud guardada en Especiales Personal (notificación por correo pendiente)'
+        );
+      } else {
+        setEpSheetsSupported(true);
+        mostrarToast(
+          total > 1
+            ? `${total} registros guardados en la hoja Especiales Personal`
+            : 'Solicitud registrada en la hoja Especiales Personal'
+        );
+      }
+
+      return {
+        success: true,
+        solicitud: guardadas[0],
+        solicitudes: guardadas,
+        pendingAppsScriptUpdate: res.pendingAppsScriptUpdate,
+        especialesPersonalSheetName: res.especialesPersonalSheetName,
+        needsAppsScriptUpdate: res.needsAppsScriptUpdate,
+        fotoCartaDriveError: res.fotoCartaDriveError,
+        emailNotification: res.emailNotification,
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        error: err.message || 'Error al guardar en Especiales Personal',
+      };
+    }
+  };
+
+  const handleRecargarEspecialPersonal = async () => {
+    const res = await fetchEspecialesPersonalApi();
+    setSolicitudesEspecialesPersonal(res.solicitudes || []);
+    setEpSheetsSupported(res.sheetsSupported || res.source === 'sheets');
+    setEpEmailSupported(!!res.supportsEmailNotification);
+    setEpSheetActual(res.especialesPersonalSheetName || '');
+    setEpNeedsAppsScriptUpdate(!!res.needsAppsScriptUpdate);
+  };
+
+  const handleRecargarMaestroSilencioso = async () => {
+    const maest = await fetchMaestroApi();
+    if (maest && maest.length > 0) {
+      const mapa = new Map<string, TrabajadorMaestro>();
+      for (const t of TRABAJADORES_INICIALES) {
+        mapa.set(t.codigo.trim().toUpperCase(), t);
+      }
+      for (const t of maest) {
+        mapa.set(t.codigo.trim().toUpperCase(), t);
+      }
+      setMaestro(Array.from(mapa.values()));
+      mostrarToast(`Maestro sincronizado (${maest.length} registros)`);
+    }
+  };
+
   const handleAgregarTrabajador = async (nuevo: TrabajadorMaestro) => {
     try {
       const updated = await addTrabajadorApi(nuevo);
@@ -360,6 +506,10 @@ export default function App() {
 
   const handleSetActiveTab = (tab: TabNavegacion) => {
     if (tab === 'int-ext' && !puedeVerIntExt) {
+      setActiveTab('formulario');
+      return;
+    }
+    if (tab === 'especiales-personal' && !puedeVerEp) {
       setActiveTab('formulario');
       return;
     }
@@ -463,6 +613,22 @@ export default function App() {
                   needsAppsScriptSheetUpdate={intExtSheetMismatch}
                   onGuardarSolicitudIntExt={handleGuardarSolicitudIntExt}
                   onRecargarIntExt={handleRecargarIntExt}
+                  onCerrarSesion={handleCerrarSesion}
+                />
+              )}
+
+              {puedeVerEp && activeTab === 'especiales-personal' && (
+                <EspecialesPersonalForm
+                  sesion={sesion}
+                  maestro={maestro}
+                  solicitudesEspecialesPersonal={solicitudesEspecialesPersonal}
+                  sheetsSupported={epSheetsSupported}
+                  emailSupported={epEmailSupported}
+                  especialesPersonalSheetActual={epSheetActual}
+                  needsAppsScriptUpdate={epNeedsAppsScriptUpdate}
+                  onGuardarEspecialPersonal={handleGuardarEspecialPersonal}
+                  onRecargarEspecialPersonal={handleRecargarEspecialPersonal}
+                  onRecargarMaestro={handleRecargarMaestroSilencioso}
                   onCerrarSesion={handleCerrarSesion}
                 />
               )}

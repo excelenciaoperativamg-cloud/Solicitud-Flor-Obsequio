@@ -15,6 +15,7 @@ export const DEFAULT_CONFIG = {
 
 let cacheSolicitudes = null;
 let cacheSolicitudesIntExt = null;
+let cacheEspecialesPersonal = null;
 let cacheMaestro = null;
 let cacheConfig = null;
 
@@ -74,6 +75,52 @@ export function saveSolicitudesIntExtStorage(data) {
   safeWrite('solicitudes-int-ext.json', data);
 }
 
+export function getEspecialesPersonalStorage() {
+  if (cacheEspecialesPersonal) return cacheEspecialesPersonal;
+  cacheEspecialesPersonal = safeRead('especiales-personal.json', []);
+  return cacheEspecialesPersonal;
+}
+
+export function saveEspecialesPersonalStorage(data) {
+  cacheEspecialesPersonal = data;
+  safeWrite('especiales-personal.json', data);
+}
+
+export function saveCartaLocalFile(filename, buffer) {
+  const safeName = path.basename(String(filename || 'carta.jpg')).replace(/[^a-zA-Z0-9._-]/g, '_');
+  const paths = [];
+  try {
+    const tmpDir = path.join('/tmp', 'cartas');
+    if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+    fs.writeFileSync(path.join(tmpDir, safeName), buffer);
+    paths.push(path.join(tmpDir, safeName));
+  } catch {}
+  if (!process.env.VERCEL) {
+    try {
+      const localDir = path.join(process.cwd(), 'data', 'cartas');
+      if (!fs.existsSync(localDir)) fs.mkdirSync(localDir, { recursive: true });
+      fs.writeFileSync(path.join(localDir, safeName), buffer);
+      paths.push(path.join(localDir, safeName));
+    } catch {}
+  }
+  return { filename: safeName, saved: paths.length > 0 };
+}
+
+export function readCartaLocalFile(filename) {
+  const safeName = path.basename(String(filename || '')).replace(/[^a-zA-Z0-9._-]/g, '_');
+  if (!safeName) return null;
+  const candidates = [
+    path.join('/tmp', 'cartas', safeName),
+    path.join(process.cwd(), 'data', 'cartas', safeName),
+  ];
+  for (const p of candidates) {
+    try {
+      if (fs.existsSync(p)) return fs.readFileSync(p);
+    } catch {}
+  }
+  return null;
+}
+
 export function normalizarSedeMaestro(raw) {
   const t = String(raw || '').toUpperCase();
   if (t.includes('HA')) return 'Sede HA';
@@ -100,10 +147,14 @@ export function sanitizeMaestroWorkers(workers) {
   for (const w of workers) {
     if (!isValidWorker(w)) continue;
     const codigo = String(w.codigo).trim();
+    const cedula = w.cedula !== undefined && w.cedula !== null
+      ? String(w.cedula).replace(/\s+/g, '').trim()
+      : '';
     const key = codigo.toUpperCase();
     mapa.set(key, {
       ...w,
       codigo,
+      cedula,
       nombre: String(w.nombre).trim(),
       sede: normalizarSedeMaestro(w.sede),
       cargo: w.cargo ? String(w.cargo).trim() : 'Operario',

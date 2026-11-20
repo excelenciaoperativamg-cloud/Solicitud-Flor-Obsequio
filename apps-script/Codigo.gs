@@ -41,6 +41,17 @@ function indiceColumnaEstricto(headers, pistas) {
   return mejor;
 }
 
+/** Busca primero por nombre exacto de encabezado y luego por pistas. */
+function indiceColumnaExactoOPista(headers, exactos, pistas) {
+  for (var c = 0; c < headers.length; c++) {
+    var h = String(headers[c] || "").toUpperCase().replace(/\s+/g, " ").trim();
+    for (var e = 0; e < exactos.length; e++) {
+      if (h === String(exactos[e]).toUpperCase()) return c;
+    }
+  }
+  return pistas && pistas.length ? indiceColumnaEstricto(headers, pistas) : -1;
+}
+
 function cargoDeFila(headers, row) {
   var i = indiceColumna(headers, ["CARGO"]);
   if (i >= 0 && row[i]) return String(row[i]).trim();
@@ -54,7 +65,7 @@ function normSede(raw) {
   return "Sede MG";
 }
 
-function leerTrabajadores(ss) {
+function buscarHojaMaestro(ss) {
   var sheets = ss.getSheets();
   var sheetMaestro = ss.getSheetByName("Maestro");
   if (!sheetMaestro) {
@@ -88,7 +99,40 @@ function leerTrabajadores(ss) {
       }
     }
   }
+  return sheetMaestro;
+}
+
+function asegurarColumnaCedulaMaestro(sheetMaestro) {
+  if (!sheetMaestro) return;
+  try {
+    var lastRow = sheetMaestro.getLastRow();
+    var lastCol = sheetMaestro.getLastColumn();
+    if (lastRow === 0 || lastCol === 0) {
+      var headersInit = ["Código", "Cédula", "Nombre", "Sede", "Cargo", "Estado"];
+      sheetMaestro.getRange(1, 1, 1, headersInit.length).setValues([headersInit]);
+      sheetMaestro.getRange(1, 1, 1, headersInit.length).setFontWeight("bold").setBackground("#0a2958").setFontColor("#ffffff");
+      return;
+    }
+    var headers = sheetMaestro.getRange(1, 1, 1, lastCol).getValues()[0] || [];
+    var idxCedula = indiceColumnaExactoOPista(
+      headers,
+      ["CÉDULA", "CEDULA", "CC", "DOCUMENTO"],
+      ["CÉDULA", "CEDULA", "DOCUMENTO", "IDENTIFICACIÓN", "IDENTIFICACION"]
+    );
+    if (idxCedula < 0) {
+      var colDestino = lastCol + 1;
+      var headerCell = sheetMaestro.getRange(1, colDestino);
+      headerCell.setValue("Cédula");
+      headerCell.setFontWeight("bold").setBackground("#0a2958").setFontColor("#ffffff");
+    }
+  } catch (e) {}
+}
+
+function leerTrabajadores(ss) {
+  var sheetMaestro = buscarHojaMaestro(ss);
   if (!sheetMaestro) return [];
+
+  asegurarColumnaCedulaMaestro(sheetMaestro);
 
   var data = sheetMaestro.getDataRange().getValues();
   if (!data || data.length < 2) return [];
@@ -96,6 +140,11 @@ function leerTrabajadores(ss) {
   var headers = data[0] || [];
   var idxCodigo = indiceColumnaEstricto(headers, ["CÓDIGO", "CODIGO", "ID RH"]);
   if (idxCodigo < 0) idxCodigo = 0;
+  var idxCedula = indiceColumnaExactoOPista(
+    headers,
+    ["CÉDULA", "CEDULA", "CC", "DOCUMENTO"],
+    ["CÉDULA", "CEDULA", "DOCUMENTO", "IDENTIFICACIÓN", "IDENTIFICACION"]
+  );
   var idxNombre = indiceColumnaEstricto(headers, ["NOMBRE"]);
   if (idxNombre < 0) idxNombre = 1;
   var idxSede = indiceColumnaEstricto(headers, ["SEDE"]);
@@ -115,7 +164,12 @@ function leerTrabajadores(ss) {
     var codigo = String(rawCod).trim();
     var nombre = String(rawNom).trim();
     if (!codigo || !nombre) continue;
-    if (/^(SFO|SIE|SE)-\d{4}-/i.test(codigo)) continue;
+    if (/^(SFO|SIE|SE|SEP)-\d{4}-/i.test(codigo)) continue;
+
+    var cedula = "";
+    if (idxCedula >= 0 && row[idxCedula] !== undefined && row[idxCedula] !== null) {
+      cedula = String(row[idxCedula]).trim();
+    }
 
     var activo = true;
     if (idxEstado >= 0 && row[idxEstado]) {
@@ -124,6 +178,7 @@ function leerTrabajadores(ss) {
 
     workers.push({
       codigo: codigo,
+      cedula: cedula,
       nombre: nombre,
       sede: normSede(row[idxSede]),
       cargo: idxCargo >= 0 && row[idxCargo] ? String(row[idxCargo]).trim() : "",
@@ -131,6 +186,74 @@ function leerTrabajadores(ss) {
     });
   }
   return workers;
+}
+
+function sincronizarMaestroHoja(ss, workersList) {
+  var lista = (workersList && workersList.length) ? workersList : [];
+  var sheetMaestro = buscarHojaMaestro(ss) || ss.insertSheet("Maestro");
+  asegurarColumnaCedulaMaestro(sheetMaestro);
+
+  var data = sheetMaestro.getDataRange().getValues();
+  var headers = (data && data.length > 0) ? data[0] : ["Código", "Cédula", "Nombre", "Sede", "Cargo", "Estado"];
+  var idxCodigo = indiceColumnaEstricto(headers, ["CÓDIGO", "CODIGO", "ID RH"]);
+  if (idxCodigo < 0) idxCodigo = 0;
+  var idxCedula = indiceColumnaExactoOPista(
+    headers,
+    ["CÉDULA", "CEDULA", "CC", "DOCUMENTO"],
+    ["CÉDULA", "CEDULA", "DOCUMENTO", "IDENTIFICACIÓN", "IDENTIFICACION"]
+  );
+  var idxNombre = indiceColumnaEstricto(headers, ["NOMBRE"]);
+  if (idxNombre < 0) idxNombre = 1;
+  var idxSede = indiceColumnaEstricto(headers, ["SEDE"]);
+  if (idxSede < 0) idxSede = 2;
+  var idxCargo = indiceColumnaEstricto(headers, ["CARGO", "FUNCIÓN", "FUNCION"]);
+  if (idxCargo < 0) idxCargo = 3;
+  var idxEstado = indiceColumnaEstricto(headers, ["ESTADO"]);
+
+  var rowByCode = {};
+  for (var r = 1; r < data.length; r++) {
+    var cVal = String(data[r][idxCodigo] || "").trim().toUpperCase();
+    if (cVal) rowByCode[cVal] = r + 1;
+  }
+
+  for (var i = 0; i < lista.length; i++) {
+    var w = lista[i];
+    if (!w) continue;
+    var cod = String(w.codigo || "").trim().toUpperCase();
+    var nom = String(w.nombre || "").trim();
+    if (!cod || !nom) continue;
+    if (/^(SFO|SIE|SE|SEP)-\d{4}-/i.test(cod)) continue;
+
+    var ced = w.cedula !== undefined && w.cedula !== null ? String(w.cedula).trim() : "";
+    var sed = normSede(w.sede);
+    var car = String(w.cargo || "Operario").trim();
+    var est = w.activo === false ? "Inactivo" : "Activo";
+
+    var existingRow = rowByCode[cod];
+    if (existingRow) {
+      if (idxNombre >= 0) sheetMaestro.getRange(existingRow, idxNombre + 1).setValue(nom);
+      if (idxSede >= 0) sheetMaestro.getRange(existingRow, idxSede + 1).setValue(sed);
+      if (idxCargo >= 0 && car) sheetMaestro.getRange(existingRow, idxCargo + 1).setValue(car);
+      if (idxEstado >= 0) sheetMaestro.getRange(existingRow, idxEstado + 1).setValue(est);
+      if (idxCedula >= 0 && ced) sheetMaestro.getRange(existingRow, idxCedula + 1).setValue(ced);
+    } else {
+      var newRow = [];
+      for (var col = 0; col < headers.length; col++) {
+        if (col === idxCodigo) newRow.push(cod);
+        else if (col === idxCedula) newRow.push(ced);
+        else if (col === idxNombre) newRow.push(nom);
+        else if (col === idxSede) newRow.push(sed);
+        else if (col === idxCargo) newRow.push(car);
+        else if (col === idxEstado) newRow.push(est);
+        else newRow.push("");
+      }
+      sheetMaestro.appendRow(newRow);
+      rowByCode[cod] = sheetMaestro.getLastRow();
+    }
+  }
+
+  SpreadsheetApp.flush();
+  return leerTrabajadores(ss);
 }
 
 function leerSolicitudes(ss) {
@@ -256,6 +379,101 @@ function leerSolicitudesIntExt(ss) {
     });
   }
   return out;
+}
+
+function leerEspecialesPersonal(ss) {
+  var sheet = buscarHojaPorNombre(ss, ["Especiales Personal"]);
+  if (!sheet) return [];
+  var values = sheet.getDataRange().getValues();
+  if (!values || values.length < 2) return [];
+  var headers = values[0];
+  var out = [];
+  for (var r = 1; r < values.length; r++) {
+    var row = values[r];
+    function cel(exactos, pistas) {
+      var i = indiceColumnaExactoOPista(headers, exactos, pistas || []);
+      return i >= 0 ? row[i] : "";
+    }
+    var id = String(cel(["ID", "ID."], []) || row[0] || "").trim();
+    if (!id) continue;
+    var fechaSolicitud = cel(["FECHA SOLICITUD", "FECHA DE SOLICITUD", "FECHA"], ["FECHA SOLICITUD"]);
+    if (fechaSolicitud instanceof Date) {
+      fechaSolicitud = Utilities.formatDate(fechaSolicitud, Session.getScriptTimeZone(), "yyyy-MM-dd");
+    }
+    var fechaEntrega = cel(["FECHA ENTREGA", "FECHA DE ENTREGA", "ENTREGA"], ["FECHA ENTREGA", "ENTREGA"]);
+    if (fechaEntrega instanceof Date) {
+      fechaEntrega = Utilities.formatDate(fechaEntrega, Session.getScriptTimeZone(), "yyyy-MM-dd");
+    }
+    var cantidadRaw = cel(["CANTIDAD"], ["CANTIDAD"]);
+    var cantidadNum = Number(cantidadRaw);
+    if (!cantidadNum || isNaN(cantidadNum)) cantidadNum = 1;
+    var notificadoVal = String(cel(["NOTIFICADO", "ESTADO"], ["NOTIFICADO", "ESTADO"]) || "Registrada");
+    out.push({
+      id: id,
+      fechaSolicitud: String(fechaSolicitud || ""),
+      usuario: String(cel(["USUARIO"], ["USUARIO"]) || ""),
+      cedula: String(cel(["CÉDULA", "CEDULA", "CC", "DOCUMENTO"], ["CÉDULA", "CEDULA", "DOCUMENTO"]) || ""),
+      nombre: String(cel(["NOMBRE"], ["NOMBRE"]) || ""),
+      sede: String(cel(["SEDE"], ["SEDE"]) || ""),
+      producto: String(cel(["PRODUCTO"], ["PRODUCTO"]) || ""),
+      cantidad: cantidadNum,
+      motivo: String(cel(["MOTIVO"], ["MOTIVO"]) || ""),
+      semana: String(cel(["SEMANA"], ["SEMANA"]) || ""),
+      fechaEntrega: String(fechaEntrega || ""),
+      observacion: String(cel(["OBSERVACIÓN", "OBSERVACION", "OBSERVACIONES"], ["OBSERVACI"]) || ""),
+      fotoCarta: String(cel(["FOTO CARTA", "CARTA"], ["FOTO CARTA", "CARTA", "FOTO"]) || ""),
+      notificado: notificadoVal,
+      estado: notificadoVal,
+      creadoEn: new Date().getTime()
+    });
+  }
+  return out;
+}
+
+function subirFotoCartaDrive(ss, base64Data, mimeType, fileName) {
+  if (!base64Data) return { status: "success", fileUrl: "" };
+  try {
+    var parentFolder = DriveApp.getRootFolder();
+    try {
+      var ssFile = DriveApp.getFileById(ss.getId());
+      var parents = ssFile.getParents();
+      if (parents.hasNext()) {
+        parentFolder = parents.next();
+      }
+    } catch (pe) {}
+
+    var folderName = "Cartas Autorizadas - Especiales Personal";
+    var targetFolder = null;
+    var folders = parentFolder.getFoldersByName(folderName);
+    if (folders.hasNext()) {
+      targetFolder = folders.next();
+    } else {
+      targetFolder = parentFolder.createFolder(folderName);
+    }
+
+    var bytes = Utilities.base64Decode(base64Data);
+    var blob = Utilities.newBlob(
+      bytes,
+      mimeType || "image/jpeg",
+      fileName || ("Carta_" + new Date().getTime() + ".jpg")
+    );
+    var file = targetFolder.createFile(blob);
+    try {
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    } catch (se) {}
+
+    return {
+      status: "success",
+      fileUrl: file.getUrl(),
+      fileId: file.getId()
+    };
+  } catch (err) {
+    return {
+      status: "success",
+      fileUrl: "",
+      driveError: String(err)
+    };
+  }
 }
 
 function responder(obj) {
@@ -520,15 +738,267 @@ function enviarCorreoNotificacionIntExt(ss, correoDestino, items) {
 }
 
 /**
+ * Envía un correo corporativo HTML con toda la información de la solicitud Especiales Personal.
+ */
+function enviarCorreoNotificacionEspecialPersonal(ss, correoDestino, items, fotoBase64, fotoMime, fotoNombre) {
+  var parsedCorreos = parsearCorreosDestino(correoDestino);
+  if (parsedCorreos.validos.length === 0 || parsedCorreos.invalidos.length > 0) {
+    return {
+      emailSent: false,
+      emailError: parsedCorreos.invalidos.length > 0
+        ? "Correo corporativo inválido: " + parsedCorreos.invalidos.join(", ")
+        : "Correo corporativo de destino inválido."
+    };
+  }
+  var emailTo = parsedCorreos.validos.join(",");
+  var emailDisplay = parsedCorreos.texto;
+
+  var lista = (items && items.length) ? items : [];
+  if (lista.length === 0) {
+    return { emailSent: false, emailError: "No hay datos de solicitud para notificar." };
+  }
+
+  var primera = lista[0];
+  var ids = [];
+  var totalRamos = 0;
+  var filasHtml = "";
+  var filasTexto = "";
+
+  for (var i = 0; i < lista.length; i++) {
+    var it = lista[i];
+    var cant = Number(it.cantidad) || 1;
+    totalRamos += cant;
+    ids.push(String(it.id || ""));
+    var bgFila = (i % 2 === 0) ? "#ffffff" : "#f8fafc";
+
+    filasHtml +=
+      "<tr style=\"background-color:" + bgFila + ";\">" +
+        "<td style=\"padding:10px 12px;border-bottom:1px solid #e2e8f0;font-family:'Courier New',monospace;font-size:12px;font-weight:700;color:#0a2958;white-space:nowrap;\">" + escapeHtml(it.id) + "</td>" +
+        "<td style=\"padding:10px 12px;border-bottom:1px solid #e2e8f0;font-size:13px;font-weight:600;color:#1e293b;\">" + escapeHtml(it.producto) + "</td>" +
+        "<td style=\"padding:10px 12px;border-bottom:1px solid #e2e8f0;font-family:'Courier New',monospace;font-size:13px;font-weight:700;color:#0a2958;text-align:right;white-space:nowrap;\">" + cant + " ramos</td>" +
+      "</tr>";
+
+    filasTexto += "  - " + String(it.id || "") + " | " + String(it.producto || "") + ": " + cant + " ramos\n";
+  }
+
+  var idsTexto = ids.join(", ");
+  var semanaTexto = primera.semana ? ("Semana " + primera.semana) : "—";
+  var obsTexto = String(primera.observacion || "").trim();
+  var notificadoTexto = String(primera.notificado || primera.estado || emailDisplay).trim();
+  var fotoUrl = String(primera.fotoCarta || "").trim();
+  var fotoEsUrlWeb = fotoUrl.indexOf("http") === 0;
+  var fotoHtml = fotoEsUrlWeb
+    ? "<a href=\"" + escapeHtml(fotoUrl) + "\" style=\"color:#0a2958;font-weight:700;text-decoration:underline;\">Ver carta autorizada &#8599;</a>"
+    : (fotoUrl ? "<span style=\"color:#047857;font-weight:700;\">Adjunta en el sistema / correo</span>" : "<span style=\"color:#64748b;\">No adjuntada</span>");
+
+  var inlineImagesObj = {};
+  var tieneLogo = false;
+  try {
+    var logoBytes = Utilities.base64Decode(MG_LOGO_BASE64);
+    inlineImagesObj.logoMg = Utilities.newBlob(logoBytes, "image/png", "logo-mg.png");
+    tieneLogo = true;
+  } catch (logoErr) {
+    tieneLogo = false;
+  }
+
+  var attachmentsList = [];
+  if (fotoBase64) {
+    try {
+      var fotoBytes = Utilities.base64Decode(fotoBase64);
+      attachmentsList.push(Utilities.newBlob(fotoBytes, fotoMime || "image/jpeg", fotoNombre || ("Carta_" + ids[0] + ".jpg")));
+    } catch (attErr) {}
+  }
+
+  var logoHeaderHtml = tieneLogo
+    ? "<div style=\"display:inline-block;background-color:#ffffff;padding:6px 10px;border-radius:8px;border-bottom:3px solid #E60000;\">" +
+        "<img src=\"cid:logoMg\" alt=\"MG Consultores S.A.S.\" width=\"74\" height=\"45\" style=\"display:block;border:0;width:74px;height:auto;\" />" +
+      "</div>"
+    : "<div style=\"display:inline-block;background-color:#ffffff;color:#0a2958;font-weight:800;font-size:13px;padding:6px 10px;border-radius:6px;border-bottom:3px solid #E60000;letter-spacing:0.5px;\">MG</div>";
+
+  var asunto = "Flor de Obsequio - Especiales Personal: " + idsTexto + " (" + String(primera.motivo || "Solicitud") + ")";
+
+  var textBody =
+    "MG CONSULTORES S.A.S. - FLOR DE OBSEQUIO\n" +
+    "NUEVA SOLICITUD: ESPECIALES PERSONAL\n" +
+    "==================================================\n" +
+    "Id(s): " + idsTexto + "\n" +
+    "Fecha de Solicitud: " + String(primera.fechaSolicitud || "") + "\n" +
+    "Registrado por (Usuario): " + String(primera.usuario || "") + "\n" +
+    "Colaborador Beneficiario: " + String(primera.nombre || "") + "\n" +
+    "Cédula: " + String(primera.cedula || "") + "\n" +
+    "Sede: " + String(primera.sede || "") + "\n" +
+    "Motivo: " + String(primera.motivo || "") + "\n" +
+    "Semana: " + semanaTexto + "\n" +
+    "Fecha de Entrega: " + String(primera.fechaEntrega || "") + "\n" +
+    "Foto Carta: " + (fotoUrl || "No adjuntada") + "\n" +
+    "Notificado a: " + notificadoTexto + "\n" +
+    "Observación: " + (obsTexto || "Sin observaciones adicionales.") + "\n\n" +
+    "PRODUCTOS SOLICITADOS (" + lista.length + " registro(s) | Total: " + totalRamos + " ramos):\n" +
+    filasTexto + "\n" +
+    "Sistema Flor de Obsequio • Notificación automática.\n";
+
+  var htmlBody =
+    "<!DOCTYPE html>" +
+    "<html lang=\"es\">" +
+    "<head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1.0\"></head>" +
+    "<body style=\"margin:0;padding:0;background-color:#f1f5f9;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1e293b;\">" +
+      "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"background-color:#f1f5f9;padding:24px 12px;\">" +
+        "<tr><td align=\"center\">" +
+          "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"max-width:620px;background-color:#ffffff;border:1px solid #cbd5e1;border-radius:12px;overflow:hidden;\">" +
+            "<tr><td style=\"height:5px;background-color:#E60000;font-size:0;line-height:0;\">&nbsp;</td></tr>" +
+            "<tr><td style=\"background-color:#0a2958;padding:24px 28px;color:#ffffff;\">" +
+              "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\">" +
+                "<tr>" +
+                  "<td style=\"vertical-align:top;\">" +
+                    "<div style=\"font-size:11px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;color:#fca5a5;margin-bottom:6px;\">MG CONSULTORES S.A.S. &bull; FLOR DE OBSEQUIO</div>" +
+                    "<div style=\"font-size:21px;font-weight:800;line-height:1.25;color:#ffffff;\">Nueva Solicitud: Especiales Personal</div>" +
+                    "<div style=\"font-size:13px;color:#cbd5e1;margin-top:4px;\">Notificación corporativa automática de registro y entrega</div>" +
+                  "</td>" +
+                  "<td align=\"right\" style=\"vertical-align:top;padding-left:12px;\">" +
+                    logoHeaderHtml +
+                  "</td>" +
+                "</tr>" +
+              "</table>" +
+            "</td></tr>" +
+
+            "<tr><td style=\"background-color:#f8fafc;border-bottom:1px solid #e2e8f0;padding:16px 28px;\">" +
+              "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\">" +
+                "<tr>" +
+                  "<td width=\"38%\" style=\"vertical-align:top;padding-right:8px;\">" +
+                    "<div style=\"font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:#64748b;\">Id(s) de Registro</div>" +
+                    "<div style=\"font-family:'Courier New',monospace;font-size:13px;font-weight:800;color:#0a2958;margin-top:3px;word-break:break-word;\">" + escapeHtml(idsTexto) + "</div>" +
+                  "</td>" +
+                  "<td width=\"31%\" style=\"vertical-align:top;padding:0 8px;border-left:1px solid #e2e8f0;\">" +
+                    "<div style=\"font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:#64748b;\">Semana Programada</div>" +
+                    "<div style=\"font-size:14px;font-weight:800;color:#E60000;margin-top:3px;\">" + escapeHtml(semanaTexto) + "</div>" +
+                  "</td>" +
+                  "<td width=\"31%\" style=\"vertical-align:top;padding-left:12px;border-left:1px solid #e2e8f0;\">" +
+                    "<div style=\"font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:#64748b;\">Total Solicitado</div>" +
+                    "<div style=\"font-family:'Courier New',monospace;font-size:14px;font-weight:800;color:#0a2958;margin-top:3px;\">" + totalRamos + " ramos</div>" +
+                  "</td>" +
+                "</tr>" +
+              "</table>" +
+            "</td></tr>" +
+
+            "<tr><td style=\"padding:24px 28px 8px 28px;\">" +
+              "<div style=\"font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:#0a2958;border-bottom:2px solid #e2e8f0;padding-bottom:6px;margin-bottom:12px;\">Información General de la Solicitud</div>" +
+              "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"font-size:13px;\">" +
+                "<tr>" +
+                  "<td width=\"40%\" style=\"padding:7px 0;color:#64748b;border-bottom:1px solid #f1f5f9;\">Fecha de Solicitud</td>" +
+                  "<td width=\"60%\" style=\"padding:7px 0;font-weight:700;color:#0f172a;border-bottom:1px solid #f1f5f9;text-align:right;\">" + escapeHtml(primera.fechaSolicitud || "—") + "</td>" +
+                "</tr>" +
+                "<tr>" +
+                  "<td style=\"padding:7px 0;color:#64748b;border-bottom:1px solid #f1f5f9;\">Fecha de Entrega</td>" +
+                  "<td style=\"padding:7px 0;font-weight:700;color:#0a2958;border-bottom:1px solid #f1f5f9;text-align:right;\">" + escapeHtml(primera.fechaEntrega || "—") + "</td>" +
+                "</tr>" +
+                "<tr>" +
+                  "<td style=\"padding:7px 0;color:#64748b;border-bottom:1px solid #f1f5f9;\">Registrado por (Usuario)</td>" +
+                  "<td style=\"padding:7px 0;font-weight:700;color:#0f172a;border-bottom:1px solid #f1f5f9;text-align:right;\">" + escapeHtml(primera.usuario || "—") + "</td>" +
+                "</tr>" +
+                "<tr>" +
+                  "<td style=\"padding:7px 0;color:#64748b;border-bottom:1px solid #f1f5f9;\">Colaborador Beneficiario</td>" +
+                  "<td style=\"padding:7px 0;font-weight:700;color:#0f172a;border-bottom:1px solid #f1f5f9;text-align:right;\">" + escapeHtml(primera.nombre || "—") + "</td>" +
+                "</tr>" +
+                "<tr>" +
+                  "<td style=\"padding:7px 0;color:#64748b;border-bottom:1px solid #f1f5f9;\">Cédula</td>" +
+                  "<td style=\"padding:7px 0;font-family:'Courier New',monospace;font-weight:700;color:#0a2958;border-bottom:1px solid #f1f5f9;text-align:right;\">" + escapeHtml(primera.cedula || "—") + "</td>" +
+                "</tr>" +
+                "<tr>" +
+                  "<td style=\"padding:7px 0;color:#64748b;border-bottom:1px solid #f1f5f9;\">Sede</td>" +
+                  "<td style=\"padding:7px 0;font-weight:700;color:#0f172a;border-bottom:1px solid #f1f5f9;text-align:right;\">" + escapeHtml(primera.sede || "—") + "</td>" +
+                "</tr>" +
+                "<tr>" +
+                  "<td style=\"padding:7px 0;color:#64748b;border-bottom:1px solid #f1f5f9;\">Motivo</td>" +
+                  "<td style=\"padding:7px 0;font-weight:700;color:#0a2958;border-bottom:1px solid #f1f5f9;text-align:right;\">" + escapeHtml(primera.motivo || "—") + "</td>" +
+                "</tr>" +
+                "<tr>" +
+                  "<td style=\"padding:7px 0;color:#64748b;border-bottom:1px solid #f1f5f9;\">Carta Autorizada</td>" +
+                  "<td style=\"padding:7px 0;text-align:right;border-bottom:1px solid #f1f5f9;\">" + fotoHtml + "</td>" +
+                "</tr>" +
+                "<tr>" +
+                  "<td style=\"padding:7px 0;color:#64748b;\">Notificado</td>" +
+                  "<td style=\"padding:7px 0;font-weight:700;color:#047857;text-align:right;word-break:break-word;\">" + escapeHtml(notificadoTexto) + "</td>" +
+                "</tr>" +
+              "</table>" +
+            "</td></tr>" +
+
+            "<tr><td style=\"padding:18px 28px 8px 28px;\">" +
+              "<div style=\"font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:#0a2958;margin-bottom:10px;\">Detalle de Productos Solicitados</div>" +
+              "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"border:1px solid #cbd5e1;border-radius:8px;overflow:hidden;border-collapse:collapse;\">" +
+                "<thead>" +
+                  "<tr style=\"background-color:#0a2958;color:#ffffff;\">" +
+                    "<th align=\"left\" style=\"padding:9px 12px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;\">Id</th>" +
+                    "<th align=\"left\" style=\"padding:9px 12px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;\">Producto</th>" +
+                    "<th align=\"right\" style=\"padding:9px 12px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;\">Cantidad</th>" +
+                  "</tr>" +
+                "</thead>" +
+                "<tbody>" + filasHtml + "</tbody>" +
+                "<tfoot>" +
+                  "<tr style=\"background-color:#f1f5f9;\">" +
+                    "<td colspan=\"2\" style=\"padding:10px 12px;font-size:12px;font-weight:800;color:#0a2958;\">Total general (" + lista.length + (lista.length === 1 ? " producto" : " productos") + ")</td>" +
+                    "<td style=\"padding:10px 12px;font-family:'Courier New',monospace;font-size:13px;font-weight:800;color:#E60000;text-align:right;\">" + totalRamos + " ramos</td>" +
+                  "</tr>" +
+                "</tfoot>" +
+              "</table>" +
+            "</td></tr>" +
+
+            "<tr><td style=\"padding:16px 28px 20px 28px;\">" +
+              "<div style=\"background-color:#f8fafc;border-left:4px solid #0a2958;border-radius:6px;padding:12px 14px;\">" +
+                "<div style=\"font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:0.8px;color:#64748b;margin-bottom:4px;\">Observación</div>" +
+                "<div style=\"font-size:13px;line-height:1.5;color:" + (obsTexto ? "#1e293b" : "#64748b") + ";font-style:" + (obsTexto ? "normal" : "italic") + ";\">" +
+                  escapeHtml(obsTexto || "Sin observaciones adicionales.") +
+                "</div>" +
+              "</div>" +
+            "</td></tr>" +
+
+            "<tr><td style=\"background-color:#f8fafc;border-top:1px solid #e2e8f0;padding:14px 28px;text-align:center;font-size:11px;color:#64748b;\">" +
+              "<strong>Sistema Flor de Obsequio</strong> &bull; Notificación automática." +
+            "</td></tr>" +
+          "</table>" +
+        "</td></tr>" +
+      "</table>" +
+    "</body>" +
+    "</html>";
+
+  var senderEmail = "";
+  try {
+    senderEmail = Session.getEffectiveUser().getEmail() || "";
+  } catch (ue) {}
+
+  try {
+    var mailPayload = {
+      to: emailTo,
+      subject: asunto,
+      body: textBody,
+      htmlBody: htmlBody,
+      name: "Notificaciones Flor de Obsequio"
+    };
+    if (tieneLogo) {
+      mailPayload.inlineImages = inlineImagesObj;
+    }
+    if (attachmentsList.length > 0) {
+      mailPayload.attachments = attachmentsList;
+    }
+    MailApp.sendEmail(mailPayload);
+    var quotaRemaining = null;
+    try { quotaRemaining = MailApp.getRemainingDailyQuota(); } catch (qe) {}
+    return { emailSent: true, to: emailDisplay, senderEmail: senderEmail, quotaRemaining: quotaRemaining };
+  } catch (mailErr) {
+    return { emailSent: false, to: emailDisplay, senderEmail: senderEmail, emailError: String(mailErr) };
+  }
+}
+
+/**
  * Ejecute esta función una vez desde el editor de Apps Script (▶ Ejecutar)
- * para otorgar permisos de envío de correos (MailApp) sin enviar mensajes.
+ * para otorgar permisos de envío de correos (MailApp) y almacenamiento en Drive (DriveApp).
  */
 function autorizarEnvioCorreos() {
   var cuota = MailApp.getRemainingDailyQuota();
-  Logger.log("Permiso MailApp autorizado. Cuota diaria restante: " + cuota);
+  var rootName = DriveApp.getRootFolder().getName();
+  Logger.log("Permisos MailApp y DriveApp autorizados. Cuota diaria: " + cuota + " | Drive: " + rootName);
   return {
     status: "success",
-    message: "Permisos de envío de correo autorizados. Cuota diaria restante: " + cuota
+    message: "Permisos de envío de correo y Drive autorizados. Cuota diaria restante: " + cuota
   };
 }
 
@@ -539,7 +1009,9 @@ function doGet(e) {
     var workers = leerTrabajadores(ss);
     var solicitudes = leerSolicitudes(ss);
     var solicitudesIntExt = leerSolicitudesIntExt(ss);
+    var solicitudesEspecialesPersonal = leerEspecialesPersonal(ss);
     var hojaIntExt = buscarHojaPorNombre(ss, ["Especiales Empresa"]);
+    var hojaEp = buscarHojaPorNombre(ss, ["Especiales Personal"]);
     return responder({
       status: "success",
       message: "Conexión exitosa",
@@ -548,9 +1020,12 @@ function doGet(e) {
       workers: workers,
       solicitudes: solicitudes,
       solicitudesIntExt: solicitudesIntExt,
+      solicitudesEspecialesPersonal: solicitudesEspecialesPersonal,
       supportsIntExt: true,
+      supportsEspecialesPersonal: true,
       supportsEmailNotification: true,
-      intExtSheetName: hojaIntExt ? hojaIntExt.getName() : "Especiales Empresa"
+      intExtSheetName: hojaIntExt ? hojaIntExt.getName() : "Especiales Empresa",
+      especialesPersonalSheetName: hojaEp ? hojaEp.getName() : "Especiales Personal"
     });
   } catch (err) {
     return responder({ status: "error", message: String(err) });
@@ -648,6 +1123,51 @@ function escribirSolicitudIntExt(sheet, data) {
   sheet.appendRow(fila);
 }
 
+/**
+ * Escribe una fila en la hoja Especiales Personal:
+ * Id | Fecha Solicitud | Usuario | Cédula | Nombre | Sede | Producto | Cantidad | Motivo | Semana | Fecha Entrega | Observación | Foto Carta | Notificado
+ */
+function escribirEspecialPersonal(sheet, data) {
+  var headers = sheet.getLastRow() > 0 ? sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0] : [];
+  var headersDefault = [
+    "Id", "Fecha Solicitud", "Usuario", "Cédula", "Nombre", "Sede",
+    "Producto", "Cantidad", "Motivo", "Semana", "Fecha Entrega", "Observación", "Foto Carta", "Notificado"
+  ];
+  if (!headers.length || !headers[0]) {
+    headers = headersDefault;
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.getRange(1, 1, 1, headers.length).setFontWeight("bold").setBackground("#0a2958").setFontColor("#ffffff");
+  }
+
+  var cantidadNum = Number(data.cantidad);
+  if (!cantidadNum || isNaN(cantidadNum)) cantidadNum = 1;
+
+  function valorParaHeader(headerRaw) {
+    var h = String(headerRaw || "").toUpperCase().replace(/\s+/g, " ").trim();
+    if (h === "ID" || h === "ID.") return data.id || ("SEP-" + new Date().getTime());
+    if (h.indexOf("ENTREGA") !== -1) return data.fechaEntrega || "";
+    if (h.indexOf("SOLICITUD") !== -1 || h === "FECHA") return data.fechaSolicitud || "";
+    if (h.indexOf("USUARIO") !== -1) return data.usuario || "";
+    if (h.indexOf("CÉDULA") !== -1 || h.indexOf("CEDULA") !== -1 || h === "CC" || h.indexOf("DOCUMENTO") !== -1) return data.cedula || "";
+    if (h.indexOf("NOMBRE") !== -1) return data.nombre || "";
+    if (h.indexOf("SEDE") !== -1) return data.sede || "";
+    if (h.indexOf("PRODUCTO") !== -1) return data.producto || "";
+    if (h.indexOf("CANTIDAD") !== -1) return cantidadNum;
+    if (h.indexOf("MOTIVO") !== -1) return data.motivo || "";
+    if (h.indexOf("SEMANA") !== -1) return data.semana || "";
+    if (h.indexOf("OBSERVACI") !== -1) return data.observacion || "";
+    if (h.indexOf("CARTA") !== -1 || h.indexOf("FOTO") !== -1) return data.fotoCarta || "";
+    if (h.indexOf("NOTIFICAD") !== -1 || h.indexOf("ESTADO") !== -1) return data.notificado || data.estado || "Registrada";
+    return "";
+  }
+
+  var fila = [];
+  for (var c = 0; c < headers.length; c++) {
+    fila.push(valorParaHeader(headers[c]));
+  }
+  sheet.appendRow(fila);
+}
+
 function doPost(e) {
   try {
     var ss = getSpreadsheet();
@@ -659,6 +1179,7 @@ function doPost(e) {
     if (data.action === "ping" || data.action === "listar") {
       var workers = leerTrabajadores(ss);
       var hojaIntExtPing = buscarHojaPorNombre(ss, ["Especiales Empresa"]);
+      var hojaEpPing = buscarHojaPorNombre(ss, ["Especiales Personal"]);
       return responder({
         status: "success",
         message: data.action === "ping" ? "Ping recibido" : "Listado",
@@ -667,10 +1188,28 @@ function doPost(e) {
         workers: workers,
         solicitudes: leerSolicitudes(ss),
         solicitudesIntExt: leerSolicitudesIntExt(ss),
+        solicitudesEspecialesPersonal: leerEspecialesPersonal(ss),
         supportsIntExt: true,
+        supportsEspecialesPersonal: true,
         supportsEmailNotification: true,
-        intExtSheetName: hojaIntExtPing ? hojaIntExtPing.getName() : "Especiales Empresa"
+        intExtSheetName: hojaIntExtPing ? hojaIntExtPing.getName() : "Especiales Empresa",
+        especialesPersonalSheetName: hojaEpPing ? hojaEpPing.getName() : "Especiales Personal"
       });
+    }
+
+    if (data.action === "sincronizar_maestro" || data.action === "agregar_trabajador_maestro") {
+      var listaMaestro = (data.workers && data.workers.length) ? data.workers : (data.worker ? [data.worker] : []);
+      var actualizadosMaestro = sincronizarMaestroHoja(ss, listaMaestro);
+      return responder({
+        status: "success",
+        syncedMaestro: true,
+        message: "Maestro sincronizado en Google Drive (" + actualizadosMaestro.length + " trabajadores)",
+        workers: actualizadosMaestro
+      });
+    }
+
+    if (data.action === "subir_foto_carta") {
+      return responder(subirFotoCartaDrive(ss, data.base64, data.mimeType, data.fileName));
     }
 
     if (data.action === "notificar_int_ext") {
@@ -686,6 +1225,44 @@ function doPost(e) {
         emailError: resMail.emailError || "",
         message: resMail.emailError || (resMail.emailSent ? "Correo enviado" : ""),
         supportsEmailNotification: true
+      });
+    }
+
+    if (data.action === "notificar_especial_personal") {
+      var itemsCorreoEp = (data.items && data.items.length) ? data.items : [data];
+      var destinoCorreoEp = data.correoDestino || data.correo || (itemsCorreoEp[0] ? (itemsCorreoEp[0].notificado || itemsCorreoEp[0].estado) : "");
+      var resMailEp = enviarCorreoNotificacionEspecialPersonal(
+        ss,
+        destinoCorreoEp,
+        itemsCorreoEp,
+        data.fotoCartaBase64 || "",
+        data.fotoCartaMime || "image/jpeg",
+        data.fotoCartaNombre || ""
+      );
+      return responder({
+        status: "success",
+        emailSent: !!resMailEp.emailSent,
+        to: resMailEp.to || destinoCorreoEp || "",
+        senderEmail: resMailEp.senderEmail || "",
+        quotaRemaining: resMailEp.quotaRemaining,
+        emailError: resMailEp.emailError || "",
+        message: resMailEp.emailError || (resMailEp.emailSent ? "Correo enviado" : ""),
+        supportsEmailNotification: true,
+        supportsEspecialesPersonal: true
+      });
+    }
+
+    if (data.action === "registrar_especial_personal" || data.hoja === "Especiales Personal") {
+      var sheetEp = buscarHojaPorNombre(ss, ["Especiales Personal"]) || ss.insertSheet("Especiales Personal");
+      escribirEspecialPersonal(sheetEp, data);
+      return responder({
+        status: "success",
+        message: "Solicitud registrada en " + sheetEp.getName(),
+        id: data.id,
+        solicitudesEspecialesPersonal: leerEspecialesPersonal(ss),
+        supportsEspecialesPersonal: true,
+        supportsEmailNotification: true,
+        especialesPersonalSheetName: sheetEp.getName()
       });
     }
 

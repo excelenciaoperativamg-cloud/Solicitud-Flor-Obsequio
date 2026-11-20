@@ -50,8 +50,29 @@ export interface SolicitudIntExt {
   creadoEn?: number;
 }
 
+export interface EspecialPersonal {
+  id: string;
+  fechaSolicitud: string;
+  usuario: string;
+  cedula: string;
+  nombre: string;
+  sede: string;
+  producto: string;
+  cantidad: number;
+  motivo: string;
+  semana?: string;
+  fechaEntrega: string;
+  observacion: string;
+  fotoCarta?: string;
+  notificado?: string;
+  estado?: string;
+  syncedToDrive?: boolean;
+  creadoEn?: number;
+}
+
 export interface TrabajadorMaestro {
   codigo: string;
+  cedula?: string;
   nombre: string;
   sede: Sede;
   cargo?: string;

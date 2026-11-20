@@ -10,6 +10,7 @@ import maestroHandler from './api/maestro.js';
 import pingHandler from './api/ping.js';
 import solicitudesHandler from './api/solicitudes.js';
 import solicitudesIntExtHandler from './api/solicitudes-int-ext.js';
+import especialesPersonalHandler from './api/especiales-personal.js';
 import maestroSyncHandler from './api/maestro/sync-from-drive.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -20,7 +21,7 @@ const portArgIdx = process.argv.indexOf('--port');
 const cliPort = portArgIdx !== -1 ? Number(process.argv[portArgIdx + 1]) : undefined;
 const PORT = cliPort && !Number.isNaN(cliPort) ? cliPort : 3000;
 
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 
 // API Endpoints unificados con los Serverless Functions de Vercel
 app.all('/api', (req, res) => indexHandler(req, res));
@@ -30,6 +31,8 @@ app.all('/api/drive-test', (req, res) => driveTestHandler(req, res));
 app.all('/api/maestro', (req, res) => maestroHandler(req, res));
 app.all('/api/solicitudes', (req, res) => solicitudesHandler(req, res));
 app.all('/api/solicitudes-int-ext', (req, res) => solicitudesIntExtHandler(req, res));
+app.all('/api/especiales-personal', (req, res) => especialesPersonalHandler(req, res));
+app.all('/api/especiales-personal/carta/:file', (req, res) => especialesPersonalHandler(req, res));
 app.all('/api/maestro/sync-from-drive', (req, res) => maestroSyncHandler(req, res));
 
 // Iniciar servidor Vite o estático

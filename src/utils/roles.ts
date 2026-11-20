@@ -191,3 +191,26 @@ export function puedeVerResumenSolicitud(trabajador?: TrabajadorMaestro | null):
     cargo.includes('poscosecha')
   );
 }
+
+/**
+ * Controla si el usuario puede acceder al formulario "Especiales Personal":
+ * - Administradores del sistema (ANALISTA GESTIÓN DE INFORMACIÓN EAI / Administrador)
+ * - AUXILIAR TÉCNICO POSCOSECHA EAI
+ */
+export function puedeVerEspecialesPersonal(trabajador?: TrabajadorMaestro | null): boolean {
+  if (!trabajador) return false;
+  if (esAdministradorSistema(trabajador)) return true;
+
+  const cargo = String(trabajador.cargo || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return (
+    cargo.includes('auxiliar') &&
+    cargo.includes('tecnico') &&
+    cargo.includes('poscosecha')
+  );
+}

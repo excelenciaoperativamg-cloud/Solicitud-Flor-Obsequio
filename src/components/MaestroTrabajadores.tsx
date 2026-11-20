@@ -26,6 +26,7 @@ export const MaestroTrabajadores: React.FC<MaestroTrabajadoresProps> = ({
 
   // Formulario nuevo trabajador
   const [nuevoCodigo, setNuevoCodigo] = useState('');
+  const [nuevaCedula, setNuevaCedula] = useState('');
   const [nuevoNombre, setNuevoNombre] = useState('');
   const [nuevaSede, setNuevaSede] = useState<Sede>('Sede MG');
   const [nuevoCargo, setNuevoCargo] = useState('Operario Poscosecha');
@@ -38,6 +39,7 @@ export const MaestroTrabajadores: React.FC<MaestroTrabajadoresProps> = ({
       const matchBusqueda =
         !q ||
         t.codigo.toLowerCase().includes(q) ||
+        (t.cedula && t.cedula.toLowerCase().includes(q)) ||
         t.nombre.toLowerCase().includes(q) ||
         (t.cargo && t.cargo.toLowerCase().includes(q));
 
@@ -51,6 +53,10 @@ export const MaestroTrabajadores: React.FC<MaestroTrabajadoresProps> = ({
     e.preventDefault();
     if (!nuevoCodigo.trim()) {
       setErrorModal('El código es obligatorio');
+      return;
+    }
+    if (!nuevaCedula.trim()) {
+      setErrorModal('La cédula es obligatoria');
       return;
     }
     if (!nuevoNombre.trim()) {
@@ -68,6 +74,7 @@ export const MaestroTrabajadores: React.FC<MaestroTrabajadoresProps> = ({
 
     onAgregarTrabajador({
       codigo: nuevoCodigo.trim().toUpperCase(),
+      cedula: nuevaCedula.replace(/\D/g, ''),
       nombre: nuevoNombre.trim(),
       sede: nuevaSede,
       cargo: nuevoCargo.trim() || 'Operario',
@@ -76,6 +83,7 @@ export const MaestroTrabajadores: React.FC<MaestroTrabajadoresProps> = ({
     });
 
     setNuevoCodigo('');
+    setNuevaCedula('');
     setNuevoNombre('');
     setErrorModal('');
     setMostrarModalNuevo(false);
@@ -83,14 +91,15 @@ export const MaestroTrabajadores: React.FC<MaestroTrabajadoresProps> = ({
 
   // Descargar plantilla en Excel para cargar el Maestro
   const descargarPlantillaMaestro = () => {
-    const headers = ['Código', 'Nombre', 'Sede', 'Cargo', 'Estado'];
+    const headers = ['Código', 'Cédula', 'Nombre', 'Sede', 'Cargo', 'Estado'];
     const ejemplo = [
-      ['5705', 'EJEMPLO NOMBRE COMPLETO', 'Sede MG', 'OPERARIO POSCOSECHA', 'Activo'],
-      ['10203', 'EJEMPLO TRABAJADOR HA', 'Sede HA', 'AUXILIAR POSCOSECHA', 'Activo'],
+      ['5705', '1036654321', 'EJEMPLO NOMBRE COMPLETO', 'Sede MG', 'OPERARIO POSCOSECHA', 'Activo'],
+      ['10203', '1036987654', 'EJEMPLO TRABAJADOR HA', 'Sede HA', 'AUXILIAR POSCOSECHA', 'Activo'],
     ];
     const ws = XLSX.utils.aoa_to_sheet([headers, ...ejemplo]);
     ws['!cols'] = [
       { wch: 14 },
+      { wch: 16 },
       { wch: 34 },
       { wch: 14 },
       { wch: 28 },
@@ -128,7 +137,9 @@ export const MaestroTrabajadores: React.FC<MaestroTrabajadoresProps> = ({
         const hasHeader =
           firstRowStr.includes('código') ||
           firstRowStr.includes('codigo') ||
-          firstRowStr.includes('nombre');
+          firstRowStr.includes('nombre') ||
+          firstRowStr.includes('cedula') ||
+          firstRowStr.includes('cédula');
 
         const startIdx = hasHeader ? 1 : 0;
         const headers = hasHeader
@@ -147,11 +158,12 @@ export const MaestroTrabajadores: React.FC<MaestroTrabajadoresProps> = ({
           return idx >= 0 ? idx : fallback;
         };
 
-        const idxCodigo = findCol(['codigo', 'id'], 0);
-        const idxNombre = findCol(['nombre'], 1);
-        const idxSede = findCol(['sede'], 2);
-        const idxCargo = findCol(['cargo', 'funcion'], 3);
-        const idxEstado = findCol(['estado'], 4);
+        const idxCodigo = findCol(['codigo', 'id rh', 'id'], 0);
+        const idxCedula = findCol(['cedula', 'documento', 'identificacion', 'cc'], -1);
+        const idxNombre = findCol(['nombre'], idxCedula === 1 ? 2 : 1);
+        const idxSede = findCol(['sede'], idxCedula === 1 ? 3 : 2);
+        const idxCargo = findCol(['cargo', 'funcion'], idxCedula === 1 ? 4 : 3);
+        const idxEstado = findCol(['estado'], idxCedula === 1 ? 5 : 4);
 
         const nuevosTrabajadores: TrabajadorMaestro[] = [];
 
@@ -160,6 +172,10 @@ export const MaestroTrabajadores: React.FC<MaestroTrabajadoresProps> = ({
           const codigoVal = String(cols[idxCodigo] ?? '').trim();
           const nombreVal = String(cols[idxNombre] ?? '').trim();
           if (!codigoVal || !nombreVal) continue;
+
+          const cedulaRaw = idxCedula >= 0 ? String(cols[idxCedula] ?? '').trim() : '';
+          const cedulaDigits = cedulaRaw.replace(/\D/g, '');
+          const cedulaVal = cedulaDigits || cedulaRaw;
 
           const rawSede = String(cols[idxSede] ?? 'Sede MG').trim();
           let parsedSede: Sede = 'Sede MG';
@@ -170,6 +186,7 @@ export const MaestroTrabajadores: React.FC<MaestroTrabajadoresProps> = ({
 
           nuevosTrabajadores.push({
             codigo: codigoVal.toUpperCase(),
+            cedula: cedulaVal,
             nombre: nombreVal,
             sede: parsedSede,
             cargo: String(cols[idxCargo] ?? '').trim() || 'Operario',
@@ -205,7 +222,7 @@ export const MaestroTrabajadores: React.FC<MaestroTrabajadoresProps> = ({
               Agregar Trabajador al Maestro
             </h3>
             <p className="text-xs text-slate-500 mb-4">
-              Este registro estará disponible de inmediato para el autocompletado del formulario.
+              Se guardará y sincronizará automáticamente con Google Drive para uso inmediato en los formularios.
             </p>
 
             {errorModal && (
@@ -215,17 +232,34 @@ export const MaestroTrabajadores: React.FC<MaestroTrabajadoresProps> = ({
             )}
 
             <form onSubmit={handleGuardarNuevo} className="space-y-4 text-xs">
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">
-                  Código de Empleado *
-                </label>
-                <input
-                  type="text"
-                  value={nuevoCodigo}
-                  onChange={(e) => setNuevoCodigo(e.target.value)}
-                  placeholder="Ej: 5705, MG-111, HA-209, SC-307"
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 focus:border-[#0a2958] font-mono uppercase font-bold"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    Código de Empleado *
+                  </label>
+                  <input
+                    type="text"
+                    value={nuevoCodigo}
+                    onChange={(e) => setNuevoCodigo(e.target.value)}
+                    placeholder="Ej: 5705"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 focus:border-[#0a2958] font-mono uppercase font-bold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    Cédula *
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    value={nuevaCedula}
+                    onChange={(e) => setNuevaCedula(e.target.value.replace(/\D/g, ''))}
+                    placeholder="Solo números"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 focus:border-[#0a2958] font-mono font-bold"
+                  />
+                </div>
               </div>
 
               <div>
@@ -293,13 +327,13 @@ export const MaestroTrabajadores: React.FC<MaestroTrabajadoresProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
         <div>
           <span className="text-xs font-bold uppercase tracking-wider text-[#E60000]">
-            Catálogo Oficial de Personal
+            Catálogo Oficial de Personal • Sincronización Automática
           </span>
           <h2 className="text-xl font-extrabold text-[#0a2958] tracking-tight">
             Actualizar Maestro: Solicitud Flor Obsequio
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            El formulario valida automáticamente el código, nombre y sede con esta base de datos ({maestro.length} registros)
+            Los formularios validan automáticamente código, cédula, nombre y sede con Google Drive ({maestro.length} registros)
           </p>
         </div>
 
@@ -348,7 +382,7 @@ export const MaestroTrabajadores: React.FC<MaestroTrabajadoresProps> = ({
                 Plantilla para cargar Maestro
               </h3>
               <p className="text-xs text-slate-500">
-                Use estas columnas en su archivo Excel (.xlsx) o CSV antes de presionar <strong>Importar maestro</strong>.
+                Use estas columnas (incluida <strong>Cédula</strong>) en su archivo Excel (.xlsx) o CSV antes de presionar <strong>Importar maestro</strong>; los cambios se sincronizan automáticamente con Drive.
               </p>
             </div>
           </div>
@@ -368,6 +402,7 @@ export const MaestroTrabajadores: React.FC<MaestroTrabajadoresProps> = ({
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200 text-[#0a2958] font-bold uppercase text-[10px] tracking-wider">
                 <th className="py-2 px-3">Código *</th>
+                <th className="py-2 px-3">Cédula *</th>
                 <th className="py-2 px-3">Nombre *</th>
                 <th className="py-2 px-3">Sede *</th>
                 <th className="py-2 px-3">Cargo</th>
@@ -377,6 +412,7 @@ export const MaestroTrabajadores: React.FC<MaestroTrabajadoresProps> = ({
             <tbody className="divide-y divide-slate-100 text-slate-600">
               <tr>
                 <td className="py-2 px-3 font-mono font-bold text-[#0a2958]">5705</td>
+                <td className="py-2 px-3 font-mono">1036654321</td>
                 <td className="py-2 px-3">EJEMPLO NOMBRE COMPLETO</td>
                 <td className="py-2 px-3 font-semibold">Sede MG</td>
                 <td className="py-2 px-3">OPERARIO POSCOSECHA</td>
@@ -384,6 +420,7 @@ export const MaestroTrabajadores: React.FC<MaestroTrabajadoresProps> = ({
               </tr>
               <tr>
                 <td className="py-2 px-3 font-mono font-bold text-[#0a2958]">10203</td>
+                <td className="py-2 px-3 font-mono">1036987654</td>
                 <td className="py-2 px-3">EJEMPLO TRABAJADOR HA</td>
                 <td className="py-2 px-3 font-semibold">Sede HA</td>
                 <td className="py-2 px-3">AUXILIAR POSCOSECHA</td>
@@ -402,7 +439,7 @@ export const MaestroTrabajadores: React.FC<MaestroTrabajadoresProps> = ({
             type="text"
             value={busqueda}
             onChange={(e) => setBusqueda(e.target.value)}
-            placeholder="Buscar por código (ej: 5705), nombre o cargo..."
+            placeholder="Buscar por código (ej: 5705), cédula, nombre o cargo..."
             className="w-full pl-9 pr-4 py-2 text-xs rounded-xl border border-slate-300 focus:border-[#0a2958] focus:ring-2 focus:ring-[#0a2958]/20 outline-hidden font-medium"
           />
         </div>
@@ -429,6 +466,7 @@ export const MaestroTrabajadores: React.FC<MaestroTrabajadoresProps> = ({
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase text-[10px] tracking-wider">
                 <th className="py-3 px-4">Código</th>
+                <th className="py-3 px-4">Cédula</th>
                 <th className="py-3 px-4">Nombre Trabajador</th>
                 <th className="py-3 px-4">Sede</th>
                 <th className="py-3 px-4">Cargo / Función</th>
@@ -439,7 +477,7 @@ export const MaestroTrabajadores: React.FC<MaestroTrabajadoresProps> = ({
             <tbody className="divide-y divide-slate-100 text-slate-700">
               {trabajadoresFiltrados.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-8 text-center text-slate-400">
+                  <td colSpan={7} className="py-8 text-center text-slate-400">
                     No se encontraron trabajadores con los filtros aplicados.
                   </td>
                 </tr>
@@ -448,6 +486,9 @@ export const MaestroTrabajadores: React.FC<MaestroTrabajadoresProps> = ({
                   <tr key={`${t.codigo}-${idx}`} className="hover:bg-slate-50/80 transition">
                     <td className="py-3 px-4 font-mono font-bold text-[#0a2958] whitespace-nowrap">
                       {t.codigo}
+                    </td>
+                    <td className="py-3 px-4 font-mono text-slate-700 whitespace-nowrap">
+                      {t.cedula || '—'}
                     </td>
                     <td className="py-3 px-4 font-bold text-slate-900">
                       {t.nombre}
@@ -464,7 +505,7 @@ export const MaestroTrabajadores: React.FC<MaestroTrabajadoresProps> = ({
                     <td className="py-3 px-4 whitespace-nowrap">
                       <span className="inline-flex items-center gap-1 text-[11px] text-emerald-700 font-bold">
                         <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                        Activo
+                        {t.activo === false ? 'Inactivo' : 'Activo'}
                       </span>
                     </td>
                   </tr>

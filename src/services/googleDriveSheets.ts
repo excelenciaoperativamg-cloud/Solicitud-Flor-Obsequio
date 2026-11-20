@@ -111,9 +111,10 @@ export const createSpreadsheetWithTemplate = async (
 
   // Poblar encabezados y lista inicial de empleados en Maestro
   const maestroRows: (string | number)[][] = [
-    ['Código', 'Nombre', 'Sede', 'Cargo', 'Estado'],
+    ['Código', 'Cédula', 'Nombre', 'Sede', 'Cargo', 'Estado'],
     ...initialEmployees.map((emp) => [
       emp.codigo,
+      emp.cedula || '',
       emp.nombre,
       emp.sede,
       emp.cargo || 'Operario',
@@ -122,7 +123,7 @@ export const createSpreadsheetWithTemplate = async (
   ];
 
   await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Maestro!A1:E?valueInputOption=USER_ENTERED`,
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Maestro!A1:F?valueInputOption=USER_ENTERED`,
     {
       method: 'PUT',
       headers: {
@@ -224,6 +225,7 @@ export const appendWorkerToMaestroDrive = async (
     const rowValues = [
       [
         worker.codigo,
+        worker.cedula || '',
         worker.nombre,
         worker.sede,
         worker.cargo || 'Operario',
@@ -232,7 +234,7 @@ export const appendWorkerToMaestroDrive = async (
     ];
 
     const res = await fetch(
-      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Maestro!A:E:append?valueInputOption=USER_ENTERED`,
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Maestro!A:F:append?valueInputOption=USER_ENTERED`,
       {
         method: 'POST',
         headers: {
@@ -365,7 +367,7 @@ export const fetchMaestroFromDrive = async (
   spreadsheetId: string
 ): Promise<TrabajadorMaestro[]> => {
   const res = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Maestro!A1:E`,
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Maestro!A1:Z`,
     {
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -382,31 +384,54 @@ export const fetchMaestroFromDrive = async (
   if (allRows.length <= 1) return [];
 
   // Chequeo si primera fila es encabezado
-  const firstRow = allRows[0];
-  const isHeader = firstRow.some((col) =>
-    col.toLowerCase().includes('código') ||
-    col.toLowerCase().includes('codigo') ||
-    col.toLowerCase().includes('nombre')
+  const firstRow = allRows[0] || [];
+  const normHeader = (c: string) =>
+    String(c || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim();
+  const normHeaders = firstRow.map(normHeader);
+  const isHeader = normHeaders.some(
+    (h) => h.includes('codigo') || h.includes('nombre') || h.includes('id rh') || h.includes('cedula')
   );
+
+  const findHeader = (clues: string[], fallback: number) => {
+    if (!isHeader) return fallback;
+    const idx = normHeaders.findIndex((h) => clues.some((c) => h.includes(c)));
+    return idx >= 0 ? idx : fallback;
+  };
+  const findOptionalHeader = (clues: string[]) => {
+    if (!isHeader) return -1;
+    return normHeaders.findIndex((h) => clues.some((c) => h.includes(c)));
+  };
+
+  const idxCodigo = findHeader(['codigo', 'id rh'], 0);
+  const idxCedula = findOptionalHeader(['cedula', 'documento', 'identificacion', 'cc']);
+  const idxNombre = findHeader(['nombre'], 1);
+  const idxSede = findHeader(['sede'], 2);
+  const idxCargo = findHeader(['cargo', 'funcion'], 3);
+  const idxEstado = findOptionalHeader(['estado']);
 
   const rows = isHeader ? allRows.slice(1) : allRows;
 
   return rows
-    .filter((r) => r[0] && r[1])
+    .filter((r) => r[idxCodigo] && r[idxNombre])
     .map((r) => {
-      const rawSede = String(r[2] || 'Sede MG').trim();
+      const rawSede = String(r[idxSede] || 'Sede MG').trim();
       let parsedSede: any = 'Sede MG';
       if (rawSede.toUpperCase().includes('HA')) parsedSede = 'Sede HA';
       else if (rawSede.toUpperCase().includes('SC')) parsedSede = 'Sede SC';
       else if (rawSede.toUpperCase().includes('MG')) parsedSede = 'Sede MG';
 
       return {
-        codigo: String(r[0]).trim(),
-        nombre: String(r[1]).trim(),
+        codigo: String(r[idxCodigo]).trim(),
+        cedula: idxCedula >= 0 && r[idxCedula] ? String(r[idxCedula]).trim() : '',
+        nombre: String(r[idxNombre]).trim(),
         sede: parsedSede,
-        cargo: r[3] ? String(r[3]).trim() : 'Operario',
+        cargo: idxCargo >= 0 && r[idxCargo] ? String(r[idxCargo]).trim() : 'Operario',
         area: 'Poscosecha',
-        activo: (r[4] || 'Activo').toLowerCase() !== 'inactivo',
+        activo: (idxEstado >= 0 ? r[idxEstado] || 'Activo' : 'Activo').toLowerCase() !== 'inactivo',
       };
     });
 };

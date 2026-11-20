@@ -900,131 +900,124 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
             )}
           </div>
 
-          {/* 2. PRODUCTO Y CANTIDAD (múltiple, registro separado por cada producto) */}
+          {/* 2. PRODUCTO Y CANTIDAD */}
           <div className="space-y-4">
-            <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-100 flex-wrap">
+            <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-100">
               <div className="flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-[#0a2958]" />
                 <h3 className="text-sm font-extrabold text-[#0a2958] uppercase tracking-wider">
-                  2. Producto y Cantidad
+                  2. PRODUCTO Y CANTIDAD
                 </h3>
               </div>
-              <span className="text-[11px] text-slate-500 font-medium">
-                Puede elegir varios productos; se guardará un registro por cada producto.
-              </span>
+              {productosSeleccionadosOrdenados.length > 0 && (
+                <span className="text-[11px] font-bold text-[#0a2958] bg-[#0a2958]/10 px-2.5 py-1 rounded-lg">
+                  {productosSeleccionadosOrdenados.length}{' '}
+                  {productosSeleccionadosOrdenados.length === 1
+                    ? 'producto (1 registro)'
+                    : 'productos (se guardan por separado)'}{' '}
+                  · Total:{' '}
+                  <strong className="font-mono tabular-nums">
+                    {totalRamosSeleccionados} ramos
+                  </strong>
+                </span>
+              )}
             </div>
 
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-2">
-                Productos <span className="text-[#E60000]">*</span>
+                Producto <span className="text-[#E60000]">*</span>{' '}
+                <span className="text-[11px] font-normal text-slate-500">
+                  (Puede seleccionar varios productos; cada uno se guarda por separado)
+                </span>
               </label>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 {PRODUCTOS_INT_EXT.map((prod) => {
-                  const estaSeleccionado = Object.prototype.hasOwnProperty.call(
+                  const activo = Object.prototype.hasOwnProperty.call(
                     productosCantidades,
                     prod
                   );
+                  const cantValor = productosCantidades[prod] ?? '';
+                  const errCant = errores[`cant_${prod}`];
+
                   return (
-                    <button
+                    <div
                       key={prod}
-                      type="button"
-                      onClick={() => toggleProducto(prod)}
-                      aria-pressed={estaSeleccionado}
-                      className={`px-3.5 py-2.5 rounded-xl border text-xs font-bold transition cursor-pointer flex items-center justify-between gap-2 ${
-                        estaSeleccionado
-                          ? 'bg-[#0a2958] text-white border-[#0a2958] shadow-xs'
-                          : 'bg-white text-slate-700 border-slate-200 hover:border-[#0a2958]/40'
+                      className={`rounded-xl border p-3 transition ${
+                        activo
+                          ? 'border-[#0a2958] bg-[#0a2958]/[0.04] shadow-xs'
+                          : 'border-slate-200 bg-white hover:border-[#0a2958]/40'
                       }`}
                     >
-                      <span>{prod}</span>
-                      <span
-                        className={`w-4 h-4 rounded flex items-center justify-center border shrink-0 ${
-                          estaSeleccionado
-                            ? 'bg-[#E60000] border-[#E60000] text-white'
-                            : 'border-slate-300 bg-slate-50 text-transparent'
-                        }`}
+                      <button
+                        type="button"
+                        onClick={() => toggleProducto(prod)}
+                        aria-pressed={activo}
+                        className="w-full flex items-center justify-between gap-2 text-left cursor-pointer"
                       >
-                        <Check className="w-3 h-3" />
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-              {errores.producto && (
-                <p className="text-[11px] text-[#E60000] font-semibold mt-1.5">{errores.producto}</p>
-              )}
-            </div>
+                        <span
+                          className={`text-xs font-extrabold ${
+                            activo ? 'text-[#0a2958]' : 'text-slate-700'
+                          }`}
+                        >
+                          {prod}
+                        </span>
+                        <span
+                          className={`w-5 h-5 rounded-md flex items-center justify-center border transition ${
+                            activo
+                              ? 'bg-[#0a2958] border-[#0a2958] text-white'
+                              : 'border-slate-300 bg-white'
+                          }`}
+                        >
+                          {activo && <Check className="w-3.5 h-3.5" />}
+                        </span>
+                      </button>
 
-            {/* Cantidades individuales por producto seleccionado */}
-            {productosSeleccionadosOrdenados.length > 0 && (
-              <div className="rounded-xl border border-slate-200 bg-slate-50/70 overflow-hidden">
-                <div className="px-4 py-2.5 bg-slate-100/80 border-b border-slate-200 flex items-center justify-between text-[11px] font-bold text-[#0a2958]">
-                  <span>Cantidad solicitada por producto</span>
-                  <span className="font-mono tabular-nums text-slate-600">
-                    {productosSeleccionadosOrdenados.length}{' '}
-                    {productosSeleccionadosOrdenados.length === 1 ? 'registro' : 'registros'} · Total:{' '}
-                    {totalRamosSeleccionados} ramos
-                  </span>
-                </div>
-
-                <div className="divide-y divide-slate-200/80 bg-white">
-                  {productosSeleccionadosOrdenados.map((prod) => {
-                    const errorCant = errores[`cant_${prod}`];
-                    return (
-                      <div
-                        key={prod}
-                        className="px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5"
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <span className="text-xs font-extrabold text-[#0a2958]">{prod}</span>
-                          {errorCant && (
-                            <span className="text-[11px] font-semibold text-[#E60000]">
-                              {errorCant}
-                            </span>
-                          )}
-                        </div>
-
-                        <div className="flex items-center gap-2">
+                      {activo && (
+                        <div className="mt-3 pt-2.5 border-t border-slate-200/80">
                           <label
                             htmlFor={`cantidad-${prod}`}
-                            className="text-xs font-semibold text-slate-600 whitespace-nowrap"
+                            className="block text-[11px] font-bold text-slate-600 mb-1"
                           >
                             Cantidad <span className="text-[#E60000]">*</span>
                           </label>
                           <input
                             id={`cantidad-${prod}`}
-                            type="number"
-                            min={1}
-                            step={1}
-                            value={productosCantidades[prod] ?? '1'}
-                            onChange={(e) => cambiarCantidadProducto(prod, e.target.value)}
-                            placeholder="Ej. 10"
-                            className={`w-28 px-3 py-2 text-xs rounded-xl border font-mono tabular-nums font-bold text-slate-900 text-right outline-hidden ${
-                              errorCant
+                            type="text"
+                            inputMode="numeric"
+                            pattern="[0-9]*"
+                            value={cantValor}
+                            onChange={(e) =>
+                              cambiarCantidadProducto(prod, e.target.value.replace(/\D/g, ''))
+                            }
+                            placeholder="Ej: 1"
+                            className={`w-full px-3 py-1.5 text-xs rounded-lg border font-mono font-bold text-[#0a2958] bg-white outline-hidden ${
+                              errCant
                                 ? 'border-rose-400 bg-rose-50/40'
                                 : 'border-slate-300 focus:border-[#0a2958]'
                             }`}
                           />
-                          <button
-                            type="button"
-                            onClick={() => toggleProducto(prod)}
-                            title={`Quitar ${prod}`}
-                            aria-label={`Quitar ${prod}`}
-                            className="p-2 rounded-lg text-slate-400 hover:text-[#E60000] hover:bg-rose-50 transition cursor-pointer"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
+                          {errCant && (
+                            <p className="text-[10px] text-[#E60000] font-semibold mt-1">
+                              {errCant}
+                            </p>
+                          )}
                         </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
-            )}
-
-            {errores.cantidad && (
-              <p className="text-[11px] text-[#E60000] font-semibold">{errores.cantidad}</p>
-            )}
+              {errores.producto && (
+                <p className="text-[11px] text-[#E60000] font-semibold mt-1.5">
+                  {errores.producto}
+                </p>
+              )}
+              {errores.cantidad && !errores.producto && (
+                <p className="text-[11px] text-[#E60000] font-semibold mt-1.5">
+                  {errores.cantidad}
+                </p>
+              )}
+            </div>
           </div>
 
           {/* 3. Motivo, Fecha de Entrega y Observación */}
