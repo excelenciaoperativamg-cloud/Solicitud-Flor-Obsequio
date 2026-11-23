@@ -232,6 +232,19 @@ export function puedeVerTodosRegistrosEspecialesPersonal(
 }
 
 /**
+ * Controla si el usuario puede editar el Estado (Pendiente Aprobación / Aprobado / No Aprobado)
+ * en Registros en Especiales Personal:
+ * - Administradores del sistema
+ * - ANALISTA GESTIÓN HUMANA
+ */
+export function puedeEditarEstadoEspecialesPersonal(
+  trabajador?: TrabajadorMaestro | null
+): boolean {
+  if (!trabajador) return false;
+  return esAdministradorSistema(trabajador) || esAnalistaGestionHumana(trabajador);
+}
+
+/**
  * Controla si el usuario puede acceder al formulario "Solicitud Comunidad" (antes Especiales Externos):
  * - Administradores del sistema (ANALISTA GESTIÓN DE INFORMACIÓN EAI / Administrador)
  * - ANALISTA GESTIÓN HUMANA (1 EAI, 2 EAI, 3 EAI, etc.)

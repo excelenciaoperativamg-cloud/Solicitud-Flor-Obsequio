@@ -265,6 +265,76 @@ export const retryEmailEspecialesPersonalApi = async (
   };
 };
 
+export type EstadoEspecialPersonal = 'Pendiente Aprobación' | 'Aprobado' | 'No Aprobado';
+
+export const updateEstadoEspecialPersonalApi = async (params: {
+  id: string;
+  estado: EstadoEspecialPersonal;
+  usuarioCodigo: string;
+  usuarioCargo: string;
+  usuarioNombre?: string;
+}): Promise<{
+  success: boolean;
+  id: string;
+  estado: EstadoEspecialPersonal;
+  solicitudes?: EspecialPersonal[];
+  pendingAppsScriptUpdate?: boolean;
+  error?: string;
+}> => {
+  const res = await fetch('/api/especiales-personal', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      action: 'actualizar_estado',
+      ...params,
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data?.success) {
+    throw new Error(data?.error || 'No se pudo actualizar el estado de la solicitud.');
+  }
+  return {
+    success: true,
+    id: data.id || params.id,
+    estado: data.estado || params.estado,
+    solicitudes: Array.isArray(data.solicitudes) ? data.solicitudes : undefined,
+    pendingAppsScriptUpdate: !!data.pendingAppsScriptUpdate,
+  };
+};
+
+export const notifyRespuestaEspecialPersonalApi = async (params: {
+  item: EspecialPersonal;
+  usuarioCodigo: string;
+  usuarioCargo: string;
+}): Promise<EmailNotificationResult & { pendingAppsScriptUpdate?: boolean }> => {
+  const res = await fetch('/api/especiales-personal', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      action: 'notificar_respuesta',
+      ...params,
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    return {
+      requested: true,
+      sent: false,
+      to: params.item.correoConfirmacion || '',
+      error: data?.error || 'No se pudo enviar la notificación de respuesta.',
+    };
+  }
+  return {
+    ...(data?.emailNotification || {
+      requested: true,
+      sent: false,
+      to: params.item.correoConfirmacion || '',
+      error: 'No se recibió respuesta del servidor de correo.',
+    }),
+    pendingAppsScriptUpdate: !!data?.pendingAppsScriptUpdate,
+  };
+};
+
 export const fetchSolicitudComunidadApi = async (): Promise<{
   solicitudes: SolicitudComunidad[];
   sheetsSupported: boolean;

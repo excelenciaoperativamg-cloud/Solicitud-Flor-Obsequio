@@ -30,6 +30,8 @@ import {
   createSolicitudIntExtApi,
   fetchEspecialesPersonalApi,
   createEspecialesPersonalApi,
+  updateEstadoEspecialPersonalApi,
+  EstadoEspecialPersonal,
   fetchSolicitudComunidadApi,
   createSolicitudComunidadApi,
   fetchMaestroApi,
@@ -497,6 +499,53 @@ export default function App() {
     setEpNeedsAppsScriptUpdate(!!res.needsAppsScriptUpdate);
   };
 
+  const handleActualizarEstadoEspecialPersonal = async (
+    id: string,
+    estado: EstadoEspecialPersonal
+  ): Promise<{
+    success: boolean;
+    error?: string;
+    pendingAppsScriptUpdate?: boolean;
+  }> => {
+    if (!sesion) {
+      return { success: false, error: 'No hay sesión activa.' };
+    }
+    try {
+      const res = await updateEstadoEspecialPersonalApi({
+        id,
+        estado,
+        usuarioCodigo: sesion.codigo || '',
+        usuarioCargo: sesion.cargo || '',
+        usuarioNombre: sesion.nombre || '',
+      });
+      if (res.solicitudes && res.solicitudes.length > 0) {
+        setSolicitudesEspecialesPersonal(res.solicitudes);
+      } else {
+        setSolicitudesEspecialesPersonal((prev) =>
+          prev.map((item) =>
+            String(item.id || '').trim().toUpperCase() === id.trim().toUpperCase()
+              ? { ...item, estado }
+              : item
+          )
+        );
+      }
+      mostrarToast(
+        res.pendingAppsScriptUpdate
+          ? `Estado de ${id} actualizado a ${estado} en respaldo local (actualice Apps Script para sincronizar con Sheets).`
+          : `Estado de ${id} actualizado a ${estado}.`
+      );
+      return {
+        success: true,
+        pendingAppsScriptUpdate: res.pendingAppsScriptUpdate,
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        error: err.message || 'No se pudo actualizar el estado de la solicitud.',
+      };
+    }
+  };
+
   const handleGuardarSolicitudComunidad = async (
     nuevaOLista: SolicitudComunidad | SolicitudComunidad[],
     correoNotificacion?: string,
@@ -814,6 +863,7 @@ export default function App() {
                   needsAppsScriptUpdate={epNeedsAppsScriptUpdate}
                   onGuardarEspecialPersonal={handleGuardarEspecialPersonal}
                   onRecargarEspecialPersonal={handleRecargarEspecialPersonal}
+                  onActualizarEstadoEspecialPersonal={handleActualizarEstadoEspecialPersonal}
                   onRecargarMaestro={handleRecargarMaestroSilencioso}
                   onCerrarSesion={handleCerrarSesion}
                 />

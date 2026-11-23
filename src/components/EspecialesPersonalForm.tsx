@@ -31,7 +31,12 @@ import {
 import confetti from 'canvas-confetti';
 import * as XLSX from 'xlsx';
 import { EspecialPersonal, TrabajadorMaestro } from '../types';
-import { EmailNotificationResult, retryEmailEspecialesPersonalApi } from '../services/apiClient';
+import {
+  EmailNotificationResult,
+  EstadoEspecialPersonal,
+  retryEmailEspecialesPersonalApi,
+  notifyRespuestaEspecialPersonalApi,
+} from '../services/apiClient';
 import {
   getTodayString,
   formatDateSpanish,
@@ -42,6 +47,7 @@ import {
 import {
   puedeVerRegistrosEspecialesPersonal,
   puedeVerTodosRegistrosEspecialesPersonal,
+  puedeEditarEstadoEspecialesPersonal,
 } from '../utils/roles';
 
 export interface FotoCartaUpload {
@@ -76,6 +82,14 @@ interface EspecialesPersonalFormProps {
     emailNotification?: EmailNotificationResult;
   }>;
   onRecargarEspecialPersonal?: () => Promise<void>;
+  onActualizarEstadoEspecialPersonal?: (
+    id: string,
+    estado: EstadoEspecialPersonal
+  ) => Promise<{
+    success: boolean;
+    error?: string;
+    pendingAppsScriptUpdate?: boolean;
+  }>;
   onRecargarMaestro?: () => Promise<void>;
   onCerrarSesion?: () => void;
 }
@@ -134,6 +148,10 @@ function normalizarTextoComp(raw?: string): string {
 
 function esEstadoPendienteAprobacion(estado?: string): boolean {
   return normalizarTextoComp(estado) === 'PENDIENTE APROBACION';
+}
+
+function esEstadoNoAprobado(estado?: string): boolean {
+  return normalizarTextoComp(estado) === 'NO APROBADO';
 }
 
 function esSolicitudDelUsuario(
@@ -230,6 +248,7 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
   needsAppsScriptUpdate = false,
   onGuardarEspecialPersonal,
   onRecargarEspecialPersonal,
+  onActualizarEstadoEspecialPersonal,
   onRecargarMaestro,
   onCerrarSesion,
 }) => {
@@ -240,6 +259,7 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
   );
   const verRegistros = puedeVerRegistrosEspecialesPersonal(sesion);
   const verTodosRegistros = puedeVerTodosRegistrosEspecialesPersonal(sesion);
+  const puedeEditarEstado = puedeEditarEstadoEspecialesPersonal(sesion);
 
   // Cédula manual de respaldo solo si el Maestro aún no tiene cédula cargada para la sesión
   const [cedulaManual, setCedulaManual] = useState('');
@@ -290,6 +310,75 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
   const [dropdownProductoAbierto, setDropdownProductoAbierto] = useState(false);
   const dropdownProductoRef = useRef<HTMLDivElement | null>(null);
   const [recargandoTabla, setRecargandoTabla] = useState(false);
+
+  // Edición de Estado (Administrador y ANALISTA GESTIÓN HUMANA)
+  const [actualizandoEstadoId, setActualizandoEstadoId] = useState<string | null>(null);
+  const [enviandoRespuestaId, setEnviandoRespuestaId] = useState<string | null>(null);
+  const [feedbackEstado, setFeedbackEstado] = useState<{
+    type: 'success' | 'error' | 'warning';
+    text: string;
+  } | null>(null);
+
+  const handleCambiarEstadoSolicitud = async (
+    s: EspecialPersonal,
+    nuevoEstado: EstadoEspecialPersonal
+  ) => {
+    if (!onActualizarEstadoEspecialPersonal) return;
+    const estadoAnterior = s.estado || ESTADO_INICIAL_EP;
+    if (nuevoEstado === estadoAnterior) return;
+
+    setActualizandoEstadoId(s.id);
+    setFeedbackEstado(null);
+    try {
+      const res = await onActualizarEstadoEspecialPersonal(s.id, nuevoEstado);
+      if (res.success) {
+        setFeedbackEstado({
+          type: res.pendingAppsScriptUpdate ? 'warning' : 'success',
+          text: res.pendingAppsScriptUpdate
+            ? `Estado de ${s.id} cambiado a "${nuevoEstado}" en respaldo local. Actualice Google Apps Script e implemente una Nueva versión para reflejarlo en Google Sheets.`
+            : `Estado de ${s.id} actualizado a "${nuevoEstado}" en Google Sheets.`,
+        });
+      } else {
+        setFeedbackEstado({
+          type: 'error',
+          text: res.error || `No se pudo actualizar el estado de ${s.id}.`,
+        });
+      }
+    } finally {
+      setActualizandoEstadoId(null);
+    }
+  };
+
+  const handleEnviarRespuestaCorreo = async (
+    s: EspecialPersonal,
+    estadoActual: EstadoEspecialPersonal
+  ) => {
+    if (!s.correoConfirmacion) return;
+    setEnviandoRespuestaId(s.id);
+    setFeedbackEstado(null);
+    try {
+      const res = await notifyRespuestaEspecialPersonalApi({
+        item: { ...s, estado: estadoActual },
+        usuarioCodigo: sesion.codigo || '',
+        usuarioCargo: sesion.cargo || '',
+      });
+      if (res.sent) {
+        setFeedbackEstado({
+          type: 'success',
+          text: `Respuesta enviada a ${s.correoConfirmacion} (CC: ${CORREO_NOTIFICADO_FIJO_EP}) para ${s.id}.`,
+        });
+      } else {
+        setFeedbackEstado({
+          type: res.pendingAppsScriptUpdate ? 'warning' : 'error',
+          text:
+            res.error ||
+            `No se pudo enviar la respuesta al correo ${s.correoConfirmacion}.`,
+        });
+      }
+    } finally {
+      setEnviandoRespuestaId(null);
+    }
+  };
 
   useEffect(() => {
     try {
@@ -588,7 +677,6 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
       const listaSolicitudes: EspecialPersonal[] = productosSeleccionadosOrdenados.map((prod, idx) => ({
         id: `SEP-${year}-${String(siguienteNumeroId + idx).padStart(3, '0')}`,
         fechaSolicitud,
-        usuario: sesion.nombre.trim(),
         cedula: cedulaEfectiva,
         nombre: nombreBeneficiario,
         sede: sedeBeneficiario,
@@ -734,7 +822,6 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
     const rows = solicitudesFiltradas.map((s) => ({
       Id: s.id,
       'Fecha Solicitud': s.fechaSolicitud,
-      Usuario: s.usuario,
       Cédula: s.cedula,
       Nombre: s.nombre,
       Sede: s.sede,
@@ -927,10 +1014,6 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
               <div className="flex justify-between">
                 <span className="text-slate-500">Fecha Solicitud:</span>
                 <span className="font-semibold text-slate-900">{primeraExitosa.fechaSolicitud}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Usuario:</span>
-                <span className="font-semibold text-slate-900 text-right">{primeraExitosa.usuario}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Cédula Beneficiario:</span>
@@ -1136,7 +1219,7 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
           </div>
         ) : null}
 
-        {errores.general && (
+        {!tieneSolicitudPendiente && errores.general && (
           <div className="mx-6 mt-5 p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-3">
             <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
             <span>{errores.general}</span>
@@ -1144,15 +1227,7 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
         )}
 
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
-          {/* Nota de verificación y autorización */}
-          <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start gap-2.5 font-medium">
-            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-            <span>
-              Al realizar esta solicitud, queda sujeta a verificación, disponibilidad y autorización por parte de la dirección de Poscosecha.
-            </span>
-          </div>
-
-          {tieneSolicitudPendiente && (
+          {tieneSolicitudPendiente ? (
             <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-xs flex items-start gap-3">
               <AlertTriangle className="w-5 h-5 text-[#E60000] shrink-0 mt-0.5" />
               <div className="space-y-1">
@@ -1169,13 +1244,22 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
                     {solicitudesPendientesUsuario.map((s) => s.id).join(', ')}
                   </strong>
                   ). No podrá realizar ninguna solicitud adicional en este formulario mientras se encuentre en estado{' '}
-                  <strong>Pendiente Aprobación</strong>.
+                  <strong>Pendiente Aprobación</strong>. Puede consultar el estado de su solicitud abajo en{' '}
+                  <strong>Registros en Especiales Personal</strong>.
                 </p>
               </div>
             </div>
-          )}
+          ) : (
+            <>
+              {/* Nota de verificación y autorización */}
+              <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start gap-2.5 font-medium">
+                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <span>
+                  Al realizar esta solicitud, queda sujeta a verificación, disponibilidad y autorización por parte de la dirección de Poscosecha.
+                </span>
+              </div>
 
-          {/* 1. DATOS DEL COLABORADOR (DESDE HOJA MAESTRO DE LA SESIÓN) */}
+              {/* 1. DATOS DEL COLABORADOR (DESDE HOJA MAESTRO DE LA SESIÓN) */}
           <div className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-100">
               <div className="flex items-center gap-2">
@@ -1879,19 +1963,11 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
 
           <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="text-xs text-slate-500">
-              {tieneSolicitudPendiente ? (
-                <span className="text-[#E60000] font-semibold">
-                  Formulario bloqueado mientras tenga una solicitud en estado Pendiente Aprobación.
-                </span>
-              ) : (
-                <>
-                  Campos con <span className="text-[#E60000] font-bold">*</span> son obligatorios.
-                </>
-              )}
+              Campos con <span className="text-[#E60000] font-bold">*</span> son obligatorios.
             </div>
             <button
               type="submit"
-              disabled={isSubmitting || tieneSolicitudPendiente}
+              disabled={isSubmitting}
               className="w-full sm:w-auto px-8 py-3 rounded-xl bg-[#0a2958] hover:bg-[#0d346e] text-white text-xs sm:text-sm font-extrabold flex items-center justify-center gap-2 shadow-md transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isSubmitting ? (
@@ -1911,6 +1987,8 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
               )}
             </button>
           </div>
+            </>
+          )}
         </form>
       </div>
 
@@ -1971,7 +2049,7 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
                 type="text"
                 value={busquedaTabla}
                 onChange={(e) => setBusquedaTabla(e.target.value)}
-                placeholder="Buscar por ID, usuario, cédula, nombre, sede, motivo o correo…"
+                placeholder="Buscar por ID, cédula, nombre, sede, motivo o correo…"
                 className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg border border-slate-200 focus:border-[#0a2958] outline-hidden font-medium"
               />
             </div>
@@ -2078,6 +2156,35 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
               </button>
             )}
           </div>
+
+          {feedbackEstado && (
+            <div
+              className={`p-3 rounded-xl border text-xs flex items-center justify-between gap-2 ${
+                feedbackEstado.type === 'success'
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                  : feedbackEstado.type === 'warning'
+                  ? 'bg-amber-50 border-amber-200 text-amber-900'
+                  : 'bg-rose-50 border-rose-200 text-rose-800'
+              }`}
+            >
+              <div className="flex items-center gap-2 font-medium">
+                {feedbackEstado.type === 'success' ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                ) : (
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                )}
+                <span>{feedbackEstado.text}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setFeedbackEstado(null)}
+                className="p-1 rounded-md hover:bg-black/5 cursor-pointer shrink-0"
+                aria-label="Cerrar aviso"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="overflow-x-auto max-h-[420px] overflow-y-auto">
@@ -2086,7 +2193,6 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
               <tr>
                 <th className="py-2.5 px-3">Id</th>
                 <th className="py-2.5 px-3">Fecha Solicitud</th>
-                <th className="py-2.5 px-3">Usuario</th>
                 <th className="py-2.5 px-3">Cédula</th>
                 <th className="py-2.5 px-3">Nombre</th>
                 <th className="py-2.5 px-3">Sede</th>
@@ -2104,7 +2210,7 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
             <tbody className="divide-y divide-slate-100">
               {solicitudesFiltradas.length === 0 ? (
                 <tr>
-                  <td colSpan={15} className="py-8 text-center text-slate-400">
+                  <td colSpan={14} className="py-8 text-center text-slate-400">
                     {solicitudesVisiblesUsuario.length === 0
                       ? 'No hay registros en Especiales Personal todavía.'
                       : 'No hay registros que coincidan con los filtros seleccionados.'}
@@ -2120,7 +2226,6 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
                         {s.id}
                       </td>
                       <td className="py-2.5 px-3 whitespace-nowrap">{s.fechaSolicitud}</td>
-                      <td className="py-2.5 px-3 font-medium text-slate-700">{s.usuario}</td>
                       <td className="py-2.5 px-3 font-mono font-bold text-[#0a2958]">
                         {s.cedula}
                       </td>
@@ -2142,15 +2247,73 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
                       >
                         {s.correoConfirmacion || '—'}
                       </td>
-                      <td
-                        className={`py-2.5 px-3 whitespace-nowrap font-bold ${
-                          esEstadoPendienteAprobacion(estadoMostrar)
-                            ? 'text-amber-700'
-                            : 'text-emerald-700'
-                        }`}
-                      >
-                        {estadoMostrar}
-                      </td>
+                      {puedeEditarEstado && onActualizarEstadoEspecialPersonal ? (
+                        <td className="py-2.5 px-3 whitespace-nowrap">
+                          <div className="flex items-center gap-1.5">
+                            <select
+                              aria-label={`Estado de solicitud ${s.id}`}
+                              value={estadoMostrar}
+                              disabled={actualizandoEstadoId === s.id}
+                              onChange={(e) =>
+                                handleCambiarEstadoSolicitud(
+                                  s,
+                                  e.target.value as EstadoEspecialPersonal
+                                )
+                              }
+                              className={`text-xs font-bold px-2.5 py-1 rounded-lg border outline-hidden cursor-pointer disabled:opacity-60 ${
+                                esEstadoPendienteAprobacion(estadoMostrar)
+                                  ? 'bg-amber-50 border-amber-300 text-amber-800'
+                                  : esEstadoNoAprobado(estadoMostrar)
+                                  ? 'bg-rose-50 border-rose-300 text-rose-800'
+                                  : 'bg-emerald-50 border-emerald-300 text-emerald-800'
+                              }`}
+                            >
+                              <option value="Pendiente Aprobación">Pendiente Aprobación</option>
+                              <option value="Aprobado">Aprobado</option>
+                              <option value="No Aprobado">No Aprobado</option>
+                            </select>
+                            {actualizandoEstadoId === s.id && (
+                              <RefreshCw className="w-3.5 h-3.5 text-[#0a2958] animate-spin shrink-0" />
+                            )}
+                            {(estadoMostrar === 'Aprobado' || estadoMostrar === 'No Aprobado') &&
+                              s.correoConfirmacion && (
+                                <button
+                                  type="button"
+                                  disabled={
+                                    enviandoRespuestaId === s.id ||
+                                    actualizandoEstadoId === s.id
+                                  }
+                                  onClick={() =>
+                                    handleEnviarRespuestaCorreo(
+                                      s,
+                                      estadoMostrar as EstadoEspecialPersonal
+                                    )
+                                  }
+                                  title={`Enviar respuesta al Correo de confirmación (${s.correoConfirmacion})`}
+                                  className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-[#0a2958]/10 text-[#0a2958] transition cursor-pointer disabled:opacity-50"
+                                >
+                                  {enviandoRespuestaId === s.id ? (
+                                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                                  ) : (
+                                    <Mail className="w-3.5 h-3.5" />
+                                  )}
+                                </button>
+                              )}
+                          </div>
+                        </td>
+                      ) : (
+                        <td
+                          className={`py-2.5 px-3 whitespace-nowrap font-bold ${
+                            esEstadoPendienteAprobacion(estadoMostrar)
+                              ? 'text-amber-700'
+                              : esEstadoNoAprobado(estadoMostrar)
+                              ? 'text-rose-700'
+                              : 'text-emerald-700'
+                          }`}
+                        >
+                          {estadoMostrar}
+                        </td>
+                      )}
                       <td className="py-2.5 px-3 whitespace-nowrap">
                         {s.fotoCarta ? (
                           <button

@@ -54,7 +54,7 @@ export interface SolicitudIntExt {
 export interface EspecialPersonal {
   id: string;
   fechaSolicitud: string;
-  usuario: string;
+  usuario?: string;
   cedula: string;
   nombre: string;
   sede: string;

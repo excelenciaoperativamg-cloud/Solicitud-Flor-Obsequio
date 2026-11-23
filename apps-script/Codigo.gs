@@ -418,7 +418,6 @@ function leerEspecialesPersonal(ss) {
     out.push({
       id: id,
       fechaSolicitud: String(fechaSolicitud || ""),
-      usuario: String(cel(["USUARIO"], ["USUARIO"]) || ""),
       cedula: String(cel(["CÉDULA", "CEDULA", "CC", "DOCUMENTO"], ["CÉDULA", "CEDULA", "DOCUMENTO"]) || ""),
       nombre: String(cel(["NOMBRE"], ["NOMBRE"]) || ""),
       sede: String(cel(["SEDE"], ["SEDE"]) || ""),
@@ -876,7 +875,6 @@ function enviarCorreoNotificacionEspecialPersonal(ss, correoDestino, items, foto
     "==================================================\n" +
     "Id(s): " + idsTexto + "\n" +
     "Fecha de Solicitud: " + String(primera.fechaSolicitud || "") + "\n" +
-    "Registrado por (Usuario): " + String(primera.usuario || "") + "\n" +
     "Colaborador Beneficiario: " + String(primera.nombre || "") + "\n" +
     "Cédula: " + String(primera.cedula || "") + "\n" +
     "Sede: " + String(primera.sede || "") + "\n" +
@@ -945,10 +943,6 @@ function enviarCorreoNotificacionEspecialPersonal(ss, correoDestino, items, foto
                 "<tr>" +
                   "<td style=\"padding:7px 0;color:#64748b;border-bottom:1px solid #f1f5f9;\">Fecha de Entrega</td>" +
                   "<td style=\"padding:7px 0;font-weight:700;color:#0a2958;border-bottom:1px solid #f1f5f9;text-align:right;\">" + escapeHtml(primera.fechaEntrega || "—") + "</td>" +
-                "</tr>" +
-                "<tr>" +
-                  "<td style=\"padding:7px 0;color:#64748b;border-bottom:1px solid #f1f5f9;\">Registrado por (Usuario)</td>" +
-                  "<td style=\"padding:7px 0;font-weight:700;color:#0f172a;border-bottom:1px solid #f1f5f9;text-align:right;\">" + escapeHtml(primera.usuario || "—") + "</td>" +
                 "</tr>" +
                 "<tr>" +
                   "<td style=\"padding:7px 0;color:#64748b;border-bottom:1px solid #f1f5f9;\">Colaborador Beneficiario</td>" +
@@ -1340,6 +1334,7 @@ function doGet(e) {
       solicitudesComunidad: solicitudesComunidad,
       supportsIntExt: true,
       supportsEspecialesPersonal: true,
+      supportsEspecialesPersonalEstado: true,
       supportsSolicitudComunidad: true,
       supportsEmailNotification: true,
       intExtSheetName: hojaIntExt ? hojaIntExt.getName() : "Especiales Empresa",
@@ -1445,12 +1440,12 @@ function escribirSolicitudIntExt(sheet, data) {
 
 /**
  * Escribe una fila en la hoja Especiales Personal:
- * Id | Fecha Solicitud | Usuario | Cédula | Nombre | Sede | Producto | Cantidad | Motivo | Semana | Fecha Entrega | Correo de confirmación | Estado | Foto Carta | Notificado
+ * Id | Fecha Solicitud | Cédula | Nombre | Sede | Producto | Cantidad | Motivo | Semana | Fecha Entrega | Correo de confirmación | Estado | Foto Carta | Notificado
  */
 function escribirEspecialPersonal(sheet, data) {
   var headers = sheet.getLastRow() > 0 ? sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0] : [];
   var headersDefault = [
-    "Id", "Fecha Solicitud", "Usuario", "Cédula", "Nombre", "Sede",
+    "Id", "Fecha Solicitud", "Cédula", "Nombre", "Sede",
     "Producto", "Cantidad", "Motivo", "Semana", "Fecha Entrega", "Correo de confirmación", "Estado", "Foto Carta", "Notificado"
   ];
   if (!headers.length || !headers[0]) {
@@ -1468,7 +1463,6 @@ function escribirEspecialPersonal(sheet, data) {
     if (h.indexOf("ENTREGA") !== -1) return data.fechaEntrega || "";
     if (h.indexOf("SOLICITUD") !== -1 || h === "FECHA") return data.fechaSolicitud || "";
     if (h.indexOf("CORREO") !== -1 || h.indexOf("CONFIRMACI") !== -1) return data.correoConfirmacion || "";
-    if (h.indexOf("USUARIO") !== -1) return data.usuario || "";
     if (h.indexOf("CÉDULA") !== -1 || h.indexOf("CEDULA") !== -1 || h === "CC" || h.indexOf("DOCUMENTO") !== -1) return data.cedula || "";
     if (h.indexOf("NOMBRE") !== -1) return data.nombre || "";
     if (h.indexOf("SEDE") !== -1) return data.sede || "";
@@ -1488,6 +1482,113 @@ function escribirEspecialPersonal(sheet, data) {
     fila.push(valorParaHeader(headers[c]));
   }
   sheet.appendRow(fila);
+}
+
+function actualizarEstadoEspecialPersonal(ss, idSolicitud, nuevoEstado) {
+  var sheet = buscarHojaPorNombre(ss, ["Especiales Personal"]);
+  if (!sheet) {
+    return { updated: false, message: "No se encontró la hoja Especiales Personal." };
+  }
+  var idTarget = String(idSolicitud || "").trim().toUpperCase();
+  var estadoVal = String(nuevoEstado || "").trim();
+  if (!idTarget || !estadoVal) {
+    return { updated: false, message: "Id o estado inválido." };
+  }
+  var values = sheet.getDataRange().getValues();
+  if (!values || values.length < 2) {
+    return { updated: false, message: "La hoja Especiales Personal no tiene registros." };
+  }
+  var headers = values[0];
+  var idxId = indiceColumnaExactoOPista(headers, ["ID", "ID."], []);
+  if (idxId < 0) idxId = 0;
+  var idxEstado = indiceColumnaExactoOPista(headers, ["ESTADO"], ["ESTADO"]);
+  if (idxEstado < 0) {
+    idxEstado = headers.length;
+    sheet.getRange(1, idxEstado + 1).setValue("Estado").setFontWeight("bold").setBackground("#0a2958").setFontColor("#ffffff");
+  }
+
+  var updated = false;
+  for (var r = 1; r < values.length; r++) {
+    var rowId = String(values[r][idxId] || "").trim().toUpperCase();
+    if (rowId === idTarget) {
+      sheet.getRange(r + 1, idxEstado + 1).setValue(estadoVal);
+      updated = true;
+      break;
+    }
+  }
+  if (updated) {
+    SpreadsheetApp.flush();
+  }
+  return { updated: updated, id: idSolicitud, estado: estadoVal };
+}
+
+function enviarCorreoRespuestaEstadoEspecialPersonal(ss, item) {
+  var it = item || {};
+  var correoDestino = String(it.correoConfirmacion || "").trim();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correoDestino)) {
+    return { emailSent: false, to: correoDestino, emailError: "Correo de confirmación inválido." };
+  }
+  var estadoTexto = String(it.estado || "Pendiente Aprobación").trim();
+  var esAprobado = estadoTexto.toUpperCase() === "APROBADO";
+  var colorBadge = esAprobado ? "#047857" : "#b91c1c";
+  var bgBadge = esAprobado ? "#ecfdf5" : "#fef2f2";
+  var asunto = "Respuesta Solicitud Especiales Personal " + String(it.id || "") + ": " + estadoTexto;
+
+  var textBody =
+    "MG CONSULTORES S.A.S. - FLOR DE OBSEQUIO\n" +
+    "RESPUESTA A SOLICITUD ESPECIALES PERSONAL\n" +
+    "==================================================\n" +
+    "Id: " + String(it.id || "") + "\n" +
+    "Colaborador: " + String(it.nombre || "") + "\n" +
+    "Producto: " + String(it.producto || "") + " (" + String(it.cantidad || 1) + " ramos)\n" +
+    "Motivo: " + String(it.motivo || "") + "\n" +
+    "Fecha de Entrega: " + String(it.fechaEntrega || "") + "\n" +
+    "Estado de la Solicitud: " + estadoTexto + "\n\n" +
+    "Sistema Flor de Obsequio • Notificación automática.\n";
+
+  var htmlBody =
+    "<!DOCTYPE html><html lang=\"es\"><head><meta charset=\"UTF-8\"></head>" +
+    "<body style=\"margin:0;padding:24px 12px;background-color:#f1f5f9;font-family:'Segoe UI',Roboto,Arial,sans-serif;color:#1e293b;\">" +
+      "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"max-width:580px;margin:0 auto;background-color:#ffffff;border:1px solid #cbd5e1;border-radius:12px;overflow:hidden;\">" +
+        "<tr><td style=\"height:5px;background-color:#E60000;\"></td></tr>" +
+        "<tr><td style=\"background-color:#0a2958;padding:20px 24px;color:#ffffff;\">" +
+          "<div style=\"font-size:11px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:#fca5a5;\">MG CONSULTORES S.A.S. &bull; FLOR DE OBSEQUIO</div>" +
+          "<div style=\"font-size:19px;font-weight:800;margin-top:4px;\">Respuesta de Solicitud: Especiales Personal</div>" +
+        "</td></tr>" +
+        "<tr><td style=\"padding:22px 24px;\">" +
+          "<div style=\"display:inline-block;padding:8px 14px;border-radius:8px;background-color:" + bgBadge + ";color:" + colorBadge + ";font-size:14px;font-weight:800;margin-bottom:16px;\">" +
+            "Estado: " + escapeHtml(estadoTexto) +
+          "</div>" +
+          "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" style=\"font-size:13px;\">" +
+            "<tr><td style=\"padding:6px 0;color:#64748b;border-bottom:1px solid #f1f5f9;\">Id</td><td style=\"padding:6px 0;font-weight:700;text-align:right;border-bottom:1px solid #f1f5f9;\">" + escapeHtml(it.id || "—") + "</td></tr>" +
+            "<tr><td style=\"padding:6px 0;color:#64748b;border-bottom:1px solid #f1f5f9;\">Colaborador</td><td style=\"padding:6px 0;font-weight:700;text-align:right;border-bottom:1px solid #f1f5f9;\">" + escapeHtml(it.nombre || "—") + "</td></tr>" +
+            "<tr><td style=\"padding:6px 0;color:#64748b;border-bottom:1px solid #f1f5f9;\">Producto</td><td style=\"padding:6px 0;font-weight:700;text-align:right;border-bottom:1px solid #f1f5f9;\">" + escapeHtml(it.producto || "—") + " (" + escapeHtml(it.cantidad || 1) + " ramos)</td></tr>" +
+            "<tr><td style=\"padding:6px 0;color:#64748b;border-bottom:1px solid #f1f5f9;\">Motivo</td><td style=\"padding:6px 0;font-weight:700;text-align:right;border-bottom:1px solid #f1f5f9;\">" + escapeHtml(it.motivo || "—") + "</td></tr>" +
+            "<tr><td style=\"padding:6px 0;color:#64748b;\">Fecha de Entrega</td><td style=\"padding:6px 0;font-weight:700;text-align:right;\">" + escapeHtml(it.fechaEntrega || "—") + "</td></tr>" +
+          "</table>" +
+        "</td></tr>" +
+        "<tr><td style=\"background-color:#f8fafc;border-top:1px solid #e2e8f0;padding:12px 24px;text-align:center;font-size:11px;color:#64748b;\">" +
+          "<strong>Sistema Flor de Obsequio</strong> &bull; Respuesta de autorización." +
+        "</td></tr>" +
+      "</table>" +
+    "</body></html>";
+
+  var senderEmail = "";
+  try { senderEmail = Session.getEffectiveUser().getEmail() || ""; } catch (ue) {}
+  try {
+    MailApp.sendEmail({
+      to: correoDestino,
+      cc: "angela.garcia@mg-consultores.com",
+      replyTo: "angela.garcia@mg-consultores.com",
+      subject: asunto,
+      body: textBody,
+      htmlBody: htmlBody,
+      name: "Notificaciones Flor de Obsequio"
+    });
+    return { emailSent: true, to: correoDestino, senderEmail: senderEmail };
+  } catch (mailErr) {
+    return { emailSent: false, to: correoDestino, senderEmail: senderEmail, emailError: String(mailErr) };
+  }
 }
 
 /**
@@ -1560,6 +1661,7 @@ function doPost(e) {
         solicitudesComunidad: leerSolicitudesComunidad(ss),
         supportsIntExt: true,
         supportsEspecialesPersonal: true,
+        supportsEspecialesPersonalEstado: true,
         supportsSolicitudComunidad: true,
         supportsEmailNotification: true,
         intExtSheetName: hojaIntExtPing ? hojaIntExtPing.getName() : "Especiales Empresa",
@@ -1672,8 +1774,37 @@ function doPost(e) {
         id: data.id,
         solicitudesEspecialesPersonal: leerEspecialesPersonal(ss),
         supportsEspecialesPersonal: true,
+        supportsEspecialesPersonalEstado: true,
         supportsEmailNotification: true,
         especialesPersonalSheetName: sheetEp.getName()
+      });
+    }
+
+    if (data.action === "actualizar_estado_especial_personal") {
+      var resEstadoEp = actualizarEstadoEspecialPersonal(ss, data.id, data.estado);
+      var listaActualizadaEp = leerEspecialesPersonal(ss);
+      return responder({
+        status: "success",
+        updated: !!resEstadoEp.updated,
+        id: resEstadoEp.id || data.id,
+        estado: resEstadoEp.estado || data.estado,
+        message: resEstadoEp.updated ? "Estado actualizado" : (resEstadoEp.message || "Registro no encontrado"),
+        solicitudesEspecialesPersonal: listaActualizadaEp,
+        supportsEspecialesPersonal: true,
+        supportsEspecialesPersonalEstado: true
+      });
+    }
+
+    if (data.action === "notificar_respuesta_especial_personal") {
+      var resMailResp = enviarCorreoRespuestaEstadoEspecialPersonal(ss, data.item || data);
+      return responder({
+        status: "success",
+        emailSent: !!resMailResp.emailSent,
+        to: resMailResp.to || "",
+        senderEmail: resMailResp.senderEmail || "",
+        emailError: resMailResp.emailError || "",
+        message: resMailResp.emailError || (resMailResp.emailSent ? "Respuesta enviada" : ""),
+        supportsEspecialesPersonalEstado: true
       });
     }
 

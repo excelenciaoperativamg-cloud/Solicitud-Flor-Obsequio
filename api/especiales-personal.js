@@ -4,11 +4,13 @@ import {
   saveCartaLocalFile,
   readCartaLocalFile,
   getDriveConfigStorage,
+  getMaestroStorage,
   callAppsScript,
 } from './_lib/storage.js';
 
 const CORREO_NOTIFICADO_FIJO_EP = 'angela.garcia@mg-consultores.com';
 const ESTADO_INICIAL_EP = 'Pendiente Aprobación';
+const ESTADOS_PERMITIDOS_EP = ['Pendiente Aprobación', 'Aprobado', 'No Aprobado'];
 
 function normalizarTextoComp(raw) {
   return String(raw || '')
@@ -37,6 +39,34 @@ function esSolicitudDelUsuario(solicitud, usuarioNombre, cedula) {
   const usuSol = normalizarTextoComp(solicitud?.usuario);
   const nomSol = normalizarTextoComp(solicitud?.nombre);
   return (usuSol && usuSol === nomUser) || (nomSol && nomSol === nomUser);
+}
+
+function esCargoAutorizadoEstado(cargoRaw) {
+  const cargo = normalizarTextoComp(cargoRaw);
+  if (!cargo) return false;
+  if (cargo.includes('ANALISTA') && cargo.includes('GESTION') && cargo.includes('HUMANA')) {
+    return true;
+  }
+  if (cargo.includes('ANALISTA') && cargo.includes('GESTION') && cargo.includes('INFORMACION')) {
+    return true;
+  }
+  return cargo === 'ADMINISTRADOR' || cargo.startsWith('ADMINISTRADOR ');
+}
+
+function verificarAutorizacionEditorEstado(usuarioCodigo, usuarioCargo) {
+  const cod = String(usuarioCodigo || '').trim().toUpperCase();
+  if (cod) {
+    const maestro = getMaestroStorage();
+    if (Array.isArray(maestro) && maestro.length > 0) {
+      const encontrado = maestro.find(
+        (w) => String(w?.codigo || '').trim().toUpperCase() === cod
+      );
+      if (encontrado) {
+        return esCargoAutorizadoEstado(encontrado.cargo);
+      }
+    }
+  }
+  return esCargoAutorizadoEstado(usuarioCargo);
 }
 
 function normalizarEspecialPersonal(s) {
@@ -221,6 +251,160 @@ export default async function handler(req, res) {
         }
       }
 
+      // Actualizar estado (solo Administrador y ANALISTA GESTIÓN HUMANA)
+      if (body?.action === 'actualizar_estado') {
+        if (!verificarAutorizacionEditorEstado(body?.usuarioCodigo, body?.usuarioCargo)) {
+          return res.status(403).json({
+            success: false,
+            error:
+              'Solo administradores y ANALISTA GESTIÓN HUMANA están autorizados para cambiar el estado.',
+          });
+        }
+
+        const idTarget = String(body?.id || '').trim();
+        const nuevoEstado = String(body?.estado || '').trim();
+        if (!idTarget || !ESTADOS_PERMITIDOS_EP.includes(nuevoEstado)) {
+          return res.status(400).json({
+            success: false,
+            error: 'Debe indicar un Id válido y un estado permitido (Pendiente Aprobación, Aprobado o No Aprobado).',
+          });
+        }
+
+        let existentes = getEspecialesPersonalStorage();
+        let pendingAppsScriptUpdate = false;
+        let emailNotification = null;
+
+        if (driveCfg.webhookUrl) {
+          try {
+            const sheetData = await callAppsScript(driveCfg.webhookUrl);
+            if (sheetData?.supportsEspecialesPersonalEstado === true) {
+              const updRes = await callAppsScript(driveCfg.webhookUrl, {
+                action: 'actualizar_estado_especial_personal',
+                id: idTarget,
+                estado: nuevoEstado,
+                actualizadoPor: String(body?.usuarioNombre || body?.usuarioCodigo || '').trim(),
+                notificarCorreo: !!body?.notificarCorreo,
+              });
+              if (Array.isArray(updRes?.solicitudesEspecialesPersonal)) {
+                existentes = updRes.solicitudesEspecialesPersonal.map((r) =>
+                  normalizarEspecialPersonal({ ...r, syncedToDrive: true })
+                );
+              }
+              if (updRes?.emailResult) {
+                emailNotification = updRes.emailResult;
+              }
+            } else {
+              pendingAppsScriptUpdate = true;
+            }
+          } catch (updErr) {
+            pendingAppsScriptUpdate = true;
+            console.warn('[especiales-personal] aviso actualizando estado en Apps Script:', updErr?.message || updErr);
+          }
+        }
+
+        let encontradoLocal = false;
+        const actualizadas = existentes.map((r) => {
+          if (String(r?.id || '').trim().toUpperCase() === idTarget.toUpperCase()) {
+            encontradoLocal = true;
+            return normalizarEspecialPersonal({ ...r, estado: nuevoEstado });
+          }
+          return r;
+        });
+
+        if (encontradoLocal) {
+          saveEspecialesPersonalStorage(actualizadas);
+        }
+
+        return res.status(200).json({
+          success: true,
+          id: idTarget,
+          estado: nuevoEstado,
+          solicitudes: actualizadas,
+          pendingAppsScriptUpdate,
+          emailNotification,
+        });
+      }
+
+      // Enviar correo de respuesta al solicitante según el estado actual (Aprobado / No Aprobado)
+      if (body?.action === 'notificar_respuesta') {
+        if (!verificarAutorizacionEditorEstado(body?.usuarioCodigo, body?.usuarioCargo)) {
+          return res.status(403).json({
+            success: false,
+            error:
+              'Solo administradores y ANALISTA GESTIÓN HUMANA están autorizados para enviar la respuesta de estado.',
+          });
+        }
+
+        const itemResp = body?.item || {};
+        const correoResp = String(itemResp?.correoConfirmacion || '').trim();
+        if (!EMAIL_REGEX.test(correoResp)) {
+          return res.status(400).json({
+            success: false,
+            error: 'La solicitud no tiene un Correo de confirmación válido.',
+          });
+        }
+
+        if (!driveCfg.webhookUrl) {
+          return res.status(200).json({
+            success: true,
+            emailNotification: {
+              requested: true,
+              sent: false,
+              to: correoResp,
+              error: 'No hay URL de webhook de Google Apps Script configurada.',
+            },
+          });
+        }
+
+        try {
+          const sheetData = await callAppsScript(driveCfg.webhookUrl);
+          if (sheetData?.supportsEspecialesPersonalEstado !== true) {
+            return res.status(200).json({
+              success: true,
+              pendingAppsScriptUpdate: true,
+              emailNotification: {
+                requested: true,
+                sent: false,
+                to: correoResp,
+                error:
+                  'Actualice el código de Google Apps Script desde Administración → Google Drive (Nueva versión) para enviar respuestas desde el sistema.',
+              },
+            });
+          }
+
+          const mailRes = await callAppsScript(driveCfg.webhookUrl, {
+            action: 'notificar_respuesta_especial_personal',
+            item: itemResp,
+          });
+          return res.status(200).json({
+            success: true,
+            emailNotification: {
+              requested: true,
+              sent: !!mailRes?.emailSent,
+              to: mailRes?.to || correoResp,
+              senderEmail: mailRes?.senderEmail || '',
+              error: mailRes?.emailSent
+                ? ''
+                : formatearErrorCorreo(
+                    mailRes?.emailError ||
+                      mailRes?.message ||
+                      'No se pudo enviar el correo de respuesta.'
+                  ),
+            },
+          });
+        } catch (errResp) {
+          return res.status(200).json({
+            success: true,
+            emailNotification: {
+              requested: true,
+              sent: false,
+              to: correoResp,
+              error: formatearErrorCorreo(errResp?.message || errResp),
+            },
+          });
+        }
+      }
+
       const itemsInput = Array.isArray(body?.items)
         ? body.items
         : Array.isArray(body)
@@ -260,7 +444,6 @@ export default async function handler(req, res) {
       for (const item of itemsInput) {
         if (
           !item ||
-          !item.usuario ||
           !item.cedula ||
           !item.nombre ||
           !item.sede ||
@@ -420,7 +603,6 @@ export default async function handler(req, res) {
           hoja: 'Especiales Personal',
           id: idFinal,
           fechaSolicitud: String(item.fechaSolicitud || '').trim(),
-          usuario: String(item.usuario).trim(),
           cedula: String(item.cedula).trim(),
           nombre: String(item.nombre).trim(),
           sede: String(item.sede).trim(),
