@@ -7,10 +7,14 @@ import {
   callAppsScript,
 } from './_lib/storage.js';
 
+const ESTADO_INICIAL_SC = 'Pendiente Aprobación';
+
 function normalizarSolicitudComunidad(s) {
   const cantidadNum = Number(s?.cantidad);
   const semanaStr = String(s?.semana || '').match(/(\d+)/)?.[1] || String(s?.semana || '').trim();
-  const notificadoVal = String(s?.notificado || s?.estado || 'Registrada').trim();
+  const correoConfirmacionVal = String(s?.correoConfirmacion || '').trim();
+  const notificadoVal = String(s?.notificado || 'Registrada').trim() || 'Registrada';
+  const estadoVal = String(s?.estado || ESTADO_INICIAL_SC).trim() || ESTADO_INICIAL_SC;
   return {
     id: String(s?.id || '').trim(),
     fechaSolicitud: String(s?.fechaSolicitud || s?.fecha || '').trim(),
@@ -23,10 +27,11 @@ function normalizarSolicitudComunidad(s) {
     cantidad: cantidadNum && !Number.isNaN(cantidadNum) && cantidadNum > 0 ? cantidadNum : 1,
     semana: semanaStr,
     fechaEntrega: String(s?.fechaEntrega || '').trim(),
+    correoConfirmacion: correoConfirmacionVal,
     observacion: String(s?.observacion || '').trim(),
     fotoCarta: String(s?.fotoCarta || '').trim(),
     notificado: notificadoVal,
-    estado: notificadoVal,
+    estado: estadoVal,
     syncedToDrive: s?.syncedToDrive !== false,
     creadoEn: s?.creadoEn || Date.now(),
   };
@@ -207,8 +212,8 @@ export default async function handler(req, res) {
         });
       }
 
-      const candidatoEstado = String(itemsInput[0]?.notificado || itemsInput[0]?.estado || '').trim();
-      const parsedEstado = parsearCorreos(candidatoEstado);
+      const candidatoNotificado = String(itemsInput[0]?.notificado || '').trim();
+      const parsedEstado = parsearCorreos(candidatoNotificado);
       const inputCorreoRaw = String(
         body?.correoNotificacion || (parsedEstado.esValido ? parsedEstado.normalizado : '')
       ).trim();
@@ -224,6 +229,14 @@ export default async function handler(req, res) {
           });
         }
         rawCorreo = parsedCorreo.normalizado;
+      }
+
+      const correoConfirmacionRaw = String(itemsInput[0]?.correoConfirmacion || '').trim();
+      if (!EMAIL_REGEX.test(correoConfirmacionRaw)) {
+        return res.status(400).json({
+          success: false,
+          error: 'Ingrese un Correo de confirmación válido para recibir la respuesta de Solicitud.',
+        });
       }
 
       for (const item of itemsInput) {
@@ -348,7 +361,8 @@ export default async function handler(req, res) {
         const cantidadNum = Math.max(1, Math.floor(Number(item.cantidad) || 1));
         const idFinal = generarIdSolicitudComunidadUnico(existentesAcumulados, item.id);
         const notificadoFinal =
-          rawCorreo || String(item.notificado || item.estado || 'Registrada').trim();
+          rawCorreo || String(item.notificado || 'Registrada').trim() || 'Registrada';
+        const estadoFinal = String(item.estado || ESTADO_INICIAL_SC).trim() || ESTADO_INICIAL_SC;
 
         const payload = {
           action: 'registrar_solicitud_comunidad',
@@ -364,10 +378,10 @@ export default async function handler(req, res) {
           cantidad: cantidadNum,
           semana: String(item.semana || '').match(/(\d+)/)?.[1] || String(item.semana || '').trim(),
           fechaEntrega: String(item.fechaEntrega).trim(),
-          observacion: String(item.observacion || '').trim(),
+          correoConfirmacion: String(item.correoConfirmacion || correoConfirmacionRaw).trim(),
           fotoCarta: fotoCartaFinal,
           notificado: notificadoFinal,
-          estado: notificadoFinal,
+          estado: estadoFinal,
         };
 
         let syncedToDrive = false;

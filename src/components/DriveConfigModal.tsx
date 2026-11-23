@@ -493,7 +493,9 @@ function leerSolicitudesComunidad(ss) {
     var cantidadRaw = cel(["CANTIDAD"], ["CANTIDAD"]);
     var cantidadNum = Number(cantidadRaw);
     if (!cantidadNum || isNaN(cantidadNum)) cantidadNum = 1;
-    var notificadoVal = String(cel(["NOTIFICADO", "ESTADO"], ["NOTIFICADO", "ESTADO"]) || "Registrada");
+    var correoConfVal = String(cel(["CORREO DE CONFIRMACIÓN", "CORREO DE CONFIRMACION", "CORREO CONFIRMACION"], ["CORREO", "CONFIRMACI"]) || "").trim();
+    var estadoVal = String(cel(["ESTADO"], ["ESTADO"]) || "Pendiente Aprobación").trim();
+    var notificadoVal = String(cel(["NOTIFICADO"], ["NOTIFICADO"]) || "Registrada").trim();
     out.push({
       id: id,
       fechaSolicitud: String(fechaSolicitud || ""),
@@ -506,10 +508,10 @@ function leerSolicitudesComunidad(ss) {
       cantidad: cantidadNum,
       semana: String(cel(["SEMANA"], ["SEMANA"]) || ""),
       fechaEntrega: String(fechaEntrega || ""),
-      observacion: String(cel(["OBSERVACIÓN", "OBSERVACION", "OBSERVACIONES"], ["OBSERVACI"]) || ""),
+      correoConfirmacion: correoConfVal,
       fotoCarta: String(cel(["FOTO CARTA", "CARTA"], ["FOTO CARTA", "CARTA", "FOTO"]) || ""),
       notificado: notificadoVal,
-      estado: notificadoVal,
+      estado: estadoVal,
       creadoEn: new Date().getTime()
     });
   }
@@ -1121,8 +1123,9 @@ function enviarCorreoNotificacionSolicitudComunidad(ss, correoDestino, items, fo
 
   var idsTexto = ids.join(", ");
   var semanaTexto = primera.semana ? ("Semana " + primera.semana) : "—";
-  var obsTexto = String(primera.observacion || "").trim();
-  var notificadoTexto = String(primera.notificado || primera.estado || emailDisplay).trim();
+  var correoConfTexto = String(primera.correoConfirmacion || "").trim();
+  var estadoTexto = String(primera.estado || "Pendiente Aprobación").trim();
+  var notificadoTexto = String(primera.notificado || emailDisplay).trim();
   var fotoUrl = String(primera.fotoCarta || "").trim();
   var fotoEsUrlWeb = fotoUrl.indexOf("http") === 0;
   var fotoHtml = fotoEsUrlWeb
@@ -1168,9 +1171,10 @@ function enviarCorreoNotificacionSolicitudComunidad(ss, correoDestino, items, fo
     "Sede: " + String(primera.sede || "") + "\\n" +
     "Semana: " + semanaTexto + "\\n" +
     "Fecha de Entrega: " + String(primera.fechaEntrega || "") + "\\n" +
+    "Correo de confirmación: " + correoConfTexto + "\\n" +
+    "Estado: " + estadoTexto + "\\n" +
     "Foto Carta: " + (fotoUrl || "No adjuntada") + "\\n" +
-    "Notificado a: " + notificadoTexto + "\\n" +
-    "Observación: " + (obsTexto || "Sin observaciones adicionales.") + "\\n\\n" +
+    "Notificado a: " + notificadoTexto + "\\n\\n" +
     "PRODUCTOS SOLICITADOS (" + lista.length + " registro(s) | Total: " + totalRamos + " ramos):\\n" +
     filasTexto + "\\n" +
     "Sistema Flor de Obsequio • Notificación automática.\\n";
@@ -1250,6 +1254,14 @@ function enviarCorreoNotificacionSolicitudComunidad(ss, correoDestino, items, fo
                   "<td style=\\"padding:7px 0;font-weight:700;color:#0f172a;border-bottom:1px solid #f1f5f9;text-align:right;\\">" + escapeHtml(primera.sede || "—") + "</td>" +
                 "</tr>" +
                 "<tr>" +
+                  "<td style=\\"padding:7px 0;color:#64748b;border-bottom:1px solid #f1f5f9;\\">Correo de confirmación</td>" +
+                  "<td style=\\"padding:7px 0;font-weight:700;color:#0a2958;border-bottom:1px solid #f1f5f9;text-align:right;word-break:break-word;\\">" + escapeHtml(correoConfTexto || "—") + "</td>" +
+                "</tr>" +
+                "<tr>" +
+                  "<td style=\\"padding:7px 0;color:#64748b;border-bottom:1px solid #f1f5f9;\\">Estado</td>" +
+                  "<td style=\\"padding:7px 0;font-weight:800;color:#b45309;border-bottom:1px solid #f1f5f9;text-align:right;\\">" + escapeHtml(estadoTexto) + "</td>" +
+                "</tr>" +
+                "<tr>" +
                   "<td style=\\"padding:7px 0;color:#64748b;border-bottom:1px solid #f1f5f9;\\">Carta Autorizada</td>" +
                   "<td style=\\"padding:7px 0;text-align:right;border-bottom:1px solid #f1f5f9;\\">" + fotoHtml + "</td>" +
                 "</tr>" +
@@ -1260,7 +1272,7 @@ function enviarCorreoNotificacionSolicitudComunidad(ss, correoDestino, items, fo
               "</table>" +
             "</td></tr>" +
 
-            "<tr><td style=\\"padding:18px 28px 8px 28px;\\">" +
+            "<tr><td style=\\"padding:18px 28px 18px 28px;\\">" +
               "<div style=\\"font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:1px;color:#0a2958;margin-bottom:10px;\\">Detalle de Productos Solicitados</div>" +
               "<table role=\\"presentation\\" width=\\"100%\\" cellspacing=\\"0\\" cellpadding=\\"0\\" style=\\"border:1px solid #cbd5e1;border-radius:8px;overflow:hidden;border-collapse:collapse;\\">" +
                 "<thead>" +
@@ -1278,15 +1290,6 @@ function enviarCorreoNotificacionSolicitudComunidad(ss, correoDestino, items, fo
                   "</tr>" +
                 "</tfoot>" +
               "</table>" +
-            "</td></tr>" +
-
-            "<tr><td style=\\"padding:16px 28px 20px 28px;\\">" +
-              "<div style=\\"background-color:#f8fafc;border-left:4px solid #0a2958;border-radius:6px;padding:12px 14px;\\">" +
-                "<div style=\\"font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:0.8px;color:#64748b;margin-bottom:4px;\\">Observación</div>" +
-                "<div style=\\"font-size:13px;line-height:1.5;color:" + (obsTexto ? "#1e293b" : "#64748b") + ";font-style:" + (obsTexto ? "normal" : "italic") + ";\\">" +
-                  escapeHtml(obsTexto || "Sin observaciones adicionales.") +
-                "</div>" +
-              "</div>" +
             "</td></tr>" +
 
             "<tr><td style=\\"background-color:#f8fafc;border-top:1px solid #e2e8f0;padding:14px 28px;text-align:center;font-size:11px;color:#64748b;\\">" +
@@ -1619,13 +1622,13 @@ function enviarCorreoRespuestaEstadoEspecialPersonal(ss, item) {
 
 /**
  * Escribe una fila en la hoja Solicitud Comunidad:
- * Id | Fecha Solicitud | Usuario | Entidad | Motivo | Lugar | Sede | Producto | Cantidad | Semana | Fecha Entrega | Observación | Foto Carta | Notificado
+ * Id | Fecha Solicitud | Usuario | Entidad | Motivo | Lugar | Sede | Producto | Cantidad | Semana | Fecha Entrega | Correo de confirmación | Estado | Foto Carta | Notificado
  */
 function escribirSolicitudComunidad(sheet, data) {
   var headers = sheet.getLastRow() > 0 ? sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0] : [];
   var headersDefault = [
     "Id", "Fecha Solicitud", "Usuario", "Entidad", "Motivo", "Lugar", "Sede",
-    "Producto", "Cantidad", "Semana", "Fecha Entrega", "Observación", "Foto Carta", "Notificado"
+    "Producto", "Cantidad", "Semana", "Fecha Entrega", "Correo de confirmación", "Estado", "Foto Carta", "Notificado"
   ];
   if (!headers.length || !headers[0]) {
     headers = headersDefault;
@@ -1641,6 +1644,7 @@ function escribirSolicitudComunidad(sheet, data) {
     if (h === "ID" || h === "ID.") return data.id || ("SC-" + new Date().getTime());
     if (h.indexOf("ENTREGA") !== -1) return data.fechaEntrega || "";
     if (h.indexOf("SOLICITUD") !== -1 || h === "FECHA") return data.fechaSolicitud || "";
+    if (h.indexOf("CORREO") !== -1 || h.indexOf("CONFIRMACI") !== -1) return data.correoConfirmacion || "";
     if (h.indexOf("USUARIO") !== -1) return data.usuario || "";
     if (h.indexOf("ENTIDAD") !== -1) return data.entidad || "";
     if (h.indexOf("MOTIVO") !== -1) return data.motivo || "";
@@ -1649,9 +1653,10 @@ function escribirSolicitudComunidad(sheet, data) {
     if (h.indexOf("PRODUCTO") !== -1) return data.producto || "";
     if (h.indexOf("CANTIDAD") !== -1) return cantidadNum;
     if (h.indexOf("SEMANA") !== -1) return data.semana || "";
-    if (h.indexOf("OBSERVACI") !== -1) return data.observacion || "";
+    if (h.indexOf("ESTADO") !== -1) return data.estado || "Pendiente Aprobación";
+    if (h.indexOf("OBSERVACI") !== -1) return data.estado || data.observacion || "Pendiente Aprobación";
     if (h.indexOf("CARTA") !== -1 || h.indexOf("FOTO") !== -1) return data.fotoCarta || "";
-    if (h.indexOf("NOTIFICAD") !== -1 || h.indexOf("ESTADO") !== -1) return data.notificado || data.estado || "Registrada";
+    if (h.indexOf("NOTIFICAD") !== -1) return data.notificado || "Registrada";
     return "";
   }
 

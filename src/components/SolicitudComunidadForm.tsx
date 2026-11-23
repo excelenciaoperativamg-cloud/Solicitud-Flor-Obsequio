@@ -5,7 +5,7 @@ import {
   MapPin,
   Sparkles,
   Calendar,
-  MessageSquare,
+  Clock,
   Send,
   CheckCircle2,
   AlertTriangle,
@@ -62,16 +62,35 @@ interface SolicitudComunidadFormProps {
 
 const ENTIDADES_SC = ['Comunidad', 'Iglesia', 'Alcaldía', 'Policía', 'GHT'] as const;
 const SEDES_SC = ['MG', 'HA', 'SC'] as const;
-const ROSA_VARIANTES_SC = ['Rosa (Color)', 'Rosa (Roja)'] as const;
-const PRODUCTOS_RESTO_SC = ['Clavel', 'Alstroemeria', 'Bouquet'] as const;
+const ROSA_VARIANTES_SC = ['Rosa (Color)', 'Rosa (Roja)', 'Bouquet'] as const;
 const PRODUCTOS_SC = [
   'Rosa (Color)',
   'Rosa (Roja)',
-  'Clavel',
-  'Alstroemeria',
   'Bouquet',
+  'Alstroemeria',
+  'Clavel',
 ] as const;
-const MOTIVOS_BASE_SC = ['Celebración religiosa'] as const;
+const MOTIVOS_BASE_SC = [
+  'Celebración religiosa',
+  'Evento Institucional',
+  'Evento Deportivo',
+  'Evento Cultural',
+  'Evento Social',
+] as const;
+const ESTADO_INICIAL_SC = 'Pendiente Aprobación';
+
+function getProductosPermitidosPorSede(sede: string): string[] {
+  switch (sede) {
+    case 'MG':
+      return [...ROSA_VARIANTES_SC];
+    case 'HA':
+      return ['Alstroemeria'];
+    case 'SC':
+      return ['Clavel'];
+    default:
+      return [];
+  }
+}
 
 const EMAIL_ITEM_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -210,18 +229,12 @@ export const SolicitudComunidadForm: React.FC<SolicitudComunidadFormProps> = ({
   const [mostrandoInputMotivo, setMostrandoInputMotivo] = useState(false);
   const [nuevoMotivoInput, setNuevoMotivoInput] = useState('');
 
-  // Fecha entrega, semana calculada, observación, foto carta, notificación
+  // Fecha entrega, semana calculada, correo confirmación, foto carta, notificación
   const [fechaEntrega, setFechaEntrega] = useState(getTodayString());
-  const [observacion, setObservacion] = useState('');
+  const [correoConfirmacion, setCorreoConfirmacion] = useState('');
   const [correoNotificacion, setCorreoNotificacion] = useState('');
   const [fotoCarta, setFotoCarta] = useState<FotoCartaUpload | null>(null);
   const [errorFoto, setErrorFoto] = useState('');
-
-  // Cámara web
-  const [camaraAbierta, setCamaraAbierta] = useState(false);
-  const [camaraError, setCamaraError] = useState('');
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
 
   // Envío y modal confirmación
   const [errores, setErrores] = useState<Record<string, string>>({});
@@ -266,15 +279,6 @@ export const SolicitudComunidadForm: React.FC<SolicitudComunidadFormProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  useEffect(() => {
-    return () => {
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((t) => t.stop());
-        streamRef.current = null;
-      }
-    };
-  }, []);
-
   const semanaCalculada = useMemo(() => {
     return fechaEntrega ? getISOWeekNumber(fechaEntrega) : getISOWeekNumber(fechaSolicitud);
   }, [fechaEntrega, fechaSolicitud]);
@@ -315,8 +319,37 @@ export const SolicitudComunidadForm: React.FC<SolicitudComunidadFormProps> = ({
 
   const rosaColorActivo = Object.prototype.hasOwnProperty.call(productosCantidades, 'Rosa (Color)');
   const rosaRojaActivo = Object.prototype.hasOwnProperty.call(productosCantidades, 'Rosa (Roja)');
-  const rosaTieneSeleccion = rosaColorActivo || rosaRojaActivo;
+  const bouquetActivo = Object.prototype.hasOwnProperty.call(productosCantidades, 'Bouquet');
+  const rosaTieneSeleccion = rosaColorActivo || rosaRojaActivo || bouquetActivo;
   const rosaExpandido = rosaAbierto || rosaTieneSeleccion;
+
+  const handleSeleccionarSede = (nuevaSede: string) => {
+    if (sede === nuevaSede) return;
+    setSede(nuevaSede);
+    const permitidos = new Set(getProductosPermitidosPorSede(nuevaSede));
+    setProductosCantidades((prev) => {
+      const next: Record<string, string> = {};
+      for (const [prod, cant] of Object.entries(prev)) {
+        if (permitidos.has(prod)) {
+          next[prod] = cant;
+        }
+      }
+      return next;
+    });
+    setRosaAbierto(nuevaSede === 'MG');
+    setErrores((prev) => {
+      const next = { ...prev };
+      delete next.sede;
+      delete next.producto;
+      delete next.cantidad;
+      for (const key of Object.keys(next)) {
+        if (key.startsWith('cant_') && !permitidos.has(key.slice(5))) {
+          delete next[key];
+        }
+      }
+      return next;
+    });
+  };
 
   const toggleRosaPrincipal = () => {
     if (rosaExpandido) {
@@ -325,6 +358,7 @@ export const SolicitudComunidadForm: React.FC<SolicitudComunidadFormProps> = ({
         const next = { ...prev };
         delete next['Rosa (Color)'];
         delete next['Rosa (Roja)'];
+        delete next['Bouquet'];
         return next;
       });
       setErrores((prev) => {
@@ -333,6 +367,7 @@ export const SolicitudComunidadForm: React.FC<SolicitudComunidadFormProps> = ({
         delete next.cantidad;
         delete next['cant_Rosa (Color)'];
         delete next['cant_Rosa (Roja)'];
+        delete next['cant_Bouquet'];
         return next;
       });
     } else {
@@ -413,81 +448,6 @@ export const SolicitudComunidadForm: React.FC<SolicitudComunidadFormProps> = ({
     }
   };
 
-  const abrirCamaraWeb = async () => {
-    setCamaraError('');
-    setErrorFoto('');
-    setCamaraAbierta(true);
-    try {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        setCamaraError(
-          'El navegador no habilita cámara en vivo en este contexto. Use el botón "Tomar foto (móvil)" o "Adjuntar archivo".'
-        );
-        return;
-      }
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' },
-        audio: false,
-      });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play().catch(() => {});
-      }
-    } catch (err: any) {
-      setCamaraError(
-        err?.message ||
-          'No se pudo acceder a la cámara. Verifique los permisos o use "Adjuntar archivo".'
-      );
-    }
-  };
-
-  const cerrarCamaraWeb = () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((t) => t.stop());
-      streamRef.current = null;
-    }
-    setCamaraAbierta(false);
-    setCamaraError('');
-  };
-
-  const capturarDesdeCamaraWeb = () => {
-    const video = videoRef.current;
-    if (!video || !video.videoWidth || !video.videoHeight) return;
-    const maxDim = 1280;
-    let width = video.videoWidth;
-    let height = video.videoHeight;
-    if (width > maxDim || height > maxDim) {
-      if (width >= height) {
-        height = Math.round((height * maxDim) / width);
-        width = maxDim;
-      } else {
-        width = Math.round((width * maxDim) / height);
-        height = maxDim;
-      }
-    }
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    ctx.drawImage(video, 0, 0, width, height);
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
-    const base64 = dataUrl.split(',')[1] || '';
-    setFotoCarta({
-      base64,
-      mimeType: 'image/jpeg',
-      fileName: `Carta_Comunidad_${Date.now()}.jpg`,
-      previewUrl: dataUrl,
-      sizeKB: Math.round((base64.length * 3) / 4 / 1024),
-    });
-    setErrores((prev) => {
-      const next = { ...prev };
-      delete next.fotoCarta;
-      return next;
-    });
-    cerrarCamaraWeb();
-  };
-
   const validarFormulario = (): boolean => {
     const errs: Record<string, string> = {};
 
@@ -501,12 +461,24 @@ export const SolicitudComunidadForm: React.FC<SolicitudComunidadFormProps> = ({
       errs.lugar = 'Ingrese el lugar de la entrega o evento.';
     }
 
-    if (productosSeleccionadosOrdenados.length === 0) {
-      errs.producto = rosaAbierto
-        ? 'Seleccione Rosa (Color) y/o Rosa (Roja), o elija otro producto.'
-        : 'Seleccione al menos un producto (Rosa, Clavel, Alstroemeria o Bouquet).';
+    const permitidosSede = new Set(getProductosPermitidosPorSede(sede));
+    const seleccionadosValidos = productosSeleccionadosOrdenados.filter((p) =>
+      permitidosSede.has(p)
+    );
+
+    if (!sede) {
+      errs.producto = 'Seleccione primero una sede (MG, HA o SC) para elegir el producto.';
+    } else if (seleccionadosValidos.length === 0) {
+      if (sede === 'MG') {
+        errs.producto =
+          'Seleccione al menos un producto de Rosa (Rosa (Color), Rosa (Roja) y/o Bouquet).';
+      } else if (sede === 'HA') {
+        errs.producto = 'Seleccione Alstroemeria e ingrese la cantidad.';
+      } else {
+        errs.producto = 'Seleccione Clavel e ingrese la cantidad.';
+      }
     } else {
-      for (const prod of productosSeleccionadosOrdenados) {
+      for (const prod of seleccionadosValidos) {
         const cantNum = Number(productosCantidades[prod]);
         if (!productosCantidades[prod] || Number.isNaN(cantNum) || cantNum < 1) {
           errs[`cant_${prod}`] = `Ingrese una cantidad válida (mínimo 1) para ${prod}.`;
@@ -521,6 +493,15 @@ export const SolicitudComunidadForm: React.FC<SolicitudComunidadFormProps> = ({
 
     if (!fechaEntrega) {
       errs.fechaEntrega = 'Seleccione la fecha de entrega.';
+    }
+
+    const correoConfirmacionLimpio = correoConfirmacion.trim();
+    if (!correoConfirmacionLimpio) {
+      errs.correoConfirmacion =
+        'Ingrese un Correo de confirmación para recibir la respuesta de Solicitud.';
+    } else if (!EMAIL_ITEM_REGEX.test(correoConfirmacionLimpio)) {
+      errs.correoConfirmacion =
+        'Ingrese un Correo de confirmación válido (ej. micorreo@gmail.com).';
     }
 
     const parsedCorreos = parsearListaCorreos(correoNotificacion);
@@ -547,7 +528,7 @@ export const SolicitudComunidadForm: React.FC<SolicitudComunidadFormProps> = ({
     setMostrandoInputMotivo(false);
     setNuevoMotivoInput('');
     setFechaEntrega(getTodayString());
-    setObservacion('');
+    setCorreoConfirmacion('');
     setCorreoNotificacion('');
     setFotoCarta(null);
     setErrorFoto('');
@@ -571,6 +552,7 @@ export const SolicitudComunidadForm: React.FC<SolicitudComunidadFormProps> = ({
 
       const parsedCorreos = parsearListaCorreos(correoNotificacion);
       const correoLimpio = parsedCorreos.normalizado;
+      const correoConfirmacionLimpio = correoConfirmacion.trim();
       const year = new Date().getFullYear();
       const semanaStr = String(semanaCalculada);
 
@@ -586,10 +568,10 @@ export const SolicitudComunidadForm: React.FC<SolicitudComunidadFormProps> = ({
         cantidad: Math.max(1, Math.floor(Number(productosCantidades[prod]) || 1)),
         semana: semanaStr,
         fechaEntrega,
-        observacion: observacion.trim(),
+        correoConfirmacion: correoConfirmacionLimpio,
+        estado: ESTADO_INICIAL_SC,
         fotoCarta: '',
         notificado: correoLimpio || 'Registrada',
-        estado: correoLimpio || 'Registrada',
         creadoEn: Date.now() + idx,
       }));
 
@@ -642,7 +624,7 @@ export const SolicitudComunidadForm: React.FC<SolicitudComunidadFormProps> = ({
     const correoDestino =
       emailResultado?.to ||
       solicitudesExitosas[0]?.notificado ||
-      solicitudesExitosas[0]?.estado ||
+      solicitudesExitosas[0]?.correoConfirmacion ||
       '';
     if (!correoDestino || !correoDestino.includes('@')) return;
 
@@ -701,6 +683,8 @@ export const SolicitudComunidadForm: React.FC<SolicitudComunidadFormProps> = ({
         s.lugar.toLowerCase().includes(q) ||
         s.sede.toLowerCase().includes(q) ||
         s.producto.toLowerCase().includes(q) ||
+        (s.correoConfirmacion || '').toLowerCase().includes(q) ||
+        (s.estado || '').toLowerCase().includes(q) ||
         (s.notificado || '').toLowerCase().includes(q)
       );
     });
@@ -733,9 +717,10 @@ export const SolicitudComunidadForm: React.FC<SolicitudComunidadFormProps> = ({
       Cantidad: s.cantidad,
       Semana: s.semana,
       'Fecha Entrega': s.fechaEntrega,
-      Observación: s.observacion,
+      'Correo de confirmación': s.correoConfirmacion || '',
+      Estado: s.estado || ESTADO_INICIAL_SC,
       'Foto Carta': s.fotoCarta || '',
-      Notificado: s.notificado || s.estado || '',
+      Notificado: s.notificado || 'Registrada',
     }));
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
@@ -805,66 +790,6 @@ export const SolicitudComunidadForm: React.FC<SolicitudComunidadFormProps> = ({
                 />
               </div>
             )}
-          </div>
-        </div>
-      )}
-
-      {/* Modal Cámara Web */}
-      {camaraAbierta && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-5 shadow-2xl border border-slate-200 space-y-4">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <Camera className="w-4 h-4 text-[#E60000]" />
-                <h3 className="text-sm font-extrabold text-[#0a2958]">
-                  Tomar Foto de Carta Autorizada
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={cerrarCamaraWeb}
-                className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {camaraError ? (
-              <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start gap-2.5">
-                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                <span>{camaraError}</span>
-              </div>
-            ) : (
-              <div className="rounded-xl overflow-hidden bg-slate-900 border border-slate-300 aspect-video flex items-center justify-center">
-                <video
-                  ref={videoRef}
-                  autoPlay
-                  playsInline
-                  muted
-                  className="w-full h-full object-cover"
-                />
-              </div>
-            )}
-
-            <div className="flex items-center justify-end gap-2">
-              <button
-                type="button"
-                onClick={cerrarCamaraWeb}
-                className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 cursor-pointer"
-              >
-                Cancelar
-              </button>
-              {!camaraError && (
-                <button
-                  type="button"
-                  onClick={capturarDesdeCamaraWeb}
-                  className="px-5 py-2 rounded-xl bg-[#0a2958] hover:bg-[#0d346e] text-white text-xs font-extrabold inline-flex items-center gap-2 cursor-pointer"
-                >
-                  <Camera className="w-4 h-4 text-[#E60000]" />
-                  <span>Capturar Foto</span>
-                </button>
-              )}
-            </div>
           </div>
         </div>
       )}
@@ -1080,18 +1005,26 @@ export const SolicitudComunidadForm: React.FC<SolicitudComunidadFormProps> = ({
                   </button>
                 </div>
               )}
+              {primeraExitosa.correoConfirmacion && (
+                <div className="flex justify-between gap-3">
+                  <span className="text-slate-500 shrink-0">Correo de confirmación:</span>
+                  <span className="font-bold text-[#0a2958] break-all text-right">
+                    {primeraExitosa.correoConfirmacion}
+                  </span>
+                </div>
+              )}
+              <div className="flex justify-between gap-3">
+                <span className="text-slate-500 shrink-0">Estado:</span>
+                <span className="font-bold text-amber-700 text-right">
+                  {primeraExitosa.estado || ESTADO_INICIAL_SC}
+                </span>
+              </div>
               <div className="flex justify-between gap-3">
                 <span className="text-slate-500 shrink-0">Notificado:</span>
                 <span className="font-bold text-emerald-700 break-all text-right">
-                  {primeraExitosa.notificado || primeraExitosa.estado || 'Registrada'}
+                  {primeraExitosa.notificado || 'Registrada'}
                 </span>
               </div>
-              {primeraExitosa.observacion && (
-                <div className="pt-2 border-t border-slate-200">
-                  <span className="text-slate-500 block mb-0.5">Observación:</span>
-                  <p className="text-slate-800 font-medium">{primeraExitosa.observacion}</p>
-                </div>
-              )}
             </div>
 
             <div className="flex flex-col sm:flex-row gap-2">
@@ -1252,14 +1185,7 @@ export const SolicitudComunidadForm: React.FC<SolicitudComunidadFormProps> = ({
                       <button
                         key={sd}
                         type="button"
-                        onClick={() => {
-                          setSede(sd);
-                          setErrores((prev) => {
-                            const next = { ...prev };
-                            delete next.sede;
-                            return next;
-                          });
-                        }}
+                        onClick={() => handleSeleccionarSede(sd)}
                         className={`py-2.5 px-3 rounded-xl border text-xs font-extrabold transition cursor-pointer ${
                           activa
                             ? 'bg-[#0a2958] text-white border-[#0a2958] shadow-xs'
@@ -1334,185 +1260,202 @@ export const SolicitudComunidadForm: React.FC<SolicitudComunidadFormProps> = ({
               <label className="block text-xs font-bold text-slate-700 mb-2">
                 Producto <span className="text-[#E60000]">*</span>{' '}
                 <span className="text-[11px] font-normal text-slate-500">
-                  (Puede seleccionar varios productos; cada uno se guarda por separado)
+                  {!sede
+                    ? '(Seleccione primero una sede para mostrar los productos disponibles)'
+                    : sede === 'MG'
+                    ? '(Sede MG: productos de Rosa — puede seleccionar varios; cada uno se guarda por separado)'
+                    : sede === 'HA'
+                    ? '(Sede HA: producto disponible Alstroemeria)'
+                    : '(Sede SC: producto disponible Clavel)'}
                 </span>
               </label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-start">
-                {/* Tarjeta Rosa con subopciones Rosa (Color) y Rosa (Roja) */}
-                <div
-                  className={`rounded-xl border p-3 transition ${
-                    rosaExpandido
-                      ? 'border-[#0a2958] bg-[#0a2958]/[0.04] shadow-xs'
-                      : 'border-slate-200 bg-white hover:border-[#0a2958]/40'
-                  }`}
-                >
-                  <button
-                    type="button"
-                    onClick={toggleRosaPrincipal}
-                    aria-pressed={rosaExpandido}
-                    className="w-full flex items-center justify-between gap-2 text-left cursor-pointer"
+
+              {!sede ? (
+                <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/70 px-4 py-4 text-xs font-medium text-slate-500 flex items-center gap-2.5">
+                  <MapPin className="w-4 h-4 text-[#0a2958] shrink-0" />
+                  <span>
+                    Seleccione una <strong>Sede</strong> (MG, HA o SC) en la sección anterior para ver los productos habilitados.
+                  </span>
+                </div>
+              ) : sede === 'MG' ? (
+                <div className="max-w-md">
+                  {/* Tarjeta Rosa con subopciones Rosa (Color), Rosa (Roja) y Bouquet */}
+                  <div
+                    className={`rounded-xl border p-3 transition ${
+                      rosaExpandido
+                        ? 'border-[#0a2958] bg-[#0a2958]/[0.04] shadow-xs'
+                        : 'border-slate-200 bg-white hover:border-[#0a2958]/40'
+                    }`}
                   >
-                    <span
-                      className={`text-xs font-extrabold ${
-                        rosaExpandido ? 'text-[#0a2958]' : 'text-slate-700'
-                      }`}
+                    <button
+                      type="button"
+                      onClick={toggleRosaPrincipal}
+                      aria-pressed={rosaExpandido}
+                      className="w-full flex items-center justify-between gap-2 text-left cursor-pointer"
                     >
-                      Rosa
-                    </span>
-                    <span
-                      className={`w-5 h-5 rounded-md flex items-center justify-center border transition ${
-                        rosaExpandido
-                          ? 'bg-[#0a2958] border-[#0a2958] text-white'
-                          : 'border-slate-300 bg-white'
-                      }`}
-                    >
-                      {rosaExpandido && <Check className="w-3.5 h-3.5" />}
-                    </span>
-                  </button>
+                      <span
+                        className={`text-xs font-extrabold ${
+                          rosaExpandido ? 'text-[#0a2958]' : 'text-slate-700'
+                        }`}
+                      >
+                        Rosa
+                      </span>
+                      <span
+                        className={`w-5 h-5 rounded-md flex items-center justify-center border transition ${
+                          rosaExpandido
+                            ? 'bg-[#0a2958] border-[#0a2958] text-white'
+                            : 'border-slate-300 bg-white'
+                        }`}
+                      >
+                        {rosaExpandido && <Check className="w-3.5 h-3.5" />}
+                      </span>
+                    </button>
 
-                  {rosaExpandido && (
-                    <div className="mt-3 pt-2.5 border-t border-slate-200/80 space-y-2">
-                      {ROSA_VARIANTES_SC.map((variante) => {
-                        const activoVar = Object.prototype.hasOwnProperty.call(
-                          productosCantidades,
-                          variante
-                        );
-                        const cantValorVar = productosCantidades[variante] ?? '';
-                        const errCantVar = errores[`cant_${variante}`];
+                    {rosaExpandido && (
+                      <div className="mt-3 pt-2.5 border-t border-slate-200/80 space-y-2">
+                        {ROSA_VARIANTES_SC.map((variante) => {
+                          const activoVar = Object.prototype.hasOwnProperty.call(
+                            productosCantidades,
+                            variante
+                          );
+                          const cantValorVar = productosCantidades[variante] ?? '';
+                          const errCantVar = errores[`cant_${variante}`];
 
-                        return (
-                          <div
-                            key={variante}
-                            className={`rounded-lg border p-2 transition ${
-                              activoVar
-                                ? 'border-[#0a2958]/60 bg-white shadow-2xs'
-                                : 'border-slate-200 bg-white/80 hover:border-[#0a2958]/30'
+                          return (
+                            <div
+                              key={variante}
+                              className={`rounded-lg border p-2 transition ${
+                                activoVar
+                                  ? 'border-[#0a2958]/60 bg-white shadow-2xs'
+                                  : 'border-slate-200 bg-white/80 hover:border-[#0a2958]/30'
+                              }`}
+                            >
+                              <button
+                                type="button"
+                                onClick={() => toggleProducto(variante)}
+                                aria-pressed={activoVar}
+                                className="w-full flex items-center justify-between gap-2 text-left cursor-pointer"
+                              >
+                                <span
+                                  className={`text-[11px] font-bold ${
+                                    activoVar ? 'text-[#0a2958]' : 'text-slate-700'
+                                  }`}
+                                >
+                                  {variante}
+                                </span>
+                                <span
+                                  className={`w-4 h-4 rounded flex items-center justify-center border transition shrink-0 ${
+                                    activoVar
+                                      ? 'bg-[#0a2958] border-[#0a2958] text-white'
+                                      : 'border-slate-300 bg-white'
+                                  }`}
+                                >
+                                  {activoVar && <Check className="w-3 h-3" />}
+                                </span>
+                              </button>
+
+                              {activoVar && (
+                                <div className="mt-2 pt-2 border-t border-slate-100">
+                                  <label className="block text-[10px] font-bold text-slate-600 mb-1">
+                                    Cantidad <span className="text-[#E60000]">*</span>
+                                  </label>
+                                  <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    pattern="[0-9]*"
+                                    value={cantValorVar}
+                                    onChange={(e) => cambiarCantidadProducto(variante, e.target.value)}
+                                    placeholder="Ej: 1"
+                                    className={`w-full px-2.5 py-1 text-xs rounded-lg border font-mono font-bold text-[#0a2958] bg-white outline-hidden ${
+                                      errCantVar
+                                        ? 'border-rose-400 bg-rose-50/40'
+                                        : 'border-slate-300 focus:border-[#0a2958]'
+                                    }`}
+                                  />
+                                  {errCantVar && (
+                                    <p className="text-[10px] text-[#E60000] font-semibold mt-1">
+                                      {errCantVar}
+                                    </p>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="max-w-md">
+                  {getProductosPermitidosPorSede(sede).map((prod) => {
+                    const activo = Object.prototype.hasOwnProperty.call(productosCantidades, prod);
+                    const cantValor = productosCantidades[prod] ?? '';
+                    const errCant = errores[`cant_${prod}`];
+
+                    return (
+                      <div
+                        key={prod}
+                        className={`rounded-xl border p-3 transition ${
+                          activo
+                            ? 'border-[#0a2958] bg-[#0a2958]/[0.04] shadow-xs'
+                            : 'border-slate-200 bg-white hover:border-[#0a2958]/40'
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => toggleProducto(prod)}
+                          aria-pressed={activo}
+                          className="w-full flex items-center justify-between gap-2 text-left cursor-pointer"
+                        >
+                          <span
+                            className={`text-xs font-extrabold ${
+                              activo ? 'text-[#0a2958]' : 'text-slate-700'
                             }`}
                           >
-                            <button
-                              type="button"
-                              onClick={() => toggleProducto(variante)}
-                              aria-pressed={activoVar}
-                              className="w-full flex items-center justify-between gap-2 text-left cursor-pointer"
-                            >
-                              <span
-                                className={`text-[11px] font-bold ${
-                                  activoVar ? 'text-[#0a2958]' : 'text-slate-700'
-                                }`}
-                              >
-                                {variante}
-                              </span>
-                              <span
-                                className={`w-4 h-4 rounded flex items-center justify-center border transition shrink-0 ${
-                                  activoVar
-                                    ? 'bg-[#0a2958] border-[#0a2958] text-white'
-                                    : 'border-slate-300 bg-white'
-                                }`}
-                              >
-                                {activoVar && <Check className="w-3 h-3" />}
-                              </span>
-                            </button>
+                            {prod}
+                          </span>
+                          <span
+                            className={`w-5 h-5 rounded-md flex items-center justify-center border transition ${
+                              activo
+                                ? 'bg-[#0a2958] border-[#0a2958] text-white'
+                                : 'border-slate-300 bg-white'
+                            }`}
+                          >
+                            {activo && <Check className="w-3.5 h-3.5" />}
+                          </span>
+                        </button>
 
-                            {activoVar && (
-                              <div className="mt-2 pt-2 border-t border-slate-100">
-                                <label className="block text-[10px] font-bold text-slate-600 mb-1">
-                                  Cantidad <span className="text-[#E60000]">*</span>
-                                </label>
-                                <input
-                                  type="text"
-                                  inputMode="numeric"
-                                  pattern="[0-9]*"
-                                  value={cantValorVar}
-                                  onChange={(e) => cambiarCantidadProducto(variante, e.target.value)}
-                                  placeholder="Ej: 1"
-                                  className={`w-full px-2.5 py-1 text-xs rounded-lg border font-mono font-bold text-[#0a2958] bg-white outline-hidden ${
-                                    errCantVar
-                                      ? 'border-rose-400 bg-rose-50/40'
-                                      : 'border-slate-300 focus:border-[#0a2958]'
-                                  }`}
-                                />
-                                {errCantVar && (
-                                  <p className="text-[10px] text-[#E60000] font-semibold mt-1">
-                                    {errCantVar}
-                                  </p>
-                                )}
-                              </div>
+                        {activo && (
+                          <div className="mt-3 pt-2.5 border-t border-slate-200/80">
+                            <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                              Cantidad <span className="text-[#E60000]">*</span>
+                            </label>
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              pattern="[0-9]*"
+                              value={cantValor}
+                              onChange={(e) => cambiarCantidadProducto(prod, e.target.value)}
+                              placeholder="Ej: 1"
+                              className={`w-full px-3 py-1.5 text-xs rounded-lg border font-mono font-bold text-[#0a2958] bg-white outline-hidden ${
+                                errCant
+                                  ? 'border-rose-400 bg-rose-50/40'
+                                  : 'border-slate-300 focus:border-[#0a2958]'
+                              }`}
+                            />
+                            {errCant && (
+                              <p className="text-[10px] text-[#E60000] font-semibold mt-1">
+                                {errCant}
+                              </p>
                             )}
                           </div>
-                        );
-                      })}
-                    </div>
-                  )}
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
-
-                {/* Clavel, Alstroemeria, Bouquet */}
-                {PRODUCTOS_RESTO_SC.map((prod) => {
-                  const activo = Object.prototype.hasOwnProperty.call(productosCantidades, prod);
-                  const cantValor = productosCantidades[prod] ?? '';
-                  const errCant = errores[`cant_${prod}`];
-
-                  return (
-                    <div
-                      key={prod}
-                      className={`rounded-xl border p-3 transition ${
-                        activo
-                          ? 'border-[#0a2958] bg-[#0a2958]/[0.04] shadow-xs'
-                          : 'border-slate-200 bg-white hover:border-[#0a2958]/40'
-                      }`}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => toggleProducto(prod)}
-                        aria-pressed={activo}
-                        className="w-full flex items-center justify-between gap-2 text-left cursor-pointer"
-                      >
-                        <span
-                          className={`text-xs font-extrabold ${
-                            activo ? 'text-[#0a2958]' : 'text-slate-700'
-                          }`}
-                        >
-                          {prod}
-                        </span>
-                        <span
-                          className={`w-5 h-5 rounded-md flex items-center justify-center border transition ${
-                            activo
-                              ? 'bg-[#0a2958] border-[#0a2958] text-white'
-                              : 'border-slate-300 bg-white'
-                          }`}
-                        >
-                          {activo && <Check className="w-3.5 h-3.5" />}
-                        </span>
-                      </button>
-
-                      {activo && (
-                        <div className="mt-3 pt-2.5 border-t border-slate-200/80">
-                          <label className="block text-[11px] font-bold text-slate-600 mb-1">
-                            Cantidad <span className="text-[#E60000]">*</span>
-                          </label>
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            pattern="[0-9]*"
-                            value={cantValor}
-                            onChange={(e) => cambiarCantidadProducto(prod, e.target.value)}
-                            placeholder="Ej: 1"
-                            className={`w-full px-3 py-1.5 text-xs rounded-lg border font-mono font-bold text-[#0a2958] bg-white outline-hidden ${
-                              errCant
-                                ? 'border-rose-400 bg-rose-50/40'
-                                : 'border-slate-300 focus:border-[#0a2958]'
-                            }`}
-                          />
-                          {errCant && (
-                            <p className="text-[10px] text-[#E60000] font-semibold mt-1">
-                              {errCant}
-                            </p>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+              )}
               {errores.producto && (
                 <p className="text-[11px] text-[#E60000] font-semibold mt-1.5">
                   {errores.producto}
@@ -1535,94 +1478,109 @@ export const SolicitudComunidadForm: React.FC<SolicitudComunidadFormProps> = ({
               </h3>
             </div>
 
-            {/* Motivo */}
-            <div className="space-y-2.5">
-              <label className="block text-xs font-bold text-slate-700">
-                Motivo <span className="text-[#E60000]">*</span>
-              </label>
-              <div className="flex flex-wrap gap-2">
-                {opcionesMotivoVisibles.map((mot) => (
+            {/* Motivo (lista desplegable), Fecha de Entrega y Semana */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
+              <div>
+                <label
+                  htmlFor="select-motivo-sc"
+                  className="block text-xs font-bold text-slate-700 mb-1.5"
+                >
+                  Motivo <span className="text-[#E60000]">*</span>
+                </label>
+                <div className="flex items-center gap-2">
+                  <div className="relative flex-1 min-w-0">
+                    <select
+                      id="select-motivo-sc"
+                      value={mostrandoInputMotivo ? '__AGREGAR__' : motivoSeleccionado}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === '__AGREGAR__') {
+                          setMostrandoInputMotivo(true);
+                        } else {
+                          setMotivoSeleccionado(val);
+                          setMostrandoInputMotivo(false);
+                        }
+                        setErrores((prev) => {
+                          const next = { ...prev };
+                          delete next.motivo;
+                          return next;
+                        });
+                      }}
+                      className={`w-full appearance-none pl-3.5 pr-9 py-2.5 text-xs rounded-xl border font-bold bg-white outline-hidden cursor-pointer truncate ${
+                        errores.motivo
+                          ? 'border-rose-400 bg-rose-50/40 text-slate-900'
+                          : 'border-slate-300 focus:border-[#0a2958] text-slate-800'
+                      }`}
+                    >
+                      <option value="">Seleccione un motivo…</option>
+                      {opcionesMotivoVisibles.map((mot) => (
+                        <option key={mot} value={mot}>
+                          {mot}
+                        </option>
+                      ))}
+                      <option value="__AGREGAR__">+ Agregar otro motivo…</option>
+                    </select>
+                    <ChevronDown className="w-4 h-4 text-slate-500 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  </div>
                   <button
-                    key={mot}
                     type="button"
                     onClick={() => {
-                      setMotivoSeleccionado(mot);
-                      setMostrandoInputMotivo(false);
+                      setMostrandoInputMotivo((prev) => !prev);
                       setErrores((prev) => {
                         const next = { ...prev };
                         delete next.motivo;
                         return next;
                       });
                     }}
-                    className={`px-3.5 py-2 rounded-xl border text-xs font-bold transition cursor-pointer ${
-                      !mostrandoInputMotivo && motivoSeleccionado === mot
-                        ? 'bg-[#0a2958] text-white border-[#0a2958] shadow-xs'
-                        : 'bg-white text-slate-700 border-slate-200 hover:border-[#0a2958]/40'
+                    title="Agregar otro motivo"
+                    aria-label="Agregar otro motivo"
+                    className={`p-2.5 rounded-xl border transition cursor-pointer shrink-0 ${
+                      mostrandoInputMotivo
+                        ? 'bg-[#E60000]/10 text-[#E60000] border-[#E60000]/40'
+                        : 'bg-slate-50 text-slate-700 border-slate-300 hover:border-[#0a2958] hover:text-[#0a2958]'
                     }`}
                   >
-                    {mot}
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMostrandoInputMotivo((prev) => !prev);
-                    setErrores((prev) => {
-                      const next = { ...prev };
-                      delete next.motivo;
-                      return next;
-                    });
-                  }}
-                  className={`px-3.5 py-2 rounded-xl border text-xs font-bold transition inline-flex items-center gap-1.5 cursor-pointer ${
-                    mostrandoInputMotivo
-                      ? 'bg-[#E60000]/10 text-[#E60000] border-[#E60000]/40'
-                      : 'bg-slate-50 text-slate-700 border-dashed border-slate-300 hover:border-[#0a2958]'
-                  }`}
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Agregar otro motivo</span>
-                </button>
-              </div>
-
-              {mostrandoInputMotivo && (
-                <div className="flex flex-col sm:flex-row gap-2 max-w-md pt-1">
-                  <input
-                    type="text"
-                    value={nuevoMotivoInput}
-                    onChange={(e) => {
-                      setNuevoMotivoInput(e.target.value);
-                      setErrores((prev) => {
-                        const next = { ...prev };
-                        delete next.motivo;
-                        return next;
-                      });
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        handleAgregarMotivoPersonalizado();
-                      }
-                    }}
-                    placeholder="Escriba el nuevo motivo…"
-                    className="flex-1 px-3.5 py-2 text-xs rounded-xl border border-slate-300 focus:border-[#0a2958] outline-hidden font-medium"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleAgregarMotivoPersonalizado}
-                    className="px-4 py-2 rounded-xl bg-[#0a2958] text-white text-xs font-bold hover:bg-[#0d346e] cursor-pointer"
-                  >
-                    Agregar
+                    <Plus className="w-4 h-4" />
                   </button>
                 </div>
-              )}
 
-              {errores.motivo && (
-                <p className="text-[11px] text-[#E60000] font-semibold">{errores.motivo}</p>
-              )}
-            </div>
+                {mostrandoInputMotivo && (
+                  <div className="flex gap-2 pt-2">
+                    <input
+                      type="text"
+                      value={nuevoMotivoInput}
+                      onChange={(e) => {
+                        setNuevoMotivoInput(e.target.value);
+                        setErrores((prev) => {
+                          const next = { ...prev };
+                          delete next.motivo;
+                          return next;
+                        });
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAgregarMotivoPersonalizado();
+                        }
+                      }}
+                      placeholder="Escriba el nuevo motivo…"
+                      className="flex-1 min-w-0 px-3 py-2 text-xs rounded-xl border border-slate-300 focus:border-[#0a2958] outline-hidden font-medium"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAgregarMotivoPersonalizado}
+                      className="px-3.5 py-2 rounded-xl bg-[#0a2958] text-white text-xs font-bold hover:bg-[#0d346e] cursor-pointer shrink-0"
+                    >
+                      Agregar
+                    </button>
+                  </div>
+                )}
 
-            {/* Fecha de Entrega & Semana */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {errores.motivo && (
+                  <p className="text-[11px] text-[#E60000] font-semibold mt-1">{errores.motivo}</p>
+                )}
+              </div>
+
               <div>
                 <label
                   htmlFor="sc-fecha-entrega"
@@ -1659,12 +1617,76 @@ export const SolicitudComunidadForm: React.FC<SolicitudComunidadFormProps> = ({
                 <label className="block text-xs font-bold text-slate-700 mb-1.5">
                   Semana
                 </label>
-                <div className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 bg-slate-50 font-extrabold text-[#E60000] flex items-center justify-between">
-                  <span>Semana {semanaCalculada}</span>
-                  <span className="text-[11px] font-medium text-slate-500">
+                <div className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 bg-slate-50 font-extrabold text-[#E60000] flex items-center justify-between gap-2">
+                  <span className="shrink-0">Semana {semanaCalculada}</span>
+                  <span className="text-[11px] font-medium text-slate-500 truncate">
                     {fechaEntrega ? formatDateSpanish(fechaEntrega) : '—'}
                   </span>
                 </div>
+              </div>
+            </div>
+
+            {/* Correo de confirmación y Estado */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
+              <div>
+                <label
+                  htmlFor="sc-correo-confirmacion"
+                  className="flex items-center gap-1.5 text-xs font-bold text-slate-700 mb-1.5"
+                >
+                  <Mail className="w-3.5 h-3.5 text-[#0a2958]" />
+                  <span>Correo de confirmación</span>
+                  <span className="text-[#E60000]">*</span>
+                </label>
+                <input
+                  id="sc-correo-confirmacion"
+                  type="email"
+                  inputMode="email"
+                  autoComplete="email"
+                  value={correoConfirmacion}
+                  onChange={(e) => {
+                    setCorreoConfirmacion(e.target.value);
+                    setErrores((prev) => {
+                      const next = { ...prev };
+                      delete next.correoConfirmacion;
+                      return next;
+                    });
+                  }}
+                  placeholder="Ej. micorreo@gmail.com"
+                  className={`w-full px-3.5 py-2.5 text-xs rounded-xl border font-semibold outline-hidden ${
+                    errores.correoConfirmacion
+                      ? 'border-rose-400 bg-rose-50/40 text-slate-900'
+                      : 'border-slate-300 focus:border-[#0a2958] text-slate-800'
+                  }`}
+                />
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Ingrese un Correo de confirmación para recibir la respuesta de Solicitud.
+                </p>
+                {errores.correoConfirmacion && (
+                  <p className="text-[11px] text-[#E60000] font-semibold mt-1">
+                    {errores.correoConfirmacion}
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label
+                  htmlFor="sc-estado"
+                  className="flex items-center gap-1.5 text-xs font-bold text-slate-700 mb-1.5"
+                >
+                  <Clock className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Estado</span>
+                </label>
+                <input
+                  id="sc-estado"
+                  type="text"
+                  value={ESTADO_INICIAL_SC}
+                  readOnly
+                  tabIndex={-1}
+                  className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-amber-200 bg-amber-50/70 font-extrabold text-amber-800 outline-hidden"
+                />
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Toda solicitud registrada inicia en estado <strong>{ESTADO_INICIAL_SC}</strong>.
+                </p>
               </div>
             </div>
 
@@ -1699,15 +1721,6 @@ export const SolicitudComunidadForm: React.FC<SolicitudComunidadFormProps> = ({
                       className="hidden"
                     />
                   </label>
-
-                  <button
-                    type="button"
-                    onClick={abrirCamaraWeb}
-                    className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-[#0a2958] hover:bg-[#0d346e] text-white text-xs font-bold shadow-xs cursor-pointer transition"
-                  >
-                    <Camera className="w-3.5 h-3.5 text-[#E60000]" />
-                    <span>Cámara en vivo</span>
-                  </button>
                 </div>
 
                 {errorFoto && (
@@ -1755,29 +1768,10 @@ export const SolicitudComunidadForm: React.FC<SolicitudComunidadFormProps> = ({
                   </div>
                 ) : (
                   <p className="text-[11px] text-slate-500">
-                    Puede adjuntar una imagen o PDF de la carta autorizada, o tomar la foto directamente desde su dispositivo o cámara web.
+                    Puede adjuntar una imagen o PDF de la carta, o tomar la foto directamente desde su dispositivo.
                   </p>
                 )}
               </div>
-            </div>
-
-            {/* Observación */}
-            <div>
-              <label
-                htmlFor="sc-observacion"
-                className="flex items-center gap-1.5 text-xs font-bold text-slate-700 mb-1.5"
-              >
-                <MessageSquare className="w-3.5 h-3.5 text-slate-400" />
-                <span>Observación</span>
-              </label>
-              <textarea
-                id="sc-observacion"
-                rows={2}
-                value={observacion}
-                onChange={(e) => setObservacion(e.target.value)}
-                placeholder="Escriba observaciones o detalles adicionales…"
-                className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-300 focus:border-[#0a2958] outline-hidden font-medium resize-y"
-              />
             </div>
 
             {/* Notificado */}
@@ -2027,7 +2021,8 @@ export const SolicitudComunidadForm: React.FC<SolicitudComunidadFormProps> = ({
                 <th className="py-2.5 px-3 text-right">Cantidad</th>
                 <th className="py-2.5 px-3">Semana</th>
                 <th className="py-2.5 px-3">Fecha Entrega</th>
-                <th className="py-2.5 px-3">Observación</th>
+                <th className="py-2.5 px-3">Correo de confirmación</th>
+                <th className="py-2.5 px-3">Estado</th>
                 <th className="py-2.5 px-3">Foto Carta</th>
                 <th className="py-2.5 px-3">Notificado</th>
               </tr>
@@ -2035,7 +2030,7 @@ export const SolicitudComunidadForm: React.FC<SolicitudComunidadFormProps> = ({
             <tbody className="divide-y divide-slate-100">
               {solicitudesFiltradas.length === 0 ? (
                 <tr>
-                  <td colSpan={14} className="py-8 text-center text-slate-400">
+                  <td colSpan={15} className="py-8 text-center text-slate-400">
                     {solicitudesComunidad.length === 0
                       ? 'No hay registros en Solicitud Comunidad todavía.'
                       : 'No hay registros que coincidan con los filtros seleccionados.'}
@@ -2043,7 +2038,13 @@ export const SolicitudComunidadForm: React.FC<SolicitudComunidadFormProps> = ({
                 </tr>
               ) : (
                 solicitudesFiltradas.map((s, idx) => {
-                  const notificadoMostrar = s.notificado || s.estado || 'Registrada';
+                  const estadoMostrar = s.estado || ESTADO_INICIAL_SC;
+                  const notificadoMostrar = s.notificado || 'Registrada';
+                  const estadoNormalizado = estadoMostrar.toLowerCase();
+                  const esAprobado =
+                    estadoNormalizado === 'aprobado' || estadoNormalizado === 'aprobada';
+                  const esNoAprobado =
+                    estadoNormalizado === 'no aprobado' || estadoNormalizado === 'no aprobada';
                   return (
                     <tr key={`${s.id}-${s.entidad}-${idx}`} className="hover:bg-slate-50/80">
                       <td className="py-2.5 px-3 font-mono font-bold text-[#0a2958] whitespace-nowrap">
@@ -2064,8 +2065,24 @@ export const SolicitudComunidadForm: React.FC<SolicitudComunidadFormProps> = ({
                           (s.fechaEntrega ? String(getISOWeekNumber(s.fechaEntrega)) : '—')}
                       </td>
                       <td className="py-2.5 px-3 whitespace-nowrap">{s.fechaEntrega}</td>
-                      <td className="py-2.5 px-3 max-w-xs truncate" title={s.observacion}>
-                        {s.observacion || '—'}
+                      <td
+                        className="py-2.5 px-3 text-[#0a2958] font-medium max-w-[200px] truncate"
+                        title={s.correoConfirmacion}
+                      >
+                        {s.correoConfirmacion || '—'}
+                      </td>
+                      <td className="py-2.5 px-3 whitespace-nowrap">
+                        <span
+                          className={`inline-flex items-center px-2.5 py-1 rounded-lg text-[11px] font-bold border ${
+                            esAprobado
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                              : esNoAprobado
+                              ? 'bg-rose-50 text-[#E60000] border-rose-200'
+                              : 'bg-amber-50 text-amber-800 border-amber-200'
+                          }`}
+                        >
+                          {estadoMostrar}
+                        </span>
                       </td>
                       <td className="py-2.5 px-3 whitespace-nowrap">
                         {s.fotoCarta ? (
