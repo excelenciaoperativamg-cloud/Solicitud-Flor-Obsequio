@@ -356,6 +356,10 @@ function leerSolicitudesIntExt(ss) {
     if (fechaEntrega instanceof Date) {
       fechaEntrega = Utilities.formatDate(fechaEntrega, Session.getScriptTimeZone(), "yyyy-MM-dd");
     }
+    var horaEntrega = cel(["HORA ENTREGA", "HORA DE ENTREGA", "HORA"]);
+    if (horaEntrega instanceof Date) {
+      horaEntrega = Utilities.formatDate(horaEntrega, Session.getScriptTimeZone(), "HH:mm");
+    }
     var cantidadRaw = cel(["CANTIDAD"]);
     var cantidadNum = Number(cantidadRaw);
     if (!cantidadNum || isNaN(cantidadNum)) cantidadNum = 1;
@@ -372,6 +376,7 @@ function leerSolicitudesIntExt(ss) {
       motivo: String(cel(["MOTIVO"]) || ""),
       semana: String(cel(["SEMANA"]) || ""),
       fechaEntrega: String(fechaEntrega || ""),
+      horaEntrega: String(horaEntrega || ""),
       observacion: String(cel(["OBSERVACIÓN", "OBSERVACION", "OBSERVACIONES"]) || ""),
       notificado: notificadoVal,
       estado: notificadoVal,
@@ -639,11 +644,10 @@ function enviarCorreoNotificacionIntExt(ss, correoDestino, items) {
     "Id(s): " + idsTexto + "\n" +
     "Fecha de Solicitud: " + String(primera.fechaSolicitud || "") + "\n" +
     "Registrado por: " + String(primera.nombre || "") + " (" + String(primera.codigo || "") + ")\n" +
-    "Sede: " + String(primera.sede || "") + "\n" +
-    "Área: " + String(primera.area || "") + "\n" +
     "Motivo: " + String(primera.motivo || "") + "\n" +
     "Semana: " + semanaTexto + "\n" +
     "Fecha de Entrega: " + String(primera.fechaEntrega || "") + "\n" +
+    "Hora de Entrega: " + String(primera.horaEntrega || "—") + "\n" +
     "Notificado a: " + notificadoTexto + "\n" +
     "Observación: " + (obsTexto || "Sin observaciones adicionales.") + "\n\n" +
     "PRODUCTOS SOLICITADOS (" + lista.length + " registro(s) | Total: " + totalRamos + " ramos):\n" +
@@ -705,12 +709,12 @@ function enviarCorreoNotificacionIntExt(ss, correoDestino, items) {
                   "<td style=\"padding:7px 0;font-weight:700;color:#0a2958;border-bottom:1px solid #f1f5f9;text-align:right;\">" + escapeHtml(primera.fechaEntrega || "—") + "</td>" +
                 "</tr>" +
                 "<tr>" +
-                  "<td style=\"padding:7px 0;color:#64748b;border-bottom:1px solid #f1f5f9;\">Solicitado / Registrado por</td>" +
-                  "<td style=\"padding:7px 0;font-weight:700;color:#0f172a;border-bottom:1px solid #f1f5f9;text-align:right;\">" + escapeHtml(primera.nombre || "") + " (" + escapeHtml(primera.codigo || "") + ")</td>" +
+                  "<td style=\"padding:7px 0;color:#64748b;border-bottom:1px solid #f1f5f9;\">Hora de Entrega</td>" +
+                  "<td style=\"padding:7px 0;font-weight:700;color:#0a2958;border-bottom:1px solid #f1f5f9;text-align:right;font-family:'Courier New',monospace;\">" + escapeHtml(primera.horaEntrega || "—") + "</td>" +
                 "</tr>" +
                 "<tr>" +
-                  "<td style=\"padding:7px 0;color:#64748b;border-bottom:1px solid #f1f5f9;\">Sede / Área</td>" +
-                  "<td style=\"padding:7px 0;font-weight:700;color:#0f172a;border-bottom:1px solid #f1f5f9;text-align:right;\">" + escapeHtml(primera.sede || "") + " &middot; " + escapeHtml(primera.area || "") + "</td>" +
+                  "<td style=\"padding:7px 0;color:#64748b;border-bottom:1px solid #f1f5f9;\">Solicitado / Registrado por</td>" +
+                  "<td style=\"padding:7px 0;font-weight:700;color:#0f172a;border-bottom:1px solid #f1f5f9;text-align:right;\">" + escapeHtml(primera.nombre || "") + " (" + escapeHtml(primera.codigo || "") + ")</td>" +
                 "</tr>" +
                 "<tr>" +
                   "<td style=\"padding:7px 0;color:#64748b;border-bottom:1px solid #f1f5f9;\">Motivo</td>" +
@@ -1386,13 +1390,13 @@ function escribirSolicitud(sheet, data) {
 
 /**
  * Escribe una fila en la hoja Especiales Empresa:
- * Id | Fecha Solicitud | Código | Nombre | Sede | Area | Producto | Cantidad | Motivo | Semana | Fecha Entrega | Observación | Notificado
+ * Id | Fecha Solicitud | Código | Nombre | Producto | Cantidad | Motivo | Semana | Fecha Entrega | Hora Entrega | Observación | Notificado
  */
 function escribirSolicitudIntExt(sheet, data) {
   var headers = sheet.getLastRow() > 0 ? sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0] : [];
   var headersDefault = [
-    "Id", "Fecha Solicitud", "Código", "Nombre", "Sede", "Area",
-    "Producto", "Cantidad", "Motivo", "Semana", "Fecha Entrega", "Observación", "Notificado"
+    "Id", "Fecha Solicitud", "Código", "Nombre",
+    "Producto", "Cantidad", "Motivo", "Semana", "Fecha Entrega", "Hora Entrega", "Observación", "Notificado"
   ];
   if (!headers.length || !headers[0]) {
     headers = headersDefault;
@@ -1406,7 +1410,8 @@ function escribirSolicitudIntExt(sheet, data) {
   function valorParaHeader(headerRaw) {
     var h = String(headerRaw || "").toUpperCase().replace(/\s+/g, " ").trim();
     if (h === "ID" || h === "ID.") return data.id || ("SIE-" + new Date().getTime());
-    if (h.indexOf("ENTREGA") !== -1) return data.fechaEntrega || "";
+    if (h.indexOf("HORA") !== -1) return data.horaEntrega || "";
+    if (h === "FECHA ENTREGA" || (h.indexOf("ENTREGA") !== -1 && h.indexOf("HORA") === -1)) return data.fechaEntrega || "";
     if (h.indexOf("SOLICITUD") !== -1 || h === "FECHA") return data.fechaSolicitud || "";
     if (h.indexOf("CÓDIGO") !== -1 || h.indexOf("CODIGO") !== -1) return data.codigo || "";
     if (h.indexOf("NOMBRE") !== -1) return data.nombre || "";

@@ -36,13 +36,14 @@ export interface SolicitudIntExt {
   fechaSolicitud: string;
   codigo: string;
   nombre: string;
-  sede: string;
-  area: string;
+  sede?: string;
+  area?: string;
   producto: string;
   cantidad: number;
   motivo: string;
   semana?: string;
   fechaEntrega: string;
+  horaEntrega?: string;
   observacion: string;
   notificado?: string;
   estado?: string;

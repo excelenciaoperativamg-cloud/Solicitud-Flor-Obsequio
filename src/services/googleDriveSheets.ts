@@ -450,19 +450,18 @@ export const appendSolicitudIntExtToDrive = async (
       solicitud.fechaSolicitud,
       solicitud.codigo,
       solicitud.nombre,
-      solicitud.sede,
-      solicitud.area,
       solicitud.producto,
       solicitud.cantidad,
       solicitud.motivo,
       solicitud.semana || '',
       solicitud.fechaEntrega,
+      solicitud.horaEntrega || '',
       solicitud.observacion || '',
-      solicitud.estado || 'Registrada',
+      solicitud.notificado || solicitud.estado || 'Registrada',
     ],
   ];
 
-  const sheetRange = encodeURIComponent('Especiales Empresa!A:M');
+  const sheetRange = encodeURIComponent('Especiales Empresa!A:L');
   const res = await fetch(
     `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${sheetRange}:append?valueInputOption=USER_ENTERED`,
     {
@@ -490,7 +489,7 @@ export const fetchSolicitudesIntExtFromDrive = async (
   accessToken: string,
   spreadsheetId: string
 ): Promise<SolicitudIntExt[]> => {
-  const sheetRange = encodeURIComponent('Especiales Empresa!A2:M');
+  const sheetRange = encodeURIComponent('Especiales Empresa!A2:L');
   const res = await fetch(
     `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${sheetRange}`,
     {
@@ -512,15 +511,15 @@ export const fetchSolicitudesIntExtFromDrive = async (
       fechaSolicitud: String(r[1] || '').trim(),
       codigo: String(r[2] || '').trim(),
       nombre: String(r[3] || '').trim(),
-      sede: String(r[4] || '').trim(),
-      area: String(r[5] || '').trim(),
-      producto: String(r[6] || '').trim(),
-      cantidad: Math.max(1, parseInt(r[7], 10) || 1),
-      motivo: String(r[8] || '').trim(),
-      semana: String(r[9] || '').trim(),
-      fechaEntrega: String(r[10] || '').trim(),
-      observacion: String(r[11] || '').trim(),
-      estado: String(r[12] || 'Registrada').trim(),
+      producto: String(r[4] || '').trim(),
+      cantidad: Math.max(1, parseInt(r[5], 10) || 1),
+      motivo: String(r[6] || '').trim(),
+      semana: String(r[7] || '').trim(),
+      fechaEntrega: String(r[8] || '').trim(),
+      horaEntrega: String(r[9] || '').trim(),
+      observacion: String(r[10] || '').trim(),
+      notificado: String(r[11] || 'Registrada').trim(),
+      estado: String(r[11] || 'Registrada').trim(),
       syncedToDrive: true,
       creadoEn: Date.now(),
     }));

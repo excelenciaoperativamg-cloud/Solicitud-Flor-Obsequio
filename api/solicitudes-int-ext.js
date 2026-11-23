@@ -5,6 +5,16 @@ import {
   callAppsScript,
 } from './_lib/storage.js';
 
+function normalizarHoraEntrega(raw) {
+  const txt = String(raw || '').trim();
+  if (!txt) return '';
+  const hhmm = txt.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if (hhmm) {
+    return `${String(hhmm[1]).padStart(2, '0')}:${hhmm[2]}`;
+  }
+  return txt;
+}
+
 function normalizarIntExt(s) {
   const cantidadNum = Number(s?.cantidad);
   const semanaStr = String(s?.semana || '').match(/(\d+)/)?.[1] || String(s?.semana || '').trim();
@@ -21,6 +31,7 @@ function normalizarIntExt(s) {
     motivo: String(s?.motivo || '').trim(),
     semana: semanaStr,
     fechaEntrega: String(s?.fechaEntrega || '').trim(),
+    horaEntrega: normalizarHoraEntrega(s?.horaEntrega),
     observacion: String(s?.observacion || '').trim(),
     notificado: notificadoVal,
     estado: notificadoVal,
@@ -175,7 +186,14 @@ export default async function handler(req, res) {
       if (itemsInput.length === 0) {
         return res.status(400).json({
           success: false,
-          error: 'Debe enviar al menos un producto para registrar en Especiales Empresa.',
+          error: 'Debe seleccionar un producto para registrar en Especiales Empresa.',
+        });
+      }
+
+      if (itemsInput.length > 1) {
+        return res.status(400).json({
+          success: false,
+          error: 'En Especiales Empresa solo se permite seleccionar un producto por solicitud.',
         });
       }
 
@@ -203,11 +221,10 @@ export default async function handler(req, res) {
           !item ||
           !item.codigo ||
           !item.nombre ||
-          !item.sede ||
-          !item.area ||
           !item.producto ||
           !item.motivo ||
-          !item.fechaEntrega
+          !item.fechaEntrega ||
+          !normalizarHoraEntrega(item.horaEntrega)
         ) {
           return res.status(400).json({
             success: false,
@@ -262,13 +279,12 @@ export default async function handler(req, res) {
           fechaSolicitud: String(item.fechaSolicitud || '').trim(),
           codigo: String(item.codigo).trim(),
           nombre: String(item.nombre).trim(),
-          sede: String(item.sede).trim(),
-          area: String(item.area).trim(),
           producto: String(item.producto).trim(),
           cantidad: cantidadNum,
           motivo: String(item.motivo).trim(),
           semana: String(item.semana || '').match(/(\d+)/)?.[1] || String(item.semana || '').trim(),
           fechaEntrega: String(item.fechaEntrega).trim(),
+          horaEntrega: normalizarHoraEntrega(item.horaEntrega),
           observacion: String(item.observacion || '').trim(),
           notificado: notificadoFinal,
           estado: notificadoFinal,

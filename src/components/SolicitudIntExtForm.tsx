@@ -1,7 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   FilePlus2,
-  Building2,
   Sparkles,
   Calendar,
   MessageSquare,
@@ -50,18 +49,16 @@ interface SolicitudIntExtFormProps {
   onCerrarSesion?: () => void;
 }
 
-const SEDES_INTERNAS = ['MG', 'HA', 'SC'] as const;
-const AREAS_BASE = ['Gestión Humana', 'Mipe', 'Poscosecha'] as const;
-const ROSA_VARIANTES_INT_EXT = ['Rosa (Color)', 'Rosa (Roja)'] as const;
-const PRODUCTOS_RESTO_INT_EXT = ['Clavel', 'Alstroemeria', 'Bouquet'] as const;
+const ROSA_VARIANTES_INT_EXT = ['Rosa (Color)', 'Rosa (Roja)', 'Bouquet'] as const;
+const PRODUCTOS_RESTO_INT_EXT = ['Clavel', 'Alstroemeria'] as const;
 const PRODUCTOS_INT_EXT = [
   'Rosa (Color)',
   'Rosa (Roja)',
+  'Bouquet',
   'Clavel',
   'Alstroemeria',
-  'Bouquet',
 ] as const;
-const MOTIVOS_INT_EXT = [
+const MOTIVOS_BASE_INT_EXT = [
   'Cumpleaños',
   'Grados',
   'Día de la Mujer',
@@ -70,6 +67,7 @@ const MOTIVOS_INT_EXT = [
   'Día del Padre',
   'Festival de Talentos',
   'Homenaje a Pensionados',
+  'Floreros',
 ] as const;
 
 const EMAIL_ITEM_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -125,26 +123,25 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
   onCerrarSesion,
 }) => {
   const fechaSolicitud = getTodayString();
-  const [sedeTipo, setSedeTipo] = useState<'MG' | 'HA' | 'SC' | null>(null);
 
-  const [areasPersonalizadas, setAreasPersonalizadas] = useState<string[]>(() => {
+  // Mapa con máximo 1 producto seleccionado -> cantidad ingresada como string
+  const [productosCantidades, setProductosCantidades] = useState<Record<string, string>>({});
+  const [rosaAbierto, setRosaAbierto] = useState(false);
+
+  const [motivosPersonalizados, setMotivosPersonalizados] = useState<string[]>(() => {
     try {
-      const saved = localStorage.getItem('sfo_areas_int_ext_custom');
+      const saved = localStorage.getItem('sfo_motivos_int_ext_custom');
       return saved ? JSON.parse(saved) : [];
     } catch {
       return [];
     }
   });
-  const [areaSeleccionada, setAreaSeleccionada] = useState('');
-  const [mostrandoInputArea, setMostrandoInputArea] = useState(false);
-  const [nuevaAreaInput, setNuevaAreaInput] = useState('');
-
-  // Mapa de productos seleccionados -> cantidad ingresada como string
-  const [productosCantidades, setProductosCantidades] = useState<Record<string, string>>({});
-  const [rosaAbierto, setRosaAbierto] = useState(false);
   const [motivoSeleccionado, setMotivoSeleccionado] = useState('');
-  const [otroMotivo, setOtroMotivo] = useState('');
+  const [mostrandoInputMotivo, setMostrandoInputMotivo] = useState(false);
+  const [nuevoMotivoInput, setNuevoMotivoInput] = useState('');
+
   const [fechaEntrega, setFechaEntrega] = useState(getTodayString());
+  const [horaEntrega, setHoraEntrega] = useState('');
   const [correoNotificacion, setCorreoNotificacion] = useState('');
   const [observacion, setObservacion] = useState('');
 
@@ -165,9 +162,9 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
 
   useEffect(() => {
     try {
-      localStorage.setItem('sfo_areas_int_ext_custom', JSON.stringify(areasPersonalizadas));
+      localStorage.setItem('sfo_motivos_int_ext_custom', JSON.stringify(motivosPersonalizados));
     } catch {}
-  }, [areasPersonalizadas]);
+  }, [motivosPersonalizados]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -206,64 +203,63 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
     }, 0);
   }, [productosSeleccionadosOrdenados, productosCantidades]);
 
-  const sedeFinal = sedeTipo || '';
-  const areaFinal = mostrandoInputArea && nuevaAreaInput.trim()
-    ? nuevaAreaInput.trim()
-    : areaSeleccionada.trim();
-  const motivoFinal = motivoSeleccionado === 'Otro' ? otroMotivo.trim() : motivoSeleccionado;
+  const motivoFinal = mostrandoInputMotivo && nuevoMotivoInput.trim()
+    ? nuevoMotivoInput.trim()
+    : motivoSeleccionado.trim();
 
-  const opcionesAreaVisibles = useMemo(() => {
-    const set = new Set<string>([...AREAS_BASE, ...areasPersonalizadas]);
+  const opcionesMotivoVisibles = useMemo(() => {
+    const set = new Set<string>([...MOTIVOS_BASE_INT_EXT, ...motivosPersonalizados]);
     return Array.from(set);
-  }, [areasPersonalizadas]);
+  }, [motivosPersonalizados]);
 
   const rosaColorActivo = Object.prototype.hasOwnProperty.call(productosCantidades, 'Rosa (Color)');
   const rosaRojaActivo = Object.prototype.hasOwnProperty.call(productosCantidades, 'Rosa (Roja)');
-  const rosaTieneSeleccion = rosaColorActivo || rosaRojaActivo;
+  const bouquetActivo = Object.prototype.hasOwnProperty.call(productosCantidades, 'Bouquet');
+  const rosaTieneSeleccion = rosaColorActivo || rosaRojaActivo || bouquetActivo;
   const rosaExpandido = rosaAbierto || rosaTieneSeleccion;
 
   const toggleRosaPrincipal = () => {
     if (rosaExpandido) {
       setRosaAbierto(false);
-      setProductosCantidades((prev) => {
-        const next = { ...prev };
-        delete next['Rosa (Color)'];
-        delete next['Rosa (Roja)'];
-        return next;
-      });
-      setErrores((prev) => {
-        const next = { ...prev };
-        delete next.producto;
-        delete next.cantidad;
-        delete next['cant_Rosa (Color)'];
-        delete next['cant_Rosa (Roja)'];
-        return next;
-      });
+      setProductosCantidades({});
     } else {
       setRosaAbierto(true);
-      setErrores((prev) => {
-        const next = { ...prev };
-        delete next.producto;
-        return next;
+      // Al abrir Rosa, limpiar cualquier otro producto externo seleccionado para mantener selección única
+      setProductosCantidades((prev) => {
+        const tieneVarianteRosa = ROSA_VARIANTES_INT_EXT.some((v) =>
+          Object.prototype.hasOwnProperty.call(prev, v)
+        );
+        return tieneVarianteRosa ? prev : {};
       });
     }
-  };
-
-  const toggleProducto = (prod: string) => {
-    setProductosCantidades((prev) => {
-      const next = { ...prev };
-      if (Object.prototype.hasOwnProperty.call(next, prod)) {
-        delete next[prod];
-      } else {
-        next[prod] = '1';
-      }
-      return next;
-    });
     setErrores((prev) => {
       const next = { ...prev };
       delete next.producto;
       delete next.cantidad;
-      delete next[`cant_${prod}`];
+      return next;
+    });
+  };
+
+  const toggleProducto = (prod: string) => {
+    const esVarianteRosa = (ROSA_VARIANTES_INT_EXT as readonly string[]).includes(prod);
+    setProductosCantidades((prev) => {
+      if (Object.prototype.hasOwnProperty.call(prev, prod)) {
+        return {};
+      }
+      return { [prod]: '1' };
+    });
+    if (!esVarianteRosa) {
+      setRosaAbierto(false);
+    } else {
+      setRosaAbierto(true);
+    }
+    setErrores((prev) => {
+      const next: Record<string, string> = {};
+      for (const k of Object.keys(prev)) {
+        if (k !== 'producto' && k !== 'cantidad' && !k.startsWith('cant_')) {
+          next[k] = prev[k];
+        }
+      }
       return next;
     });
   };
@@ -281,32 +277,30 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
     });
   };
 
-  const handleAgregarAreaPersonalizada = () => {
-    const limpia = nuevaAreaInput.trim();
-    if (!limpia) return;
-    if (!opcionesAreaVisibles.some((a) => a.toLowerCase() === limpia.toLowerCase())) {
-      setAreasPersonalizadas((prev) => [...prev, limpia]);
+  const handleAgregarMotivoPersonalizado = () => {
+    const limpio = nuevoMotivoInput.trim();
+    if (!limpio) return;
+    if (!opcionesMotivoVisibles.some((m) => m.toLowerCase() === limpio.toLowerCase())) {
+      setMotivosPersonalizados((prev) => [...prev, limpio]);
     }
-    setAreaSeleccionada(limpia);
-    setNuevaAreaInput('');
-    setMostrandoInputArea(false);
+    setMotivoSeleccionado(limpio);
+    setNuevoMotivoInput('');
+    setMostrandoInputMotivo(false);
     setErrores((prev) => {
       const next = { ...prev };
-      delete next.area;
+      delete next.motivo;
       return next;
     });
   };
 
   const limpiarFormulario = () => {
-    setSedeTipo(null);
-    setAreaSeleccionada('');
-    setMostrandoInputArea(false);
-    setNuevaAreaInput('');
     setProductosCantidades({});
     setRosaAbierto(false);
     setMotivoSeleccionado('');
-    setOtroMotivo('');
+    setMostrandoInputMotivo(false);
+    setNuevoMotivoInput('');
     setFechaEntrega(getTodayString());
+    setHoraEntrega('');
     setCorreoNotificacion('');
     setObservacion('');
     setErrores({});
@@ -315,26 +309,26 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
   const validar = (): boolean => {
     const nuevos: Record<string, string> = {};
     if (!fechaSolicitud) nuevos.fechaSolicitud = 'La fecha de solicitud es obligatoria.';
-    if (!sedeTipo) nuevos.sede = 'Seleccione la sede (MG, HA o SC).';
-    if (!areaFinal) nuevos.area = 'Seleccione o ingrese el área.';
 
     if (productosSeleccionadosOrdenados.length === 0) {
       nuevos.producto = rosaAbierto
-        ? 'Seleccione Rosa (Color) y/o Rosa (Roja), o elija otro producto.'
-        : 'Seleccione al menos un producto.';
+        ? 'Seleccione Rosa (Color), Rosa (Roja) o Bouquet, o elija otro producto.'
+        : 'Seleccione un producto.';
+    } else if (productosSeleccionadosOrdenados.length > 1) {
+      nuevos.producto = 'Solo se permite seleccionar un producto por solicitud.';
     } else {
-      for (const prod of productosSeleccionadosOrdenados) {
-        const rawCant = productosCantidades[prod];
-        const cantNum = Number(rawCant);
-        if (!rawCant || Number.isNaN(cantNum) || cantNum < 1 || !Number.isInteger(cantNum)) {
-          nuevos[`cant_${prod}`] = `Ingrese una cantidad válida (mínimo 1) para ${prod}.`;
-          nuevos.cantidad = 'Verifique las cantidades ingresadas en los productos seleccionados.';
-        }
+      const prod = productosSeleccionadosOrdenados[0];
+      const rawCant = productosCantidades[prod];
+      const cantNum = Number(rawCant);
+      if (!rawCant || Number.isNaN(cantNum) || cantNum < 1 || !Number.isInteger(cantNum)) {
+        nuevos[`cant_${prod}`] = `Ingrese una cantidad válida (mínimo 1) para ${prod}.`;
+        nuevos.cantidad = 'Verifique la cantidad ingresada en el producto seleccionado.';
       }
     }
 
-    if (!motivoFinal) nuevos.motivo = 'Seleccione o especifique el motivo.';
+    if (!motivoFinal) nuevos.motivo = 'Seleccione o agregue un motivo.';
     if (!fechaEntrega) nuevos.fechaEntrega = 'Seleccione la fecha de entrega.';
+    if (!horaEntrega) nuevos.horaEntrega = 'Seleccione la hora de entrega.';
 
     const { correos: correosValidos, invalidos: correosInvalidos } = parsearListaCorreos(
       correoNotificacion
@@ -354,10 +348,10 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
     e.preventDefault();
     if (!validar()) return;
 
-    if (sedeTipo && mostrandoInputArea && nuevaAreaInput.trim()) {
-      const limpia = nuevaAreaInput.trim();
-      if (!opcionesAreaVisibles.some((a) => a.toLowerCase() === limpia.toLowerCase())) {
-        setAreasPersonalizadas((prev) => [...prev, limpia]);
+    if (mostrandoInputMotivo && nuevoMotivoInput.trim()) {
+      const limpio = nuevoMotivoInput.trim();
+      if (!opcionesMotivoVisibles.some((m) => m.toLowerCase() === limpio.toLowerCase())) {
+        setMotivosPersonalizados((prev) => [...prev, limpio]);
       }
     }
 
@@ -367,24 +361,25 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
     const ahora = Date.now();
     const { normalizado: correoDestino } = parsearListaCorreos(correoNotificacion);
 
-    // Un registro independiente por cada producto seleccionado; el correo notificado se aloja en Notificado
-    const registrosAEnviar: SolicitudIntExt[] = productosSeleccionadosOrdenados.map((prod, idx) => ({
-      id: `SIE-${year}-${String(siguienteNumeroId + idx).padStart(3, '0')}`,
-      fechaSolicitud,
-      codigo: sesion.codigo.trim(),
-      nombre: sesion.nombre.trim(),
-      sede: sedeFinal,
-      area: areaFinal,
-      producto: prod,
-      cantidad: Math.max(1, Math.floor(Number(productosCantidades[prod]) || 1)),
-      motivo: motivoFinal,
-      semana: semanaCalculada,
-      fechaEntrega,
-      observacion: observacion.trim(),
-      notificado: correoDestino,
-      estado: correoDestino,
-      creadoEn: ahora + idx,
-    }));
+    const productoUnico = productosSeleccionadosOrdenados[0];
+    const registrosAEnviar: SolicitudIntExt[] = [
+      {
+        id: `SIE-${year}-${String(siguienteNumeroId).padStart(3, '0')}`,
+        fechaSolicitud,
+        codigo: sesion.codigo.trim(),
+        nombre: sesion.nombre.trim(),
+        producto: productoUnico,
+        cantidad: Math.max(1, Math.floor(Number(productosCantidades[productoUnico]) || 1)),
+        motivo: motivoFinal,
+        semana: semanaCalculada,
+        fechaEntrega,
+        horaEntrega,
+        observacion: observacion.trim(),
+        notificado: correoDestino,
+        estado: correoDestino,
+        creadoEn: ahora,
+      },
+    ];
 
     try {
       const res = await onGuardarSolicitudIntExt(registrosAEnviar, correoDestino);
@@ -472,10 +467,9 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
         s.id.toLowerCase().includes(q) ||
         s.nombre.toLowerCase().includes(q) ||
         s.codigo.toLowerCase().includes(q) ||
-        s.sede.toLowerCase().includes(q) ||
-        s.area.toLowerCase().includes(q) ||
         s.producto.toLowerCase().includes(q) ||
         s.motivo.toLowerCase().includes(q) ||
+        (s.horaEntrega || '').toLowerCase().includes(q) ||
         s.observacion.toLowerCase().includes(q) ||
         (semNum > 0 && `semana ${semNum}`.includes(q)) ||
         (s.notificado || s.estado || '').toLowerCase().includes(q);
@@ -502,13 +496,12 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
       'Fecha Solicitud': s.fechaSolicitud,
       Código: s.codigo,
       Nombre: s.nombre,
-      Sede: s.sede,
-      Area: s.area,
       Producto: s.producto,
       Cantidad: s.cantidad,
       Motivo: s.motivo,
       Semana: s.semana || (s.fechaEntrega ? String(getISOWeekNumber(s.fechaEntrega)) : ''),
       'Fecha Entrega': s.fechaEntrega,
+      'Hora Entrega': s.horaEntrega || '',
       Observación: s.observacion,
       Notificado: s.notificado || s.estado || 'Registrada',
     }));
@@ -642,12 +635,6 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
                   {primeraExitosa.nombre} ({primeraExitosa.codigo})
                 </span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Sede / Área:</span>
-                <span className="font-bold text-slate-900">
-                  {primeraExitosa.sede} · {primeraExitosa.area}
-                </span>
-              </div>
 
               {solicitudesExitosas.length === 1 ? (
                 <>
@@ -716,6 +703,12 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
                 <span className="text-slate-500">Fecha Entrega:</span>
                 <span className="font-semibold text-slate-900">
                   {formatDateSpanish(primeraExitosa.fechaEntrega)}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Hora Entrega:</span>
+                <span className="font-semibold font-mono text-[#0a2958]">
+                  {primeraExitosa.horaEntrega || '—'}
                 </span>
               </div>
               <div className="flex justify-between gap-3">
@@ -824,142 +817,18 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
         )}
 
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
-          {/* 1. SEDE */}
-          <div className="space-y-4">
-            <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
-              <Building2 className="w-4 h-4 text-[#0a2958]" />
-              <h3 className="text-sm font-extrabold text-[#0a2958] uppercase tracking-wider">
-                1. SEDE
-              </h3>
-            </div>
-
-            <div>
-              <p className="text-xs text-slate-600 font-medium mb-2.5">
-                Seleccione la sede que requiere el producto.
-              </p>
-              <div className="grid grid-cols-3 gap-2.5">
-                {SEDES_INTERNAS.map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => {
-                      setSedeTipo(s);
-                      setErrores((prev) => {
-                        const next = { ...prev };
-                        delete next.sede;
-                        return next;
-                      });
-                    }}
-                    className={`px-4 py-2.5 rounded-xl border text-xs font-bold transition cursor-pointer ${
-                      sedeTipo === s
-                        ? 'bg-[#0a2958] text-white border-[#0a2958] shadow-xs'
-                        : 'bg-white text-slate-700 border-slate-200 hover:border-[#0a2958]/40'
-                    }`}
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
-              {errores.sede && (
-                <p className="text-[11px] text-[#E60000] font-semibold mt-1.5">{errores.sede}</p>
-              )}
-            </div>
-
-            {sedeTipo && (
-              <div className="space-y-2.5 pt-1">
-                <div className="flex flex-wrap gap-2">
-                  {opcionesAreaVisibles.map((areaOp) => (
-                    <button
-                      key={areaOp}
-                      type="button"
-                      onClick={() => {
-                        setAreaSeleccionada(areaOp);
-                        setMostrandoInputArea(false);
-                        setErrores((prev) => {
-                          const next = { ...prev };
-                          delete next.area;
-                          return next;
-                        });
-                      }}
-                      className={`px-3.5 py-2 rounded-xl border text-xs font-bold transition cursor-pointer ${
-                        !mostrandoInputArea && areaSeleccionada === areaOp
-                          ? 'bg-[#0a2958] text-white border-[#0a2958] shadow-xs'
-                          : 'bg-white text-slate-700 border-slate-200 hover:border-[#0a2958]/40'
-                      }`}
-                    >
-                      {areaOp}
-                    </button>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMostrandoInputArea((prev) => !prev);
-                      setErrores((prev) => {
-                        const next = { ...prev };
-                        delete next.area;
-                        return next;
-                      });
-                    }}
-                    className={`px-3.5 py-2 rounded-xl border text-xs font-bold transition inline-flex items-center gap-1.5 cursor-pointer ${
-                      mostrandoInputArea
-                        ? 'bg-[#E60000]/10 text-[#E60000] border-[#E60000]/40'
-                        : 'bg-slate-50 text-slate-700 border-dashed border-slate-300 hover:border-[#0a2958]'
-                    }`}
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>Agregar otra área</span>
-                  </button>
-                </div>
-
-                {mostrandoInputArea && (
-                  <div className="flex flex-col sm:flex-row gap-2 max-w-md">
-                    <input
-                      type="text"
-                      value={nuevaAreaInput}
-                      onChange={(e) => {
-                        setNuevaAreaInput(e.target.value);
-                        setErrores((prev) => {
-                          const next = { ...prev };
-                          delete next.area;
-                          return next;
-                        });
-                      }}
-                      placeholder="Escriba el nombre de la nueva área…"
-                      className="flex-1 px-3.5 py-2 text-xs rounded-xl border border-slate-300 focus:border-[#0a2958] outline-hidden font-medium"
-                    />
-                    <button
-                      type="button"
-                      onClick={handleAgregarAreaPersonalizada}
-                      className="px-4 py-2 rounded-xl bg-[#0a2958] text-white text-xs font-bold hover:bg-[#0d346e] cursor-pointer"
-                    >
-                      Agregar
-                    </button>
-                  </div>
-                )}
-
-                {errores.area && (
-                  <p className="text-[11px] text-[#E60000] font-semibold mt-1.5">{errores.area}</p>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* 2. PRODUCTO Y CANTIDAD */}
+          {/* 1. PRODUCTO Y CANTIDAD */}
           <div className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-100">
               <div className="flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-[#0a2958]" />
                 <h3 className="text-sm font-extrabold text-[#0a2958] uppercase tracking-wider">
-                  2. PRODUCTO Y CANTIDAD
+                  1. PRODUCTO Y CANTIDAD
                 </h3>
               </div>
               {productosSeleccionadosOrdenados.length > 0 && (
                 <span className="text-[11px] font-bold text-[#0a2958] bg-[#0a2958]/10 px-2.5 py-1 rounded-lg">
-                  {productosSeleccionadosOrdenados.length}{' '}
-                  {productosSeleccionadosOrdenados.length === 1
-                    ? 'producto (1 registro)'
-                    : 'productos (se guardan por separado)'}{' '}
-                  · Total:{' '}
+                  {productosSeleccionadosOrdenados[0]} · Total:{' '}
                   <strong className="font-mono tabular-nums">
                     {totalRamosSeleccionados} ramos
                   </strong>
@@ -971,11 +840,11 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
               <label className="block text-xs font-bold text-slate-700 mb-2">
                 Producto <span className="text-[#E60000]">*</span>{' '}
                 <span className="text-[11px] font-normal text-slate-500">
-                  (Puede seleccionar varios productos; cada uno se guarda por separado)
+                  (Seleccione un producto)
                 </span>
               </label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-start">
-                {/* Tarjeta Rosa con subopciones Rosa (Color) y Rosa (Roja) */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-start">
+                {/* Tarjeta Rosa con subopciones Rosa (Color), Rosa (Roja) y Bouquet */}
                 <div
                   className={`rounded-xl border p-3 transition ${
                     rosaExpandido
@@ -1091,7 +960,7 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
                   )}
                 </div>
 
-                {/* Clavel, Alstroemeria, Bouquet */}
+                {/* Clavel, Alstroemeria */}
                 {PRODUCTOS_RESTO_INT_EXT.map((prod) => {
                   const activo = Object.prototype.hasOwnProperty.call(
                     productosCantidades,
@@ -1181,78 +1050,111 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
             </div>
           </div>
 
-          {/* 3. Motivo, Fecha de Entrega y Observación */}
+          {/* 2. Motivo, Entrega y Observación */}
           <div className="space-y-4">
             <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
               <Calendar className="w-4 h-4 text-[#0a2958]" />
               <h3 className="text-sm font-extrabold text-[#0a2958] uppercase tracking-wider">
-                3. Motivo, Entrega y Observación
+                2. Motivo, Entrega y Observación
               </h3>
+            </div>
+
+            {/* Motivo con opciones + Floreros + Agregar otro motivo */}
+            <div className="space-y-2.5">
+              <label className="block text-xs font-bold text-slate-700">
+                Motivo <span className="text-[#E60000]">*</span>
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {opcionesMotivoVisibles.map((mot) => (
+                  <button
+                    key={mot}
+                    type="button"
+                    onClick={() => {
+                      setMotivoSeleccionado(mot);
+                      setMostrandoInputMotivo(false);
+                      setErrores((prev) => {
+                        const next = { ...prev };
+                        delete next.motivo;
+                        return next;
+                      });
+                    }}
+                    className={`px-3.5 py-2 rounded-xl border text-xs font-bold transition cursor-pointer ${
+                      !mostrandoInputMotivo && motivoSeleccionado === mot
+                        ? 'bg-[#0a2958] text-white border-[#0a2958] shadow-xs'
+                        : 'bg-white text-slate-700 border-slate-200 hover:border-[#0a2958]/40'
+                    }`}
+                  >
+                    {mot}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMostrandoInputMotivo((prev) => !prev);
+                    setErrores((prev) => {
+                      const next = { ...prev };
+                      delete next.motivo;
+                      return next;
+                    });
+                  }}
+                  className={`px-3.5 py-2 rounded-xl border text-xs font-bold transition inline-flex items-center gap-1.5 cursor-pointer ${
+                    mostrandoInputMotivo
+                      ? 'bg-[#E60000]/10 text-[#E60000] border-[#E60000]/40'
+                      : 'bg-slate-50 text-slate-700 border-dashed border-slate-300 hover:border-[#0a2958]'
+                  }`}
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Agregar otro motivo</span>
+                </button>
+              </div>
+
+              {mostrandoInputMotivo && (
+                <div className="flex flex-col sm:flex-row gap-2 max-w-md pt-1">
+                  <input
+                    type="text"
+                    value={nuevoMotivoInput}
+                    onChange={(e) => {
+                      setNuevoMotivoInput(e.target.value);
+                      setErrores((prev) => {
+                        const next = { ...prev };
+                        delete next.motivo;
+                        return next;
+                      });
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAgregarMotivoPersonalizado();
+                      }
+                    }}
+                    placeholder="Escriba el nuevo motivo…"
+                    className="flex-1 px-3.5 py-2 text-xs rounded-xl border border-slate-300 focus:border-[#0a2958] outline-hidden font-medium"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAgregarMotivoPersonalizado}
+                    className="px-4 py-2 rounded-xl bg-[#0a2958] text-white text-xs font-bold hover:bg-[#0d346e] cursor-pointer"
+                  >
+                    Agregar
+                  </button>
+                </div>
+              )}
+
+              {errores.motivo && (
+                <p className="text-[11px] text-[#E60000] font-semibold">{errores.motivo}</p>
+              )}
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
               <div>
                 <label
-                  htmlFor="select-motivo-especiales"
+                  htmlFor="fecha-entrega-especiales"
                   className="block text-xs font-bold text-slate-700 mb-1.5"
                 >
-                  Motivo <span className="text-[#E60000]">*</span>
-                </label>
-                <div className="relative">
-                  <select
-                    id="select-motivo-especiales"
-                    value={motivoSeleccionado}
-                    onChange={(e) => {
-                      setMotivoSeleccionado(e.target.value);
-                      setErrores((prev) => {
-                        const next = { ...prev };
-                        delete next.motivo;
-                        return next;
-                      });
-                    }}
-                    className={`w-full appearance-none pl-3.5 pr-9 py-2.5 text-xs rounded-xl border font-bold bg-white outline-hidden cursor-pointer ${
-                      errores.motivo
-                        ? 'border-rose-400 bg-rose-50/40 text-slate-900'
-                        : 'border-slate-300 focus:border-[#0a2958] text-slate-800'
-                    }`}
-                  >
-                    <option value="">Seleccione un motivo…</option>
-                    {MOTIVOS_INT_EXT.map((m) => (
-                      <option key={m} value={m}>
-                        {m}
-                      </option>
-                    ))}
-                    <option value="Otro">Otro motivo…</option>
-                  </select>
-                  <ChevronDown className="w-4 h-4 text-slate-500 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                </div>
-
-                {motivoSeleccionado === 'Otro' && (
-                  <input
-                    type="text"
-                    value={otroMotivo}
-                    onChange={(e) => {
-                      setOtroMotivo(e.target.value);
-                      setErrores((prev) => {
-                        const next = { ...prev };
-                        delete next.motivo;
-                        return next;
-                      });
-                    }}
-                    placeholder="Especifique el motivo…"
-                    className="mt-2.5 w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-300 focus:border-[#0a2958] outline-hidden font-medium"
-                  />
-                )}
-                {errores.motivo && (
-                  <p className="text-[11px] text-[#E60000] font-semibold mt-1.5">{errores.motivo}</p>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">
                   Fecha Entrega <span className="text-[#E60000]">*</span>
                 </label>
                 <input
+                  id="fecha-entrega-especiales"
                   type="date"
                   value={fechaEntrega}
                   onChange={(e) => {
@@ -1269,6 +1171,34 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
                 />
                 {errores.fechaEntrega && (
                   <p className="text-[11px] text-[#E60000] font-semibold mt-1">{errores.fechaEntrega}</p>
+                )}
+              </div>
+
+              <div>
+                <label
+                  htmlFor="hora-entrega-especiales"
+                  className="block text-xs font-bold text-slate-700 mb-1.5"
+                >
+                  Hora Entrega <span className="text-[#E60000]">*</span>
+                </label>
+                <input
+                  id="hora-entrega-especiales"
+                  type="time"
+                  value={horaEntrega}
+                  onChange={(e) => {
+                    setHoraEntrega(e.target.value);
+                    setErrores((prev) => {
+                      const next = { ...prev };
+                      delete next.horaEntrega;
+                      return next;
+                    });
+                  }}
+                  className={`w-full px-3.5 py-2.5 text-xs rounded-xl border font-semibold outline-hidden ${
+                    errores.horaEntrega ? 'border-rose-400 bg-rose-50/40' : 'border-slate-300 focus:border-[#0a2958]'
+                  }`}
+                />
+                {errores.horaEntrega && (
+                  <p className="text-[11px] text-[#E60000] font-semibold mt-1">{errores.horaEntrega}</p>
                 )}
               </div>
             </div>
@@ -1343,11 +1273,7 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
               ) : (
                 <>
                   <Send className="w-4 h-4 text-[#E60000]" />
-                  <span>
-                    {productosSeleccionadosOrdenados.length > 1
-                      ? `Registrar ${productosSeleccionadosOrdenados.length} productos`
-                      : 'Registrar Especiales Empresa'}
-                  </span>
+                  <span>Registrar Especiales Empresa</span>
                 </>
               )}
             </button>
@@ -1408,7 +1334,7 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
                 type="text"
                 value={busquedaTabla}
                 onChange={(e) => setBusquedaTabla(e.target.value)}
-                placeholder="Buscar por ID, nombre, sede, área, motivo o correo…"
+                placeholder="Buscar por ID, nombre, producto, motivo o correo…"
                 className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg border border-slate-200 focus:border-[#0a2958] outline-hidden font-medium"
               />
             </div>
@@ -1525,13 +1451,12 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
                 <th className="py-2.5 px-3">Fecha Solicitud</th>
                 <th className="py-2.5 px-3">Código</th>
                 <th className="py-2.5 px-3">Nombre</th>
-                <th className="py-2.5 px-3">Sede</th>
-                <th className="py-2.5 px-3">Area</th>
                 <th className="py-2.5 px-3">Producto</th>
                 <th className="py-2.5 px-3 text-right">Cantidad</th>
                 <th className="py-2.5 px-3">Motivo</th>
                 <th className="py-2.5 px-3">Semana</th>
                 <th className="py-2.5 px-3">Fecha Entrega</th>
+                <th className="py-2.5 px-3">Hora Entrega</th>
                 <th className="py-2.5 px-3">Observación</th>
                 <th className="py-2.5 px-3">Notificado</th>
               </tr>
@@ -1539,7 +1464,7 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
             <tbody className="divide-y divide-slate-100">
               {solicitudesFiltradas.length === 0 ? (
                 <tr>
-                  <td colSpan={13} className="py-8 text-center text-slate-400">
+                  <td colSpan={12} className="py-8 text-center text-slate-400">
                     {solicitudesIntExt.length === 0
                       ? 'No hay registros en Especiales Empresa todavía.'
                       : 'No hay registros que coincidan con los filtros seleccionados.'}
@@ -1554,8 +1479,6 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
                       <td className="py-2.5 px-3 whitespace-nowrap">{s.fechaSolicitud}</td>
                       <td className="py-2.5 px-3 font-mono">{s.codigo}</td>
                       <td className="py-2.5 px-3 font-semibold text-slate-800">{s.nombre}</td>
-                      <td className="py-2.5 px-3 font-bold">{s.sede}</td>
-                      <td className="py-2.5 px-3">{s.area}</td>
                       <td className="py-2.5 px-3 font-semibold">{s.producto}</td>
                       <td className="py-2.5 px-3 text-right font-mono tabular-nums font-bold text-[#0a2958]">{s.cantidad}</td>
                       <td className="py-2.5 px-3">{s.motivo}</td>
@@ -1563,6 +1486,7 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
                         {s.semana || (s.fechaEntrega ? String(getISOWeekNumber(s.fechaEntrega)) : '—')}
                       </td>
                       <td className="py-2.5 px-3 whitespace-nowrap">{s.fechaEntrega}</td>
+                      <td className="py-2.5 px-3 font-mono whitespace-nowrap">{s.horaEntrega || '—'}</td>
                       <td className="py-2.5 px-3 max-w-xs truncate" title={s.observacion}>
                         {s.observacion || '—'}
                       </td>
