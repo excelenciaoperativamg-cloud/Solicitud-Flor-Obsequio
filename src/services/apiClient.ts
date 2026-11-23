@@ -1,4 +1,10 @@
-import { SolicitudFlor, SolicitudIntExt, EspecialPersonal, TrabajadorMaestro } from '../types';
+import {
+  SolicitudFlor,
+  SolicitudIntExt,
+  EspecialPersonal,
+  SolicitudComunidad,
+  TrabajadorMaestro,
+} from '../types';
 
 export interface DriveConfig {
   webhookUrl: string;
@@ -259,12 +265,122 @@ export const retryEmailEspecialesPersonalApi = async (
   };
 };
 
+export const fetchSolicitudComunidadApi = async (): Promise<{
+  solicitudes: SolicitudComunidad[];
+  sheetsSupported: boolean;
+  supportsEmailNotification?: boolean;
+  source: string;
+  solicitudComunidadSheetName?: string;
+  needsAppsScriptUpdate?: boolean;
+}> => {
+  try {
+    const res = await fetch('/api/solicitud-comunidad');
+    if (!res.ok) throw new Error('Error al consultar Solicitud Comunidad');
+    const data = await res.json();
+    return {
+      solicitudes: data.solicitudes || [],
+      sheetsSupported: !!data.sheetsSupported,
+      supportsEmailNotification: !!data.supportsEmailNotification,
+      source: data.source || 'local',
+      solicitudComunidadSheetName: data.solicitudComunidadSheetName || '',
+      needsAppsScriptUpdate: !!data.needsAppsScriptUpdate,
+    };
+  } catch (error) {
+    console.warn('Error consultando Solicitud Comunidad:', error);
+    return {
+      solicitudes: [],
+      sheetsSupported: false,
+      supportsEmailNotification: false,
+      source: 'error',
+      solicitudComunidadSheetName: '',
+      needsAppsScriptUpdate: true,
+    };
+  }
+};
+
+export const createSolicitudComunidadApi = async (
+  solicitudOrList: SolicitudComunidad | SolicitudComunidad[],
+  correoNotificacion?: string,
+  fotoCarta?: { base64: string; mimeType: string; fileName: string } | null
+): Promise<{
+  solicitud: SolicitudComunidad;
+  solicitudes: SolicitudComunidad[];
+  pendingAppsScriptUpdate?: boolean;
+  supportsEmailNotification?: boolean;
+  solicitudComunidadSheetName?: string;
+  needsAppsScriptUpdate?: boolean;
+  fotoCartaDriveError?: string;
+  emailNotification?: EmailNotificationResult;
+}> => {
+  const basePayload = Array.isArray(solicitudOrList)
+    ? { items: solicitudOrList, correoNotificacion: correoNotificacion || '' }
+    : { ...solicitudOrList, correoNotificacion: correoNotificacion || '' };
+
+  const payload = fotoCarta
+    ? {
+        ...basePayload,
+        fotoCartaBase64: fotoCarta.base64,
+        fotoCartaMime: fotoCarta.mimeType,
+        fotoCartaNombre: fotoCarta.fileName,
+      }
+    : basePayload;
+
+  const res = await fetch('/api/solicitud-comunidad', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Error al guardar en Solicitud Comunidad');
+  }
+  const data = await res.json();
+  const solicitudes: SolicitudComunidad[] = Array.isArray(data.solicitudes)
+    ? data.solicitudes
+    : data.solicitud
+    ? [data.solicitud]
+    : [];
+  return {
+    solicitud: data.solicitud || solicitudes[0],
+    solicitudes,
+    pendingAppsScriptUpdate: !!data.pendingAppsScriptUpdate,
+    supportsEmailNotification: !!data.supportsEmailNotification,
+    solicitudComunidadSheetName: data.solicitudComunidadSheetName || '',
+    needsAppsScriptUpdate: !!data.needsAppsScriptUpdate,
+    fotoCartaDriveError: data.fotoCartaDriveError || '',
+    emailNotification: data.emailNotification,
+  };
+};
+
+export const retryEmailSolicitudComunidadApi = async (
+  items: SolicitudComunidad[],
+  correoNotificacion: string
+): Promise<EmailNotificationResult> => {
+  const res = await fetch('/api/solicitud-comunidad', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      action: 'notificar',
+      items,
+      correoNotificacion,
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (data?.emailNotification) return data.emailNotification;
+  return {
+    requested: true,
+    sent: false,
+    to: correoNotificacion,
+    error: data?.error || 'No se pudo reintentar el envío de correo.',
+  };
+};
+
 const isValidWorkerClient = (w: any): w is TrabajadorMaestro => {
   if (!w || typeof w !== 'object') return false;
   const codigo = String(w.codigo || '').trim();
   const nombre = String(w.nombre || '').trim();
   if (!codigo || !nombre) return false;
-  if (/^(SFO|SIE|SE)-\d{4}-/i.test(codigo)) return false;
+  if (/^(SFO|SIE|SE|SEP|SC)-\d{4}-/i.test(codigo)) return false;
   if (/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+[A-Z][a-z]{2}\s+\d{1,2}\s+\d{4}/i.test(nombre)) return false;
   if (/^\d{4}-\d{2}-\d{2}/.test(nombre)) return false;
   return true;

@@ -68,7 +68,15 @@ interface EspecialesPersonalFormProps {
   onCerrarSesion?: () => void;
 }
 
-const PRODUCTOS_EP = ['Rosa', 'Clavel', 'Alstroemeria', 'Bouquet'] as const;
+const ROSA_VARIANTES_EP = ['Rosa (Color)', 'Rosa (Roja)'] as const;
+const PRODUCTOS_RESTO_EP = ['Clavel', 'Alstroemeria', 'Bouquet'] as const;
+const PRODUCTOS_EP = [
+  'Rosa (Color)',
+  'Rosa (Roja)',
+  'Clavel',
+  'Alstroemeria',
+  'Bouquet',
+] as const;
 const MOTIVOS_BASE_EP = ['Matrimonio', '15 años'] as const;
 
 const EMAIL_ITEM_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -198,6 +206,7 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
 
   // Productos y cantidades
   const [productosCantidades, setProductosCantidades] = useState<Record<string, string>>({});
+  const [rosaAbierto, setRosaAbierto] = useState(false);
 
   // Motivos con persistencia para opciones agregadas
   const [motivosPersonalizados, setMotivosPersonalizados] = useState<string[]>(() => {
@@ -335,6 +344,38 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
     mostrandoInputMotivo && nuevoMotivoInput.trim()
       ? nuevoMotivoInput.trim()
       : motivoSeleccionado.trim();
+
+  const rosaColorActivo = Object.prototype.hasOwnProperty.call(productosCantidades, 'Rosa (Color)');
+  const rosaRojaActivo = Object.prototype.hasOwnProperty.call(productosCantidades, 'Rosa (Roja)');
+  const rosaTieneSeleccion = rosaColorActivo || rosaRojaActivo;
+  const rosaExpandido = rosaAbierto || rosaTieneSeleccion;
+
+  const toggleRosaPrincipal = () => {
+    if (rosaExpandido) {
+      setRosaAbierto(false);
+      setProductosCantidades((prev) => {
+        const next = { ...prev };
+        delete next['Rosa (Color)'];
+        delete next['Rosa (Roja)'];
+        return next;
+      });
+      setErrores((prev) => {
+        const next = { ...prev };
+        delete next.producto;
+        delete next.cantidad;
+        delete next['cant_Rosa (Color)'];
+        delete next['cant_Rosa (Roja)'];
+        return next;
+      });
+    } else {
+      setRosaAbierto(true);
+      setErrores((prev) => {
+        const next = { ...prev };
+        delete next.producto;
+        return next;
+      });
+    }
+  };
 
   const toggleProducto = (prod: string) => {
     setProductosCantidades((prev) => {
@@ -490,7 +531,9 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
     }
 
     if (productosSeleccionadosOrdenados.length === 0) {
-      errs.producto = 'Seleccione al menos un producto (Rosa, Clavel, Alstroemeria o Bouquet).';
+      errs.producto = rosaAbierto
+        ? 'Seleccione Rosa (Color) y/o Rosa (Roja), o elija otro producto.'
+        : 'Seleccione al menos un producto (Rosa, Clavel, Alstroemeria o Bouquet).';
     } else {
       for (const prod of productosSeleccionadosOrdenados) {
         const cantNum = Number(productosCantidades[prod]);
@@ -526,6 +569,7 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
   const limpiarFormulario = () => {
     setCedula('');
     setProductosCantidades({});
+    setRosaAbierto(false);
     setMotivoSeleccionado('');
     setMostrandoInputMotivo(false);
     setNuevoMotivoInput('');
@@ -1327,8 +1371,116 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
                   (Puede seleccionar varios productos; cada uno se guarda por separado)
                 </span>
               </label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                {PRODUCTOS_EP.map((prod) => {
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-start">
+                {/* Tarjeta Rosa con subopciones Rosa (Color) y Rosa (Roja) */}
+                <div
+                  className={`rounded-xl border p-3 transition ${
+                    rosaExpandido
+                      ? 'border-[#0a2958] bg-[#0a2958]/[0.04] shadow-xs'
+                      : 'border-slate-200 bg-white hover:border-[#0a2958]/40'
+                  }`}
+                >
+                  <button
+                    type="button"
+                    onClick={toggleRosaPrincipal}
+                    aria-pressed={rosaExpandido}
+                    className="w-full flex items-center justify-between gap-2 text-left cursor-pointer"
+                  >
+                    <span
+                      className={`text-xs font-extrabold ${
+                        rosaExpandido ? 'text-[#0a2958]' : 'text-slate-700'
+                      }`}
+                    >
+                      Rosa
+                    </span>
+                    <span
+                      className={`w-5 h-5 rounded-md flex items-center justify-center border transition ${
+                        rosaExpandido
+                          ? 'bg-[#0a2958] border-[#0a2958] text-white'
+                          : 'border-slate-300 bg-white'
+                      }`}
+                    >
+                      {rosaExpandido && <Check className="w-3.5 h-3.5" />}
+                    </span>
+                  </button>
+
+                  {rosaExpandido && (
+                    <div className="mt-3 pt-2.5 border-t border-slate-200/80 space-y-2">
+                      {ROSA_VARIANTES_EP.map((variante) => {
+                        const activoVar = Object.prototype.hasOwnProperty.call(
+                          productosCantidades,
+                          variante
+                        );
+                        const cantValorVar = productosCantidades[variante] ?? '';
+                        const errCantVar = errores[`cant_${variante}`];
+
+                        return (
+                          <div
+                            key={variante}
+                            className={`rounded-lg border p-2 transition ${
+                              activoVar
+                                ? 'border-[#0a2958]/60 bg-white shadow-2xs'
+                                : 'border-slate-200 bg-white/80 hover:border-[#0a2958]/30'
+                            }`}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => toggleProducto(variante)}
+                              aria-pressed={activoVar}
+                              className="w-full flex items-center justify-between gap-2 text-left cursor-pointer"
+                            >
+                              <span
+                                className={`text-[11px] font-bold ${
+                                  activoVar ? 'text-[#0a2958]' : 'text-slate-700'
+                                }`}
+                              >
+                                {variante}
+                              </span>
+                              <span
+                                className={`w-4 h-4 rounded flex items-center justify-center border transition shrink-0 ${
+                                  activoVar
+                                    ? 'bg-[#0a2958] border-[#0a2958] text-white'
+                                    : 'border-slate-300 bg-white'
+                                }`}
+                              >
+                                {activoVar && <Check className="w-3 h-3" />}
+                              </span>
+                            </button>
+
+                            {activoVar && (
+                              <div className="mt-2 pt-2 border-t border-slate-100">
+                                <label className="block text-[10px] font-bold text-slate-600 mb-1">
+                                  Cantidad <span className="text-[#E60000]">*</span>
+                                </label>
+                                <input
+                                  type="text"
+                                  inputMode="numeric"
+                                  pattern="[0-9]*"
+                                  value={cantValorVar}
+                                  onChange={(e) => cambiarCantidadProducto(variante, e.target.value)}
+                                  placeholder="Ej: 1"
+                                  className={`w-full px-2.5 py-1 text-xs rounded-lg border font-mono font-bold text-[#0a2958] bg-white outline-hidden ${
+                                    errCantVar
+                                      ? 'border-rose-400 bg-rose-50/40'
+                                      : 'border-slate-300 focus:border-[#0a2958]'
+                                  }`}
+                                />
+                                {errCantVar && (
+                                  <p className="text-[10px] text-[#E60000] font-semibold mt-1">
+                                    {errCantVar}
+                                  </p>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Clavel, Alstroemeria, Bouquet */}
+                {PRODUCTOS_RESTO_EP.map((prod) => {
                   const activo = Object.prototype.hasOwnProperty.call(productosCantidades, prod);
                   const cantValor = productosCantidades[prod] ?? '';
                   const errCant = errores[`cant_${prod}`];

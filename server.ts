@@ -11,6 +11,7 @@ import pingHandler from './api/ping.js';
 import solicitudesHandler from './api/solicitudes.js';
 import solicitudesIntExtHandler from './api/solicitudes-int-ext.js';
 import especialesPersonalHandler from './api/especiales-personal.js';
+import solicitudComunidadHandler from './api/solicitud-comunidad.js';
 import maestroSyncHandler from './api/maestro/sync-from-drive.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -33,6 +34,8 @@ app.all('/api/solicitudes', (req, res) => solicitudesHandler(req, res));
 app.all('/api/solicitudes-int-ext', (req, res) => solicitudesIntExtHandler(req, res));
 app.all('/api/especiales-personal', (req, res) => especialesPersonalHandler(req, res));
 app.all('/api/especiales-personal/carta/:file', (req, res) => especialesPersonalHandler(req, res));
+app.all('/api/solicitud-comunidad', (req, res) => solicitudComunidadHandler(req, res));
+app.all('/api/solicitud-comunidad/carta/:file', (req, res) => solicitudComunidadHandler(req, res));
 app.all('/api/maestro/sync-from-drive', (req, res) => maestroSyncHandler(req, res));
 
 // Iniciar servidor Vite o estático

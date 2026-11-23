@@ -16,6 +16,7 @@ export const DEFAULT_CONFIG = {
 let cacheSolicitudes = null;
 let cacheSolicitudesIntExt = null;
 let cacheEspecialesPersonal = null;
+let cacheSolicitudComunidad = null;
 let cacheMaestro = null;
 let cacheConfig = null;
 
@@ -86,6 +87,17 @@ export function saveEspecialesPersonalStorage(data) {
   safeWrite('especiales-personal.json', data);
 }
 
+export function getSolicitudComunidadStorage() {
+  if (cacheSolicitudComunidad) return cacheSolicitudComunidad;
+  cacheSolicitudComunidad = safeRead('solicitud-comunidad.json', []);
+  return cacheSolicitudComunidad;
+}
+
+export function saveSolicitudComunidadStorage(data) {
+  cacheSolicitudComunidad = data;
+  safeWrite('solicitud-comunidad.json', data);
+}
+
 export function saveCartaLocalFile(filename, buffer) {
   const safeName = path.basename(String(filename || 'carta.jpg')).replace(/[^a-zA-Z0-9._-]/g, '_');
   const paths = [];
@@ -133,8 +145,8 @@ export function isValidWorker(w) {
   const codigo = String(w.codigo || '').trim();
   const nombre = String(w.nombre || '').trim();
   if (!codigo || !nombre) return false;
-  // Evitar IDs de solicitudes (SFO-2026-001, SIE-2026-001, SE-2026-001)
-  if (/^(SFO|SIE|SE)-\d{4}-/i.test(codigo)) return false;
+  // Evitar IDs de solicitudes (SFO-2026-001, SIE-2026-001, SE-2026-001, SEP-2026-001, SC-2026-001)
+  if (/^(SFO|SIE|SE|SEP|SC)-\d{4}-/i.test(codigo)) return false;
   // Evitar fechas convertidas a string como nombre (ej. "Wed Nov 18 2026 ...")
   if (/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+[A-Z][a-z]{2}\s+\d{1,2}\s+\d{4}/i.test(nombre)) return false;
   if (/^\d{4}-\d{2}-\d{2}/.test(nombre)) return false;

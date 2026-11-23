@@ -70,6 +70,26 @@ export interface EspecialPersonal {
   creadoEn?: number;
 }
 
+export interface SolicitudComunidad {
+  id: string;
+  fechaSolicitud: string;
+  usuario: string;
+  entidad: string;
+  motivo: string;
+  lugar: string;
+  sede: string;
+  producto: string;
+  cantidad: number;
+  semana?: string;
+  fechaEntrega: string;
+  observacion: string;
+  fotoCarta?: string;
+  notificado?: string;
+  estado?: string;
+  syncedToDrive?: boolean;
+  creadoEn?: number;
+}
+
 export interface TrabajadorMaestro {
   codigo: string;
   cedula?: string;

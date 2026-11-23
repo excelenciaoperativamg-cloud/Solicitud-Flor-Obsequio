@@ -7,7 +7,6 @@ import {
   FilePlus2,
   Users,
   Briefcase,
-  Lock,
   Cloud,
   LogOut,
   ChevronDown,
@@ -25,12 +24,14 @@ import {
   puedeVerResumenSolicitud,
   puedeVerSolicitudIntExt,
   puedeVerEspecialesPersonal,
+  puedeVerSolicitudComunidad,
 } from '../utils/roles';
 
 export type TabNavegacion =
   | 'formulario'
   | 'int-ext'
   | 'especiales-personal'
+  | 'solicitud-comunidad'
   | 'solicitudes'
   | 'maestro';
 
@@ -73,6 +74,7 @@ export const SidebarNavegacion: React.FC<SidebarNavegacionProps> = ({
   const [submenuPersonalAbierto, setSubmenuPersonalAbierto] = useState(false);
   const [submenuEmpresaAbierto, setSubmenuEmpresaAbierto] = useState(false);
   const [submenuEspPersonalAbierto, setSubmenuEspPersonalAbierto] = useState(false);
+  const [submenuComunidadAbierto, setSubmenuComunidadAbierto] = useState(false);
 
   const esAdmin = esRolAdmin(sesion);
   const esAdminSistema = esAdministradorSistema(sesion);
@@ -80,11 +82,13 @@ export const SidebarNavegacion: React.FC<SidebarNavegacionProps> = ({
   const verResumen = puedeVerResumenSolicitud(sesion);
   const verIntExt = puedeVerSolicitudIntExt(sesion);
   const verEspPersonal = puedeVerEspecialesPersonal(sesion);
+  const verComunidad = puedeVerSolicitudComunidad(sesion);
   const isDriveActive = !!(driveConfig.webhookUrl || userGoogleConnected);
 
   const personalActivo = activeTab === 'formulario' || activeTab === 'solicitudes';
   const empresaActivo = activeTab === 'int-ext';
   const espPersonalActivo = activeTab === 'especiales-personal';
+  const comunidadActivo = activeTab === 'solicitud-comunidad';
   const maestroActivo = activeTab === 'maestro';
 
   const iniciales = obtenerIniciales(sesion.nombre);
@@ -411,33 +415,70 @@ export const SidebarNavegacion: React.FC<SidebarNavegacionProps> = ({
               </div>
             )}
 
-            {/* Especiales Externos (Inactivo) */}
-            {verIntExt && (
-              <div className="space-y-1.5 pt-0.5">
+            {/* Solicitud Comunidad (antes Especiales Externos - Activo) */}
+            {verComunidad && (
+              <div
+                className={`rounded-xl transition-colors ${
+                  comunidadActivo
+                    ? 'bg-[#E60000] text-white shadow-sm'
+                    : 'bg-white/[0.04] hover:bg-white/[0.08] text-slate-100'
+                }`}
+              >
                 <button
                   type="button"
-                  disabled
-                  aria-disabled="true"
-                  title="Especiales Externos (Inactivo)"
+                  onClick={() => {
+                    if (colapsado) {
+                      manejarSeleccion('solicitud-comunidad');
+                    } else {
+                      setSubmenuComunidadAbierto((prev) => !prev);
+                      if (!comunidadActivo) {
+                        manejarSeleccion('solicitud-comunidad');
+                      }
+                    }
+                  }}
+                  aria-expanded={!colapsado ? submenuComunidadAbierto : undefined}
+                  title="Solicitud Comunidad"
                   className={`w-full flex items-center ${
-                    colapsado ? 'justify-center px-2 py-2.5' : 'justify-between px-3 py-2'
-                  } rounded-xl border border-white/10 bg-white/[0.02] text-slate-400 cursor-not-allowed opacity-65 select-none`}
+                    colapsado ? 'justify-center px-2 py-2.5' : 'justify-between px-3 py-2.5'
+                  } text-left rounded-xl cursor-pointer transition-colors focus-visible:outline-2 focus-visible:outline-white`}
                 >
                   <span className="flex items-center gap-2.5 min-w-0">
-                    <Briefcase className="w-4 h-4 shrink-0 text-slate-400" />
+                    <Briefcase className="w-4 h-4 shrink-0 text-white" />
                     {!colapsado && (
-                      <span className="text-xs font-semibold truncate whitespace-nowrap">
-                        Especiales Externos
+                      <span className="text-xs font-extrabold truncate whitespace-nowrap">
+                        Solicitud Comunidad
                       </span>
                     )}
                   </span>
-                  {!colapsado && (
-                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-white/10 text-slate-300 shrink-0">
-                      <Lock className="w-2.5 h-2.5" />
-                      Inactivo
-                    </span>
-                  )}
+                  {!colapsado &&
+                    (submenuComunidadAbierto ? (
+                      <ChevronDown className="w-3.5 h-3.5 shrink-0 opacity-90" />
+                    ) : (
+                      <ChevronRight className="w-3.5 h-3.5 shrink-0 opacity-90" />
+                    ))}
                 </button>
+
+                {!colapsado && submenuComunidadAbierto && (
+                  <div className="px-2 pb-2 pt-0.5 space-y-1">
+                    <button
+                      type="button"
+                      onClick={() => manejarSeleccion('solicitud-comunidad')}
+                      aria-current={activeTab === 'solicitud-comunidad' ? 'page' : undefined}
+                      className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs transition-colors cursor-pointer whitespace-nowrap ${
+                        activeTab === 'solicitud-comunidad'
+                          ? 'bg-white text-[#0a2958] font-extrabold shadow-xs'
+                          : 'text-slate-200 hover:bg-white/10 font-medium'
+                      }`}
+                    >
+                      <FilePlus2
+                        className={`w-3.5 h-3.5 shrink-0 ${
+                          activeTab === 'solicitud-comunidad' ? 'text-[#E60000]' : 'opacity-85'
+                        }`}
+                      />
+                      <span className="truncate">Formulario Solicitud Comunidad</span>
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>

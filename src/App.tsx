@@ -9,12 +9,13 @@ import { Navbar } from './components/Navbar';
 import { SolicitudForm } from './components/SolicitudForm';
 import { SolicitudIntExtForm } from './components/SolicitudIntExtForm';
 import { EspecialesPersonalForm } from './components/EspecialesPersonalForm';
+import { SolicitudComunidadForm } from './components/SolicitudComunidadForm';
 import { SolicitudesTable } from './components/SolicitudesTable';
 import { MaestroTrabajadores } from './components/MaestroTrabajadores';
 import { LoginCodigo } from './components/LoginCodigo';
 import { DriveConfigModal } from './components/DriveConfigModal';
 import { SidebarNavegacion, TabNavegacion } from './components/SidebarNavegacion';
-import { SolicitudFlor, SolicitudIntExt, EspecialPersonal, TrabajadorMaestro } from './types';
+import { SolicitudFlor, SolicitudIntExt, EspecialPersonal, SolicitudComunidad, TrabajadorMaestro } from './types';
 import {
   TRABAJADORES_INICIALES,
 } from './data/initialData';
@@ -29,6 +30,8 @@ import {
   createSolicitudIntExtApi,
   fetchEspecialesPersonalApi,
   createEspecialesPersonalApi,
+  fetchSolicitudComunidadApi,
+  createSolicitudComunidadApi,
   fetchMaestroApi,
   addTrabajadorApi,
   importMaestroBulkApi,
@@ -49,6 +52,7 @@ import {
   puedeVerResumenSolicitud,
   puedeVerSolicitudIntExt,
   puedeVerEspecialesPersonal,
+  puedeVerSolicitudComunidad,
 } from './utils/roles';
 
 export default function App() {
@@ -87,11 +91,18 @@ export default function App() {
   const [epSheetActual, setEpSheetActual] = useState<string>('');
   const [epNeedsAppsScriptUpdate, setEpNeedsAppsScriptUpdate] = useState<boolean>(false);
 
+  const [solicitudesComunidad, setSolicitudesComunidad] = useState<SolicitudComunidad[]>([]);
+  const [scSheetsSupported, setScSheetsSupported] = useState<boolean>(true);
+  const [scEmailSupported, setScEmailSupported] = useState<boolean>(true);
+  const [scSheetActual, setScSheetActual] = useState<string>('');
+  const [scNeedsAppsScriptUpdate, setScNeedsAppsScriptUpdate] = useState<boolean>(false);
+
   const esAdminSistema = esAdministradorSistema(sesion);
   const puedeVerMaestro = puedeVerHojaMaestro(sesion);
   const puedeVerResumen = puedeVerResumenSolicitud(sesion);
   const puedeVerIntExt = puedeVerSolicitudIntExt(sesion);
   const puedeVerEp = puedeVerEspecialesPersonal(sesion);
+  const puedeVerComunidad = puedeVerSolicitudComunidad(sesion);
 
   // Redirigir al formulario si el usuario no tiene permiso para la pestaña actual
   useEffect(() => {
@@ -100,12 +111,14 @@ export default function App() {
       setActiveTab('formulario');
     } else if (activeTab === 'especiales-personal' && !puedeVerEp) {
       setActiveTab('formulario');
+    } else if (activeTab === 'solicitud-comunidad' && !puedeVerComunidad) {
+      setActiveTab('formulario');
     } else if (activeTab === 'solicitudes' && !puedeVerResumen) {
       setActiveTab('formulario');
     } else if (activeTab === 'maestro' && !puedeVerMaestro) {
       setActiveTab('formulario');
     }
-  }, [sesion, puedeVerResumen, puedeVerMaestro, puedeVerIntExt, puedeVerEp, activeTab]);
+  }, [sesion, puedeVerResumen, puedeVerMaestro, puedeVerIntExt, puedeVerEp, puedeVerComunidad, activeTab]);
 
   // Mostrar toast temporal
   const mostrarToast = (mensaje: string) => {
@@ -119,10 +132,11 @@ export default function App() {
   useEffect(() => {
     const cargarDatosIniciales = async () => {
       try {
-        const [solis, intExtRes, epRes, maest, cfg] = await Promise.all([
+        const [solis, intExtRes, epRes, scRes, maest, cfg] = await Promise.all([
           fetchSolicitudesApi(),
           fetchSolicitudesIntExtApi(),
           fetchEspecialesPersonalApi(),
+          fetchSolicitudComunidadApi(),
           fetchMaestroApi(),
           getDriveConfigApi(),
         ]);
@@ -143,6 +157,13 @@ export default function App() {
           setEpEmailSupported(!!epRes.supportsEmailNotification);
           setEpSheetActual(epRes.especialesPersonalSheetName || '');
           setEpNeedsAppsScriptUpdate(!!epRes.needsAppsScriptUpdate);
+        }
+        if (scRes && Array.isArray(scRes.solicitudes)) {
+          setSolicitudesComunidad(scRes.solicitudes);
+          setScSheetsSupported(scRes.sheetsSupported || scRes.source === 'sheets');
+          setScEmailSupported(!!scRes.supportsEmailNotification);
+          setScSheetActual(scRes.solicitudComunidadSheetName || '');
+          setScNeedsAppsScriptUpdate(!!scRes.needsAppsScriptUpdate);
         }
         if (maest && maest.length > 0) {
           const mapa = new Map<string, TrabajadorMaestro>();
@@ -408,6 +429,93 @@ export default function App() {
     setEpNeedsAppsScriptUpdate(!!res.needsAppsScriptUpdate);
   };
 
+  const handleGuardarSolicitudComunidad = async (
+    nuevaOLista: SolicitudComunidad | SolicitudComunidad[],
+    correoNotificacion?: string,
+    fotoCarta?: { base64: string; mimeType: string; fileName: string } | null
+  ): Promise<{
+    success: boolean;
+    error?: string;
+    solicitud?: SolicitudComunidad;
+    solicitudes?: SolicitudComunidad[];
+    pendingAppsScriptUpdate?: boolean;
+    solicitudComunidadSheetName?: string;
+    needsAppsScriptUpdate?: boolean;
+    fotoCartaDriveError?: string;
+    emailNotification?: EmailNotificationResult;
+  }> => {
+    try {
+      const res = await createSolicitudComunidadApi(nuevaOLista, correoNotificacion, fotoCarta);
+      const guardadas = res.solicitudes.length > 0 ? res.solicitudes : [res.solicitud];
+      const idsGuardados = new Set(guardadas.map((g) => g.id));
+      setSolicitudesComunidad((prev) => [
+        ...guardadas,
+        ...prev.filter((s) => !idsGuardados.has(s.id)),
+      ]);
+      const total = guardadas.length;
+      setScSheetActual(res.solicitudComunidadSheetName || '');
+      setScNeedsAppsScriptUpdate(!!res.needsAppsScriptUpdate);
+      if (typeof res.supportsEmailNotification === 'boolean') {
+        setScEmailSupported(res.supportsEmailNotification);
+      }
+
+      if (res.pendingAppsScriptUpdate || res.needsAppsScriptUpdate) {
+        setScSheetsSupported(!res.pendingAppsScriptUpdate);
+        mostrarToast(
+          total > 1
+            ? `${total} registros guardados en respaldo local (actualice Apps Script para Solicitud Comunidad)`
+            : 'Guardado en respaldo local (actualice Apps Script para Solicitud Comunidad)'
+        );
+      } else if (res.emailNotification?.requested && res.emailNotification.sent) {
+        setScSheetsSupported(true);
+        mostrarToast(
+          total > 1
+            ? `${total} registros guardados en Solicitud Comunidad y notificación enviada a ${res.emailNotification.to}`
+            : `Solicitud guardada en Solicitud Comunidad y notificación enviada a ${res.emailNotification.to}`
+        );
+      } else if (res.emailNotification?.requested && !res.emailNotification.sent) {
+        setScSheetsSupported(true);
+        mostrarToast(
+          total > 1
+            ? `${total} registros guardados en Solicitud Comunidad (notificación por correo pendiente)`
+            : 'Solicitud guardada en Solicitud Comunidad (notificación por correo pendiente)'
+        );
+      } else {
+        setScSheetsSupported(true);
+        mostrarToast(
+          total > 1
+            ? `${total} registros guardados en la hoja Solicitud Comunidad`
+            : 'Solicitud registrada en la hoja Solicitud Comunidad'
+        );
+      }
+
+      return {
+        success: true,
+        solicitud: guardadas[0],
+        solicitudes: guardadas,
+        pendingAppsScriptUpdate: res.pendingAppsScriptUpdate,
+        solicitudComunidadSheetName: res.solicitudComunidadSheetName,
+        needsAppsScriptUpdate: res.needsAppsScriptUpdate,
+        fotoCartaDriveError: res.fotoCartaDriveError,
+        emailNotification: res.emailNotification,
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        error: err.message || 'Error al guardar en Solicitud Comunidad',
+      };
+    }
+  };
+
+  const handleRecargarSolicitudComunidad = async () => {
+    const res = await fetchSolicitudComunidadApi();
+    setSolicitudesComunidad(res.solicitudes || []);
+    setScSheetsSupported(res.sheetsSupported || res.source === 'sheets');
+    setScEmailSupported(!!res.supportsEmailNotification);
+    setScSheetActual(res.solicitudComunidadSheetName || '');
+    setScNeedsAppsScriptUpdate(!!res.needsAppsScriptUpdate);
+  };
+
   const handleRecargarMaestroSilencioso = async () => {
     const maest = await fetchMaestroApi();
     if (maest && maest.length > 0) {
@@ -513,6 +621,10 @@ export default function App() {
       setActiveTab('formulario');
       return;
     }
+    if (tab === 'solicitud-comunidad' && !puedeVerComunidad) {
+      setActiveTab('formulario');
+      return;
+    }
     if (tab === 'solicitudes' && !puedeVerResumen) {
       setActiveTab('formulario');
       return;
@@ -584,7 +696,7 @@ export default function App() {
               cargando={maestro.length === 0}
               onIngresar={(t) => {
                 setSesion(t);
-                setMenuMovilAbierto(false);
+                setMenuMovilAbierto(typeof window !== 'undefined' ? window.innerWidth < 1024 : false);
                 setActiveTab('formulario');
               }}
             />
@@ -629,6 +741,20 @@ export default function App() {
                   onGuardarEspecialPersonal={handleGuardarEspecialPersonal}
                   onRecargarEspecialPersonal={handleRecargarEspecialPersonal}
                   onRecargarMaestro={handleRecargarMaestroSilencioso}
+                  onCerrarSesion={handleCerrarSesion}
+                />
+              )}
+
+              {puedeVerComunidad && activeTab === 'solicitud-comunidad' && (
+                <SolicitudComunidadForm
+                  sesion={sesion}
+                  solicitudesComunidad={solicitudesComunidad}
+                  sheetsSupported={scSheetsSupported}
+                  emailSupported={scEmailSupported}
+                  solicitudComunidadSheetActual={scSheetActual}
+                  needsAppsScriptUpdate={scNeedsAppsScriptUpdate}
+                  onGuardarSolicitudComunidad={handleGuardarSolicitudComunidad}
+                  onRecargarSolicitudComunidad={handleRecargarSolicitudComunidad}
                   onCerrarSesion={handleCerrarSesion}
                 />
               )}
