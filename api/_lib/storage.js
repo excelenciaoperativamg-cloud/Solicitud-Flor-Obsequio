@@ -183,7 +183,16 @@ export function getMaestroStorage() {
     if (valid.length > 0) return valid;
   }
   const raw = safeRead('maestro.json', []);
-  const valid = sanitizeMaestroWorkers(raw);
+  let valid = sanitizeMaestroWorkers(raw);
+  if (valid.length === 0) {
+    try {
+      const bundledPath = path.join(process.cwd(), 'data', 'maestro.json');
+      if (fs.existsSync(bundledPath)) {
+        const bundledRaw = JSON.parse(fs.readFileSync(bundledPath, 'utf-8'));
+        valid = sanitizeMaestroWorkers(bundledRaw);
+      }
+    } catch {}
+  }
   cacheMaestro = valid;
   return cacheMaestro;
 }
@@ -219,17 +228,25 @@ export async function callAppsScript(webhookUrl, payload) {
   const url = (webhookUrl || '').trim();
   if (!url) throw new Error('No hay URL de Apps Script configurada.');
 
-  const res = await fetch(
-    url,
-    payload
-      ? {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify(payload),
-          redirect: 'follow',
-        }
-      : { method: 'GET', redirect: 'follow' }
-  );
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 18000);
+  let res;
+  try {
+    res = await fetch(
+      url,
+      payload
+        ? {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify(payload),
+            redirect: 'follow',
+            signal: controller.signal,
+          }
+        : { method: 'GET', redirect: 'follow', signal: controller.signal }
+    );
+  } finally {
+    clearTimeout(timeoutId);
+  }
   const text = await res.text();
   let data;
   try {

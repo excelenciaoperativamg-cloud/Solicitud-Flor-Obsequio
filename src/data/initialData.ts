@@ -39,7 +39,7 @@ export const MOTIVOS_SOLICITUD = [
 // Incluye datos reales de la hoja Solicitud Flor Obsequio (ej: 5705)
 export const TRABAJADORES_INICIALES: TrabajadorMaestro[] = [
   // Empleados del archivo oficial (ID RH, NOMBRE, SEDE)
-  { codigo: '5705', nombre: 'RODRIGUEZ CAUCHO PAOLA ANDREA', sede: 'Sede MG', cargo: 'Operaria Poscosecha', area: 'Poscosecha', activo: true },
+  { codigo: '5705', nombre: 'RODRIGUEZ CAUCHO PAOLA ANDREA', sede: 'Sede MG', cargo: 'ANALISTA GESTIÓN DE INFORMACIÓN EAI', area: 'Poscosecha', activo: true },
   { codigo: '5701', nombre: 'Andrea Carolina Morales', sede: 'Sede MG', cargo: 'Operaria Hidratación', area: 'Poscosecha', activo: true },
   { codigo: '5702', nombre: 'Santiago Restrepo Duque', sede: 'Sede HA', cargo: 'Operario de Selección', area: 'Poscosecha', activo: true },
   { codigo: '5703', nombre: 'Lina Marcela Vargas Gómez', sede: 'Sede SC', cargo: 'Operaria de Boncheo', area: 'Poscosecha', activo: true },

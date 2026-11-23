@@ -10,16 +10,28 @@ import {
 async function maestroDesdeHoja() {
   const driveCfg = getDriveConfigStorage();
   if (!driveCfg.webhookUrl) return { workers: null, invalidSheet: false };
-  const data = await callAppsScript(driveCfg.webhookUrl);
-  if (Array.isArray(data.workers) && data.workers.length > 0) {
-    const validos = sanitizeMaestroWorkers(data.workers);
-    if (validos.length > 0) {
-      saveMaestroStorage(validos);
-      return { workers: validos, invalidSheet: false };
+
+  let lastErr = null;
+  for (let intento = 0; intento < 2; intento++) {
+    try {
+      const data = await callAppsScript(driveCfg.webhookUrl);
+      if (Array.isArray(data.workers) && data.workers.length > 0) {
+        const validos = sanitizeMaestroWorkers(data.workers);
+        if (validos.length > 0) {
+          saveMaestroStorage(validos);
+          return { workers: validos, invalidSheet: false };
+        }
+        return { workers: null, invalidSheet: true };
+      }
+      return { workers: null, invalidSheet: false };
+    } catch (err) {
+      lastErr = err;
+      if (intento === 0) {
+        await new Promise((r) => setTimeout(r, 450));
+      }
     }
-    return { workers: null, invalidSheet: true };
   }
-  return { workers: null, invalidSheet: false };
+  throw lastErr || new Error('No se pudo leer el Maestro desde Apps Script');
 }
 
 export default async function handler(req, res) {

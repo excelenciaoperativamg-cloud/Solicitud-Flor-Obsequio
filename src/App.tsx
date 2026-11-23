@@ -33,6 +33,8 @@ import {
   fetchSolicitudComunidadApi,
   createSolicitudComunidadApi,
   fetchMaestroApi,
+  fetchMaestroConEstadoApi,
+  getMaestroLocalCache,
   addTrabajadorApi,
   importMaestroBulkApi,
   getDriveConfigApi,
@@ -55,6 +57,20 @@ import {
   puedeVerSolicitudComunidad,
 } from './utils/roles';
 
+function combinarMaestroLista(
+  base: TrabajadorMaestro[],
+  actualizados: TrabajadorMaestro[]
+): TrabajadorMaestro[] {
+  const mapa = new Map<string, TrabajadorMaestro>();
+  for (const t of base) {
+    mapa.set(t.codigo.trim().toUpperCase(), t);
+  }
+  for (const t of actualizados) {
+    mapa.set(t.codigo.trim().toUpperCase(), t);
+  }
+  return Array.from(mapa.values());
+}
+
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabNavegacion>('formulario');
   const [menuMovilAbierto, setMenuMovilAbierto] = useState(false);
@@ -76,8 +92,14 @@ export default function App() {
   });
   const [sesion, setSesion] = useState<TrabajadorMaestro | null>(null);
 
-  // Datos principales
-  const [maestro, setMaestro] = useState<TrabajadorMaestro[]>(TRABAJADORES_INICIALES);
+  // Datos principales (siembra inmediata con caché local del último maestro sincronizado)
+  const [maestro, setMaestro] = useState<TrabajadorMaestro[]>(() =>
+    combinarMaestroLista(TRABAJADORES_INICIALES, getMaestroLocalCache())
+  );
+  const [sincronizandoMaestroInicial, setSincronizandoMaestroInicial] = useState<boolean>(true);
+  const [maestroSincronizadoDrive, setMaestroSincronizadoDrive] = useState<boolean>(false);
+  const maestroSyncInFlightRef = React.useRef<Promise<TrabajadorMaestro[]> | null>(null);
+
   const [solicitudes, setSolicitudes] = useState<SolicitudFlor[]>([]);
   const [solicitudesIntExt, setSolicitudesIntExt] = useState<SolicitudIntExt[]>([]);
   const [intExtSheetsSupported, setIntExtSheetsSupported] = useState<boolean>(true);
@@ -104,6 +126,25 @@ export default function App() {
   const puedeVerEp = puedeVerEspecialesPersonal(sesion);
   const puedeVerComunidad = puedeVerSolicitudComunidad(sesion);
 
+  // Mantener actualizada la sesión activa (cargo/sede/cédula) cada vez que se sincroniza el Maestro
+  useEffect(() => {
+    if (!sesion || maestro.length === 0) return;
+    const codigoSesion = sesion.codigo.trim().toUpperCase();
+    const actualizado = maestro.find(
+      (t) => t.codigo.trim().toUpperCase() === codigoSesion
+    );
+    if (!actualizado) return;
+    if (
+      actualizado.nombre !== sesion.nombre ||
+      (actualizado.cargo || '') !== (sesion.cargo || '') ||
+      actualizado.sede !== sesion.sede ||
+      (actualizado.area || '') !== (sesion.area || '') ||
+      (actualizado.cedula || '') !== (sesion.cedula || '')
+    ) {
+      setSesion(actualizado);
+    }
+  }, [maestro, sesion]);
+
   // Redirigir al formulario si el usuario no tiene permiso para la pestaña actual
   useEffect(() => {
     if (!sesion) return;
@@ -128,18 +169,65 @@ export default function App() {
     }, 4500);
   };
 
-  // Cargar datos persistentes del servidor al iniciar
+  // Sincronización deduplicada y prioritaria del Maestro
+  const sincronizarMaestroPrioritario = React.useCallback(async (): Promise<TrabajadorMaestro[]> => {
+    if (maestroSyncInFlightRef.current) {
+      return maestroSyncInFlightRef.current;
+    }
+
+    const promesa = (async () => {
+      setSincronizandoMaestroInicial(true);
+      try {
+        const res = await fetchMaestroConEstadoApi();
+        if (res.maestro && res.maestro.length > 0) {
+          const combinado = combinarMaestroLista(TRABAJADORES_INICIALES, res.maestro);
+          setMaestro(combinado);
+          if (res.source === 'sheets') {
+            setMaestroSincronizadoDrive(true);
+          }
+          return combinado;
+        }
+        return combinarMaestroLista(TRABAJADORES_INICIALES, getMaestroLocalCache());
+      } catch {
+        return combinarMaestroLista(TRABAJADORES_INICIALES, getMaestroLocalCache());
+      } finally {
+        setSincronizandoMaestroInicial(false);
+        maestroSyncInFlightRef.current = null;
+      }
+    })();
+
+    maestroSyncInFlightRef.current = promesa;
+    return promesa;
+  }, []);
+
+  // Cargar Maestro primero (evita saturar Apps Script) y luego cargar las hojas operativas
   useEffect(() => {
+    let cancelado = false;
+
     const cargarDatosIniciales = async () => {
       try {
-        const [solis, intExtRes, epRes, scRes, maest, cfg] = await Promise.all([
+        await Promise.all([
+          sincronizarMaestroPrioritario(),
+          getDriveConfigApi().then((cfg) => {
+            if (!cancelado && cfg) {
+              setDriveConfig(cfg);
+              if (cfg.spreadsheetUrl) {
+                setSpreadsheetLink(cfg.spreadsheetUrl);
+              }
+            }
+          }),
+        ]);
+
+        if (cancelado) return;
+
+        const [solis, intExtRes, epRes, scRes] = await Promise.all([
           fetchSolicitudesApi(),
           fetchSolicitudesIntExtApi(),
           fetchEspecialesPersonalApi(),
           fetchSolicitudComunidadApi(),
-          fetchMaestroApi(),
-          getDriveConfigApi(),
         ]);
+
+        if (cancelado) return;
 
         if (Array.isArray(solis)) {
           setSolicitudes(solis);
@@ -165,29 +253,16 @@ export default function App() {
           setScSheetActual(scRes.solicitudComunidadSheetName || '');
           setScNeedsAppsScriptUpdate(!!scRes.needsAppsScriptUpdate);
         }
-        if (maest && maest.length > 0) {
-          const mapa = new Map<string, TrabajadorMaestro>();
-          for (const t of TRABAJADORES_INICIALES) {
-            mapa.set(t.codigo.trim().toUpperCase(), t);
-          }
-          for (const t of maest) {
-            mapa.set(t.codigo.trim().toUpperCase(), t);
-          }
-          setMaestro(Array.from(mapa.values()));
-        }
-        if (cfg) {
-          setDriveConfig(cfg);
-          if (cfg.spreadsheetUrl) {
-            setSpreadsheetLink(cfg.spreadsheetUrl);
-          }
-        }
       } catch (e) {
         console.warn('Carga inicial desde servidor:', e);
       }
     };
 
     cargarDatosIniciales();
-  }, []);
+    return () => {
+      cancelado = true;
+    };
+  }, [sincronizarMaestroPrioritario]);
 
   // Sincronización automática del Maestro al ingresar a Especiales Personal o Maestro
   useEffect(() => {
@@ -197,14 +272,7 @@ export default function App() {
     fetchMaestroApi()
       .then((maest) => {
         if (cancelado || !maest || maest.length === 0) return;
-        const mapa = new Map<string, TrabajadorMaestro>();
-        for (const t of TRABAJADORES_INICIALES) {
-          mapa.set(t.codigo.trim().toUpperCase(), t);
-        }
-        for (const t of maest) {
-          mapa.set(t.codigo.trim().toUpperCase(), t);
-        }
-        setMaestro(Array.from(mapa.values()));
+        setMaestro(combinarMaestroLista(TRABAJADORES_INICIALES, maest));
       })
       .catch(() => {});
     return () => {
@@ -694,10 +762,16 @@ export default function App() {
             <LoginCodigo
               maestro={maestro}
               cargando={maestro.length === 0}
+              sincronizando={sincronizandoMaestroInicial}
+              maestroSincronizado={maestroSincronizadoDrive}
+              onRefrescarMaestro={sincronizarMaestroPrioritario}
               onIngresar={(t) => {
                 setSesion(t);
                 setMenuMovilAbierto(typeof window !== 'undefined' ? window.innerWidth < 1024 : false);
                 setActiveTab('formulario');
+                if (!maestroSincronizadoDrive) {
+                  sincronizarMaestroPrioritario().catch(() => {});
+                }
               }}
             />
           ) : (

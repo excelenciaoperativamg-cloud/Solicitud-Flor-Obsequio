@@ -1,24 +1,56 @@
 import React, { useState } from 'react';
+import { RefreshCw } from 'lucide-react';
 import { TrabajadorMaestro } from '../types';
 
 interface LoginCodigoProps {
   maestro: TrabajadorMaestro[];
   cargando: boolean;
+  sincronizando?: boolean;
+  maestroSincronizado?: boolean;
+  onRefrescarMaestro?: () => Promise<TrabajadorMaestro[]>;
   onIngresar: (trabajador: TrabajadorMaestro) => void;
 }
 
-export const LoginCodigo: React.FC<LoginCodigoProps> = ({ maestro, cargando, onIngresar }) => {
+export const LoginCodigo: React.FC<LoginCodigoProps> = ({
+  maestro,
+  cargando,
+  sincronizando = false,
+  maestroSincronizado = false,
+  onRefrescarMaestro,
+  onIngresar,
+}) => {
   const [codigo, setCodigo] = useState('');
   const [error, setError] = useState('');
+  const [validandoIngreso, setValidandoIngreso] = useState(false);
 
-  const ingresar = (e: React.FormEvent) => {
+  const ingresar = async (e: React.FormEvent) => {
     e.preventDefault();
     const limpio = codigo.trim().toLowerCase();
     if (!limpio) {
       setError('Escriba su código');
       return;
     }
-    const encontrado = maestro.find(
+
+    let listaActual = maestro;
+
+    // Si aún no termina de sincronizar con Google Sheets o no encontró el código, refrescar primero
+    const existeEnLista = listaActual.some(
+      (t) => String(t.codigo).trim().toLowerCase() === limpio && t.activo !== false
+    );
+
+    if ((!maestroSincronizado || !existeEnLista) && onRefrescarMaestro) {
+      setValidandoIngreso(true);
+      try {
+        const fresca = await onRefrescarMaestro();
+        if (fresca && fresca.length > 0) {
+          listaActual = fresca;
+        }
+      } finally {
+        setValidandoIngreso(false);
+      }
+    }
+
+    const encontrado = listaActual.find(
       (t) => String(t.codigo).trim().toLowerCase() === limpio && t.activo !== false
     );
     if (!encontrado) {
@@ -68,14 +100,47 @@ export const LoginCodigo: React.FC<LoginCodigoProps> = ({ maestro, cargando, onI
           {error && <p className="text-[11px] text-[#E60000] font-semibold mt-2">{error}</p>}
           <button
             type="submit"
-            disabled={cargando}
-            className="mt-4 w-full py-3 rounded-xl bg-[#0a2958] text-white text-sm font-bold disabled:opacity-60"
+            disabled={cargando || validandoIngreso}
+            className="mt-4 w-full py-3 rounded-xl bg-[#0a2958] hover:bg-[#0d346e] text-white text-sm font-bold disabled:opacity-60 cursor-pointer flex items-center justify-center gap-2 transition-colors"
           >
-            {cargando ? 'Cargando maestro…' : 'Entrar al formulario'}
+            {validandoIngreso ? (
+              <>
+                <RefreshCw className="w-4 h-4 animate-spin" />
+                <span>Sincronizando maestro…</span>
+              </>
+            ) : cargando ? (
+              'Cargando maestro…'
+            ) : (
+              'Entrar al formulario'
+            )}
           </button>
-          {!cargando && (
-            <p className="text-[11px] text-slate-400 mt-3">{maestro.length} trabajadores en el maestro</p>
-          )}
+
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400">
+            {sincronizando ? (
+              <span className="inline-flex items-center gap-1.5 text-[#0a2958] font-semibold">
+                <RefreshCw className="w-3 h-3 animate-spin" />
+                Sincronizando maestro con Google Drive…
+              </span>
+            ) : (
+              <span>
+                {maestro.length} trabajadores en el maestro
+                {maestroSincronizado ? ' · Actualizado' : ''}
+              </span>
+            )}
+
+            {!sincronizando && !maestroSincronizado && onRefrescarMaestro && (
+              <button
+                type="button"
+                onClick={() => {
+                  onRefrescarMaestro().catch(() => {});
+                }}
+                className="inline-flex items-center gap-1 text-[#0a2958] font-bold hover:underline cursor-pointer"
+              >
+                <RefreshCw className="w-3 h-3" />
+                <span>Sincronizar ahora</span>
+              </button>
+            )}
+          </div>
         </form>
       </div>
     </div>

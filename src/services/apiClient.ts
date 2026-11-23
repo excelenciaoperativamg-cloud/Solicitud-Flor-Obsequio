@@ -386,18 +386,66 @@ const isValidWorkerClient = (w: any): w is TrabajadorMaestro => {
   return true;
 };
 
-export const fetchMaestroApi = async (): Promise<TrabajadorMaestro[]> => {
+const MAESTRO_LOCAL_KEY = 'sfo_maestro_v2';
+
+export function getMaestroLocalCache(): TrabajadorMaestro[] {
   try {
-    const res = await fetch('/api/maestro');
-    if (!res.ok) throw new Error('Error al consultar maestro');
-    const data = await res.json();
-    return Array.isArray(data.maestro) ? data.maestro.filter(isValidWorkerClient) : [];
-  } catch (error) {
-    console.warn('Usando respaldo local para maestro:', error);
-    const saved = localStorage.getItem('sfo_maestro_v2');
+    const saved = localStorage.getItem(MAESTRO_LOCAL_KEY);
     const parsed = saved ? JSON.parse(saved) : [];
     return Array.isArray(parsed) ? parsed.filter(isValidWorkerClient) : [];
+  } catch {
+    return [];
   }
+}
+
+function saveMaestroLocalCache(workers: TrabajadorMaestro[]) {
+  try {
+    const valid = Array.isArray(workers) ? workers.filter(isValidWorkerClient) : [];
+    if (valid.length > 0) {
+      localStorage.setItem(MAESTRO_LOCAL_KEY, JSON.stringify(valid));
+    }
+  } catch {}
+}
+
+export const fetchMaestroConEstadoApi = async (): Promise<{
+  maestro: TrabajadorMaestro[];
+  source: 'sheets' | 'cache' | 'local';
+}> => {
+  for (let intento = 0; intento < 2; intento++) {
+    try {
+      const res = await fetch(`/api/maestro?_ts=${Date.now()}`, {
+        cache: 'no-store',
+      });
+      if (!res.ok) throw new Error(`Error HTTP ${res.status} al consultar maestro`);
+      const data = await res.json();
+      const valid = Array.isArray(data.maestro) ? data.maestro.filter(isValidWorkerClient) : [];
+      const source: 'sheets' | 'cache' | 'local' =
+        data.source === 'sheets' ? 'sheets' : 'cache';
+
+      if (valid.length > 0) {
+        saveMaestroLocalCache(valid);
+        if (source === 'sheets' || intento === 1) {
+          return { maestro: valid, source };
+        }
+        // Si vino de cache del servidor en el primer intento, esperar brevemente y reintentar una vez contra Sheets
+        await new Promise((r) => setTimeout(r, 400));
+        continue;
+      }
+    } catch (error) {
+      if (intento === 0) {
+        await new Promise((r) => setTimeout(r, 450));
+        continue;
+      }
+      console.warn('Usando respaldo local para maestro:', error);
+    }
+  }
+
+  return { maestro: getMaestroLocalCache(), source: 'local' };
+};
+
+export const fetchMaestroApi = async (): Promise<TrabajadorMaestro[]> => {
+  const res = await fetchMaestroConEstadoApi();
+  return res.maestro;
 };
 
 export const addTrabajadorApi = async (trabajador: TrabajadorMaestro): Promise<TrabajadorMaestro[]> => {
@@ -409,7 +457,9 @@ export const addTrabajadorApi = async (trabajador: TrabajadorMaestro): Promise<T
     });
     if (!res.ok) throw new Error('Error al registrar trabajador en el servidor');
     const data = await res.json();
-    return data.maestro;
+    const valid = Array.isArray(data.maestro) ? data.maestro.filter(isValidWorkerClient) : [];
+    saveMaestroLocalCache(valid);
+    return valid;
   } catch (error) {
     console.warn('Aviso guardando trabajador localmente:', error);
     return [];
@@ -425,7 +475,9 @@ export const importMaestroBulkApi = async (workers: TrabajadorMaestro[]): Promis
     });
     if (!res.ok) throw new Error('Error al importar trabajadores en el servidor');
     const data = await res.json();
-    return Array.isArray(data.maestro) ? data.maestro.filter(isValidWorkerClient) : [];
+    const valid = Array.isArray(data.maestro) ? data.maestro.filter(isValidWorkerClient) : [];
+    saveMaestroLocalCache(valid);
+    return valid;
   } catch (error) {
     console.warn('Aviso importando maestro:', error);
     return [];
@@ -488,6 +540,7 @@ export const syncMaestroFromDriveApi = async (): Promise<{
       const data = JSON.parse(text);
       if (Array.isArray(data.maestro)) {
         data.maestro = data.maestro.filter(isValidWorkerClient);
+        saveMaestroLocalCache(data.maestro);
       }
       return data;
     } catch {
