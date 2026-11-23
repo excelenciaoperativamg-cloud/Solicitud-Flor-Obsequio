@@ -4,10 +4,10 @@ import {
   UserCheck,
   Sparkles,
   Calendar,
-  MessageSquare,
   Send,
   CheckCircle2,
   AlertTriangle,
+  AlertCircle,
   Plus,
   Printer,
   Copy,
@@ -25,12 +25,24 @@ import {
   ExternalLink,
   Eye,
   Trash2,
+  FileText,
+  Clock,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import * as XLSX from 'xlsx';
 import { EspecialPersonal, TrabajadorMaestro } from '../types';
 import { EmailNotificationResult, retryEmailEspecialesPersonalApi } from '../services/apiClient';
-import { getTodayString, formatDateSpanish, getISOWeekNumber } from '../utils/dateUtils';
+import {
+  getTodayString,
+  formatDateSpanish,
+  formatShortDate,
+  getISOWeekNumber,
+  addDaysToDateString,
+} from '../utils/dateUtils';
+import {
+  puedeVerRegistrosEspecialesPersonal,
+  puedeVerTodosRegistrosEspecialesPersonal,
+} from '../utils/roles';
 
 export interface FotoCartaUpload {
   base64: string;
@@ -68,53 +80,76 @@ interface EspecialesPersonalFormProps {
   onCerrarSesion?: () => void;
 }
 
-const ROSA_VARIANTES_EP = ['Rosa (Color)', 'Rosa (Roja)'] as const;
-const PRODUCTOS_RESTO_EP = ['Clavel', 'Alstroemeria', 'Bouquet'] as const;
+const ROSA_VARIANTES_EP = ['Rosa (Color)', 'Rosa (Roja)', 'Bouquet'] as const;
+const PRODUCTOS_RESTO_EP = ['Clavel', 'Alstroemeria'] as const;
 const PRODUCTOS_EP = [
   'Rosa (Color)',
   'Rosa (Roja)',
+  'Bouquet',
   'Clavel',
   'Alstroemeria',
-  'Bouquet',
 ] as const;
-const MOTIVOS_BASE_EP = ['Matrimonio', '15 años'] as const;
+const MOTIVOS_BASE_EP = [
+  'Matrimonio',
+  '15 años',
+  'Bautismo',
+  'Celebración Religiosa',
+] as const;
+const DIAS_ANTICIPACION_OFFSET_EP = 9; // Día 10 contando desde la fecha de solicitud (ej. 23 nov -> 2 dic)
+const MODELO_CARTA_PDF_URL = '/assets/aistudio/Modelo_carta_solicitud_obsequio_de_flor_27dea37f.pdf';
+const CORREO_NOTIFICADO_FIJO_EP = 'angela.garcia@mg-consultores.com';
+const ESTADO_INICIAL_EP = 'Pendiente Aprobación';
 
 const EMAIL_ITEM_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-function parsearListaCorreos(raw: string): {
-  correos: string[];
-  invalidos: string[];
-  normalizado: string;
+function normalizarCorreoIndividual(raw: string): {
+  correo: string;
+  valido: boolean;
+  tieneMultiples: boolean;
 } {
-  const partes = String(raw || '')
-    .split(/[,;]+/)
-    .map((p) => p.trim())
-    .filter(Boolean);
-  const correos: string[] = [];
-  const vistos = new Set<string>();
-  const invalidos: string[] = [];
-
-  for (const correo of partes) {
-    if (!EMAIL_ITEM_REGEX.test(correo)) {
-      invalidos.push(correo);
-      continue;
-    }
-    const clave = correo.toLowerCase();
-    if (!vistos.has(clave)) {
-      vistos.add(clave);
-      correos.push(correo);
-    }
+  const limpio = String(raw || '').trim();
+  if (!limpio) {
+    return { correo: '', valido: false, tieneMultiples: false };
   }
-
+  const tieneMultiples = /[,;\s]/.test(limpio);
   return {
-    correos,
-    invalidos,
-    normalizado: correos.join(', '),
+    correo: limpio,
+    valido: !tieneMultiples && EMAIL_ITEM_REGEX.test(limpio),
+    tieneMultiples,
   };
 }
 
 function normalizarDigitos(raw?: string): string {
   return String(raw || '').replace(/\D/g, '');
+}
+
+function normalizarTextoComp(raw?: string): string {
+  return String(raw || '')
+    .toUpperCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function esEstadoPendienteAprobacion(estado?: string): boolean {
+  return normalizarTextoComp(estado) === 'PENDIENTE APROBACION';
+}
+
+function esSolicitudDelUsuario(
+  s: EspecialPersonal,
+  usuarioNombre?: string,
+  cedulaUsuario?: string
+): boolean {
+  const cedSol = normalizarDigitos(s.cedula);
+  const cedUser = normalizarDigitos(cedulaUsuario);
+  if (cedSol && cedUser && cedSol === cedUser) return true;
+
+  const nomUser = normalizarTextoComp(usuarioNombre);
+  if (!nomUser) return false;
+  const usuSol = normalizarTextoComp(s.usuario);
+  const nomSol = normalizarTextoComp(s.nombre);
+  return (Boolean(usuSol) && usuSol === nomUser) || (Boolean(nomSol) && nomSol === nomUser);
 }
 
 function obtenerNumSemanaEP(s: EspecialPersonal): number {
@@ -199,9 +234,15 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
   onCerrarSesion,
 }) => {
   const fechaSolicitud = getTodayString();
+  const fechaMinimaEntrega = useMemo(
+    () => addDaysToDateString(fechaSolicitud, DIAS_ANTICIPACION_OFFSET_EP),
+    [fechaSolicitud]
+  );
+  const verRegistros = puedeVerRegistrosEspecialesPersonal(sesion);
+  const verTodosRegistros = puedeVerTodosRegistrosEspecialesPersonal(sesion);
 
-  // Beneficiario buscado en Maestro por Cédula (solo numérico)
-  const [cedula, setCedula] = useState('');
+  // Cédula manual de respaldo solo si el Maestro aún no tiene cédula cargada para la sesión
+  const [cedulaManual, setCedulaManual] = useState('');
   const [sincronizandoMaestro, setSincronizandoMaestro] = useState(false);
 
   // Productos y cantidades
@@ -221,18 +262,13 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
   const [mostrandoInputMotivo, setMostrandoInputMotivo] = useState(false);
   const [nuevoMotivoInput, setNuevoMotivoInput] = useState('');
 
-  // Fecha entrega, semana calculada, observación, foto carta, notificación
-  const [fechaEntrega, setFechaEntrega] = useState(getTodayString());
-  const [observacion, setObservacion] = useState('');
-  const [correoNotificacion, setCorreoNotificacion] = useState('');
+  // Fecha entrega (mínimo 10 días desde la solicitud), semana calculada, correo confirmación, foto carta
+  const [fechaEntrega, setFechaEntrega] = useState(() =>
+    addDaysToDateString(getTodayString(), DIAS_ANTICIPACION_OFFSET_EP)
+  );
+  const [correoConfirmacion, setCorreoConfirmacion] = useState('');
   const [fotoCarta, setFotoCarta] = useState<FotoCartaUpload | null>(null);
   const [errorFoto, setErrorFoto] = useState('');
-
-  // Cámara web (para escritorio/laptop)
-  const [camaraAbierta, setCamaraAbierta] = useState(false);
-  const [camaraError, setCamaraError] = useState('');
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
 
   // Envío y modal confirmación
   const [errores, setErrores] = useState<Record<string, string>>({});
@@ -277,39 +313,51 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Limpiar cámara si se desmonta
-  useEffect(() => {
-    return () => {
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((t) => t.stop());
-        streamRef.current = null;
-      }
-    };
-  }, []);
-
-  // Coincidencia automática por Cédula contra Maestro
-  const trabajadorPorCedula = useMemo(() => {
-    const cedNorm = normalizarDigitos(cedula);
-    if (!cedNorm) return null;
-    return (
-      maestro.find((t) => {
-        const tc = normalizarDigitos(t.cedula);
-        return tc && tc === cedNorm;
-      }) || null
+  // Datos del colaborador tomados de la hoja Maestro para la persona que inicia sesión
+  const colaboradorSesion = useMemo(() => {
+    const cod = String(sesion?.codigo || '').trim().toUpperCase();
+    const encontrado = maestro.find(
+      (t) => String(t.codigo || '').trim().toUpperCase() === cod
     );
-  }, [cedula, maestro]);
+    return {
+      codigo: encontrado?.codigo || sesion.codigo,
+      cedula: normalizarDigitos(encontrado?.cedula || sesion.cedula),
+      nombre: encontrado?.nombre || sesion.nombre,
+      sede: encontrado?.sede || sesion.sede,
+      cargo: encontrado?.cargo || sesion.cargo,
+    };
+  }, [maestro, sesion]);
 
-  const maestroTieneCedulas = useMemo(
-    () => maestro.some((t) => normalizarDigitos(t.cedula).length > 0),
-    [maestro]
-  );
+  const cedulaEfectiva = colaboradorSesion.cedula || normalizarDigitos(cedulaManual);
+  const nombreBeneficiario = colaboradorSesion.nombre || '';
+  const sedeBeneficiario = colaboradorSesion.sede || '';
 
-  const nombreBeneficiario = trabajadorPorCedula?.nombre || '';
-  const sedeBeneficiario = trabajadorPorCedula?.sede || '';
+  const solicitudesVisiblesUsuario = useMemo(() => {
+    if (verTodosRegistros) return solicitudesEspecialesPersonal;
+    return solicitudesEspecialesPersonal.filter((s) =>
+      esSolicitudDelUsuario(s, colaboradorSesion.nombre || sesion.nombre, cedulaEfectiva)
+    );
+  }, [
+    verTodosRegistros,
+    solicitudesEspecialesPersonal,
+    colaboradorSesion.nombre,
+    sesion.nombre,
+    cedulaEfectiva,
+  ]);
+
+  const solicitudesPendientesUsuario = useMemo(() => {
+    return solicitudesEspecialesPersonal.filter(
+      (s) =>
+        esEstadoPendienteAprobacion(s.estado) &&
+        esSolicitudDelUsuario(s, colaboradorSesion.nombre || sesion.nombre, cedulaEfectiva)
+    );
+  }, [solicitudesEspecialesPersonal, colaboradorSesion.nombre, sesion.nombre, cedulaEfectiva]);
+
+  const tieneSolicitudPendiente = solicitudesPendientesUsuario.length > 0;
 
   const semanaCalculada = useMemo(() => {
-    return fechaEntrega ? getISOWeekNumber(fechaEntrega) : getISOWeekNumber(fechaSolicitud);
-  }, [fechaEntrega, fechaSolicitud]);
+    return fechaEntrega ? getISOWeekNumber(fechaEntrega) : getISOWeekNumber(fechaMinimaEntrega);
+  }, [fechaEntrega, fechaMinimaEntrega]);
 
   const siguienteNumeroId = useMemo(() => {
     const year = new Date().getFullYear();
@@ -347,7 +395,8 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
 
   const rosaColorActivo = Object.prototype.hasOwnProperty.call(productosCantidades, 'Rosa (Color)');
   const rosaRojaActivo = Object.prototype.hasOwnProperty.call(productosCantidades, 'Rosa (Roja)');
-  const rosaTieneSeleccion = rosaColorActivo || rosaRojaActivo;
+  const bouquetActivo = Object.prototype.hasOwnProperty.call(productosCantidades, 'Bouquet');
+  const rosaTieneSeleccion = rosaColorActivo || rosaRojaActivo || bouquetActivo;
   const rosaExpandido = rosaAbierto || rosaTieneSeleccion;
 
   const toggleRosaPrincipal = () => {
@@ -357,6 +406,7 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
         const next = { ...prev };
         delete next['Rosa (Color)'];
         delete next['Rosa (Roja)'];
+        delete next['Bouquet'];
         return next;
       });
       setErrores((prev) => {
@@ -365,6 +415,7 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
         delete next.cantidad;
         delete next['cant_Rosa (Color)'];
         delete next['cant_Rosa (Roja)'];
+        delete next['cant_Bouquet'];
         return next;
       });
     } else {
@@ -445,95 +496,18 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
     }
   };
 
-  const abrirCamaraWeb = async () => {
-    setCamaraError('');
-    setErrorFoto('');
-    setCamaraAbierta(true);
-    try {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        setCamaraError(
-          'El navegador no habilita cámara en vivo en este contexto. Use el botón "Tomar Foto" o "Adjuntar Carta".'
-        );
-        return;
-      }
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' },
-        audio: false,
-      });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play().catch(() => {});
-      }
-    } catch (err: any) {
-      setCamaraError(
-        err?.message ||
-          'No se pudo acceder a la cámara. Verifique los permisos o use "Adjuntar Carta".'
-      );
-    }
-  };
-
-  const cerrarCamaraWeb = () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((t) => t.stop());
-      streamRef.current = null;
-    }
-    setCamaraAbierta(false);
-    setCamaraError('');
-  };
-
-  const capturarDesdeCamaraWeb = () => {
-    const video = videoRef.current;
-    if (!video || !video.videoWidth || !video.videoHeight) return;
-    const maxDim = 1280;
-    let width = video.videoWidth;
-    let height = video.videoHeight;
-    if (width > maxDim || height > maxDim) {
-      if (width >= height) {
-        height = Math.round((height * maxDim) / width);
-        width = maxDim;
-      } else {
-        width = Math.round((width * maxDim) / height);
-        height = maxDim;
-      }
-    }
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    ctx.drawImage(video, 0, 0, width, height);
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
-    const base64 = dataUrl.split(',')[1] || '';
-    setFotoCarta({
-      base64,
-      mimeType: 'image/jpeg',
-      fileName: `Carta_Camara_${Date.now()}.jpg`,
-      previewUrl: dataUrl,
-      sizeKB: Math.round((base64.length * 3) / 4 / 1024),
-    });
-    setErrores((prev) => {
-      const next = { ...prev };
-      delete next.fotoCarta;
-      return next;
-    });
-    cerrarCamaraWeb();
-  };
-
   const validarFormulario = (): boolean => {
     const errs: Record<string, string> = {};
-    const cedNorm = normalizarDigitos(cedula);
 
-    if (!cedNorm) {
-      errs.cedula = 'Digite el número de cédula del colaborador.';
-    } else if (!trabajadorPorCedula) {
-      errs.cedula = 'Esta cédula no figura en el Maestro. Verifique o sincronice el Maestro.';
+    if (!cedulaEfectiva) {
+      errs.cedula =
+        'No se encontró su cédula en el Maestro. Presione "Sincronizar Maestro" o digite su cédula.';
     }
 
     if (productosSeleccionadosOrdenados.length === 0) {
       errs.producto = rosaAbierto
-        ? 'Seleccione Rosa (Color) y/o Rosa (Roja), o elija otro producto.'
-        : 'Seleccione al menos un producto (Rosa, Clavel, Alstroemeria o Bouquet).';
+        ? 'Seleccione Rosa (Color), Rosa (Roja) y/o Bouquet, o elija otro producto.'
+        : 'Seleccione al menos un producto (Rosa, Clavel o Alstroemeria).';
     } else {
       for (const prod of productosSeleccionadosOrdenados) {
         const cantNum = Number(productosCantidades[prod]);
@@ -549,17 +523,21 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
     }
 
     if (!fechaEntrega) {
-      errs.fechaEntrega = 'Seleccione la fecha de entrega.';
+      errs.fechaEntrega = 'Ingrese la fecha en la que requiere la flor.';
+    } else if (fechaEntrega < fechaMinimaEntrega) {
+      errs.fechaEntrega = `La entrega debe solicitarse con 10 días de anticipación (a partir del ${formatShortDate(
+        fechaMinimaEntrega
+      )}).`;
     }
 
-    const parsedCorreos = parsearListaCorreos(correoNotificacion);
-    if (!correoNotificacion.trim()) {
-      errs.correoNotificacion = 'Ingrese al menos un correo electrónico para notificar.';
-    } else if (parsedCorreos.invalidos.length > 0 || parsedCorreos.correos.length === 0) {
-      errs.correoNotificacion =
-        parsedCorreos.invalidos.length > 0
-          ? `Correo(s) con formato inválido: ${parsedCorreos.invalidos.join(', ')}`
-          : 'Ingrese un correo válido (sepárelos por coma si son varios).';
+    const parsedCorreo = normalizarCorreoIndividual(correoConfirmacion);
+    if (!parsedCorreo.correo) {
+      errs.correoConfirmacion =
+        'Ingrese un Correo de confirmación para recibir la respuesta de Solicitud.';
+    } else if (!parsedCorreo.valido) {
+      errs.correoConfirmacion = parsedCorreo.tieneMultiples
+        ? 'Ingrese un único correo electrónico personal válido.'
+        : 'El correo electrónico ingresado no tiene un formato válido.';
     }
 
     setErrores(errs);
@@ -567,15 +545,14 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
   };
 
   const limpiarFormulario = () => {
-    setCedula('');
+    setCedulaManual('');
     setProductosCantidades({});
     setRosaAbierto(false);
     setMotivoSeleccionado('');
     setMostrandoInputMotivo(false);
     setNuevoMotivoInput('');
-    setFechaEntrega(getTodayString());
-    setObservacion('');
-    setCorreoNotificacion('');
+    setFechaEntrega(fechaMinimaEntrega);
+    setCorreoConfirmacion('');
     setFotoCarta(null);
     setErrorFoto('');
     setErrores({});
@@ -583,7 +560,14 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!validarFormulario() || !trabajadorPorCedula) return;
+    if (tieneSolicitudPendiente) {
+      setErrores({
+        general:
+          'Ya tiene una solicitud en estado Pendiente Aprobación. No puede realizar una solicitud adicional hasta que sea aprobada o gestionada.',
+      });
+      return;
+    }
+    if (!validarFormulario() || !nombreBeneficiario || !sedeBeneficiario) return;
 
     setIsSubmitting(true);
     setErrores({});
@@ -597,8 +581,7 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
         }
       }
 
-      const parsedCorreos = parsearListaCorreos(correoNotificacion);
-      const correoLimpio = parsedCorreos.normalizado;
+      const correoPersonal = normalizarCorreoIndividual(correoConfirmacion).correo;
       const year = new Date().getFullYear();
       const semanaStr = String(semanaCalculada);
 
@@ -606,24 +589,25 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
         id: `SEP-${year}-${String(siguienteNumeroId + idx).padStart(3, '0')}`,
         fechaSolicitud,
         usuario: sesion.nombre.trim(),
-        cedula: normalizarDigitos(cedula),
-        nombre: trabajadorPorCedula.nombre,
-        sede: trabajadorPorCedula.sede,
+        cedula: cedulaEfectiva,
+        nombre: nombreBeneficiario,
+        sede: sedeBeneficiario,
         producto: prod,
         cantidad: Math.max(1, Math.floor(Number(productosCantidades[prod]) || 1)),
         motivo: motivoFinal,
         semana: semanaStr,
         fechaEntrega,
-        observacion: observacion.trim(),
+        correoConfirmacion: correoPersonal,
+        observacion: '',
         fotoCarta: '',
-        notificado: correoLimpio || 'Registrada',
-        estado: correoLimpio || 'Registrada',
+        notificado: CORREO_NOTIFICADO_FIJO_EP,
+        estado: ESTADO_INICIAL_EP,
         creadoEn: Date.now() + idx,
       }));
 
       const res = await onGuardarEspecialPersonal(
         listaSolicitudes,
-        correoLimpio,
+        CORREO_NOTIFICADO_FIJO_EP,
         fotoCarta
           ? {
               base64: fotoCarta.base64,
@@ -667,16 +651,12 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
 
   const handleReintentarCorreo = async () => {
     if (solicitudesExitosas.length === 0) return;
-    const correoDestino =
-      emailResultado?.to ||
-      solicitudesExitosas[0]?.notificado ||
-      solicitudesExitosas[0]?.estado ||
-      '';
-    if (!correoDestino || !correoDestino.includes('@')) return;
-
     setReintentandoCorreo(true);
     try {
-      const resMail = await retryEmailEspecialesPersonalApi(solicitudesExitosas, correoDestino);
+      const resMail = await retryEmailEspecialesPersonalApi(
+        solicitudesExitosas,
+        CORREO_NOTIFICADO_FIJO_EP
+      );
       setEmailResultado(resMail);
     } finally {
       setReintentandoCorreo(false);
@@ -686,21 +666,21 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
   // Opciones dinámicas de filtros tabla
   const semanasDisponiblesTabla = useMemo(() => {
     const set = new Set<number>();
-    for (const s of solicitudesEspecialesPersonal) {
+    for (const s of solicitudesVisiblesUsuario) {
       const num = obtenerNumSemanaEP(s);
       if (num > 0) set.add(num);
     }
     return Array.from(set).sort((a, b) => a - b);
-  }, [solicitudesEspecialesPersonal]);
+  }, [solicitudesVisiblesUsuario]);
 
   const productosDisponiblesTabla = useMemo(() => {
     const set = new Set<string>(PRODUCTOS_EP);
-    for (const s of solicitudesEspecialesPersonal) {
+    for (const s of solicitudesVisiblesUsuario) {
       const p = String(s.producto || '').trim();
       if (p) set.add(p);
     }
     return Array.from(set);
-  }, [solicitudesEspecialesPersonal]);
+  }, [solicitudesVisiblesUsuario]);
 
   const toggleProductoFiltro = (prod: string) => {
     setProductosFiltro((prev) =>
@@ -710,7 +690,7 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
 
   const solicitudesFiltradas = useMemo(() => {
     const q = busquedaTabla.toLowerCase().trim();
-    return solicitudesEspecialesPersonal.filter((s) => {
+    return solicitudesVisiblesUsuario.filter((s) => {
       if (filtroSemana !== 'todas') {
         const sem = obtenerNumSemanaEP(s);
         if (String(sem) !== filtroSemana) return false;
@@ -729,10 +709,12 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
         s.sede.toLowerCase().includes(q) ||
         s.producto.toLowerCase().includes(q) ||
         s.motivo.toLowerCase().includes(q) ||
+        (s.correoConfirmacion || '').toLowerCase().includes(q) ||
+        (s.estado || '').toLowerCase().includes(q) ||
         (s.notificado || '').toLowerCase().includes(q)
       );
     });
-  }, [solicitudesEspecialesPersonal, busquedaTabla, filtroSemana, productosFiltro]);
+  }, [solicitudesVisiblesUsuario, busquedaTabla, filtroSemana, productosFiltro]);
 
   const totalRamosFiltrados = useMemo(
     () => solicitudesFiltradas.reduce((acc, s) => acc + (Number(s.cantidad) || 0), 0),
@@ -761,9 +743,10 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
       Motivo: s.motivo,
       Semana: s.semana,
       'Fecha Entrega': s.fechaEntrega,
-      Observación: s.observacion,
+      'Correo de confirmación': s.correoConfirmacion || '',
+      Estado: s.estado || ESTADO_INICIAL_EP,
       'Foto Carta': s.fotoCarta || '',
-      Notificado: s.notificado || s.estado || '',
+      Notificado: s.notificado || '',
     }));
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
@@ -793,7 +776,7 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
             <div className="flex items-center justify-between pb-2 border-b border-slate-100">
               <span className="text-xs font-extrabold text-[#0a2958] uppercase tracking-wider flex items-center gap-1.5">
                 <FileImage className="w-4 h-4 text-[#E60000]" />
-                Carta Autorizada
+                Carta de Solicitud
               </span>
               <button
                 type="button"
@@ -821,78 +804,18 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
             ) : cartaLightboxUrl.toLowerCase().endsWith('.pdf') ? (
               <iframe
                 src={cartaLightboxUrl}
-                title="Carta Autorizada"
+                title="Carta de Solicitud"
                 className="w-full h-[65vh] rounded-xl border border-slate-200"
               />
             ) : (
               <div className="max-h-[75vh] overflow-auto flex items-center justify-center bg-slate-50 rounded-xl p-2">
                 <img
                   src={cartaLightboxUrl}
-                  alt="Carta Autorizada"
+                  alt="Carta de Solicitud"
                   className="max-w-full max-h-[70vh] rounded-lg object-contain"
                 />
               </div>
             )}
-          </div>
-        </div>
-      )}
-
-      {/* Modal Cámara Web */}
-      {camaraAbierta && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-5 shadow-2xl border border-slate-200 space-y-4">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <Camera className="w-4 h-4 text-[#E60000]" />
-                <h3 className="text-sm font-extrabold text-[#0a2958]">
-                  Tomar Foto de Carta Autorizada
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={cerrarCamaraWeb}
-                className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {camaraError ? (
-              <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start gap-2.5">
-                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                <span>{camaraError}</span>
-              </div>
-            ) : (
-              <div className="rounded-xl overflow-hidden bg-slate-900 border border-slate-300 aspect-video flex items-center justify-center">
-                <video
-                  ref={videoRef}
-                  autoPlay
-                  playsInline
-                  muted
-                  className="w-full h-full object-cover"
-                />
-              </div>
-            )}
-
-            <div className="flex items-center justify-end gap-2">
-              <button
-                type="button"
-                onClick={cerrarCamaraWeb}
-                className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 cursor-pointer"
-              >
-                Cancelar
-              </button>
-              {!camaraError && (
-                <button
-                  type="button"
-                  onClick={capturarDesdeCamaraWeb}
-                  className="px-5 py-2 rounded-xl bg-[#0a2958] hover:bg-[#0d346e] text-white text-xs font-extrabold inline-flex items-center gap-2 cursor-pointer"
-                >
-                  <Camera className="w-4 h-4 text-[#E60000]" />
-                  <span>Capturar Foto</span>
-                </button>
-              )}
-            </div>
           </div>
         </div>
       )}
@@ -1109,17 +1032,23 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
                 </div>
               )}
               <div className="flex justify-between gap-3">
-                <span className="text-slate-500 shrink-0">Notificado:</span>
-                <span className="font-bold text-emerald-700 break-all text-right">
-                  {primeraExitosa.notificado || primeraExitosa.estado || 'Registrada'}
+                <span className="text-slate-500 shrink-0">Correo de confirmación:</span>
+                <span className="font-semibold text-[#0a2958] break-all text-right">
+                  {primeraExitosa.correoConfirmacion || '—'}
                 </span>
               </div>
-              {primeraExitosa.observacion && (
-                <div className="pt-2 border-t border-slate-200">
-                  <span className="text-slate-500 block mb-0.5">Observación:</span>
-                  <p className="text-slate-800 font-medium">{primeraExitosa.observacion}</p>
-                </div>
-              )}
+              <div className="flex justify-between items-center gap-3">
+                <span className="text-slate-500 shrink-0">Estado:</span>
+                <span className="font-extrabold text-amber-700 text-right">
+                  {primeraExitosa.estado || ESTADO_INICIAL_EP}
+                </span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span className="text-slate-500 shrink-0">Notificado:</span>
+                <span className="font-bold text-emerald-700 break-all text-right">
+                  {primeraExitosa.notificado || CORREO_NOTIFICADO_FIJO_EP}
+                </span>
+              </div>
             </div>
 
             <div className="flex flex-col sm:flex-row gap-2">
@@ -1170,7 +1099,7 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
                 ESPECIALES PERSONAL
               </h2>
               <p className="text-[11px] text-slate-500">
-                Solicitudes especiales por trabajador con carta autorizada
+                Solicitudes especiales por trabajador con carta
               </p>
             </div>
           </div>
@@ -1215,7 +1144,38 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
         )}
 
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
-          {/* 1. COLABORADOR POR CÉDULA (DESDE MAESTRO) */}
+          {/* Nota de verificación y autorización */}
+          <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start gap-2.5 font-medium">
+            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+            <span>
+              Al realizar esta solicitud, queda sujeta a verificación, disponibilidad y autorización por parte de la dirección de Poscosecha.
+            </span>
+          </div>
+
+          {tieneSolicitudPendiente && (
+            <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-xs flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-[#E60000] shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <p className="font-extrabold text-[#E60000]">
+                  Solicitud en curso en estado Pendiente Aprobación
+                </p>
+                <p className="font-medium text-rose-900">
+                  Ya tiene{' '}
+                  {solicitudesPendientesUsuario.length === 1
+                    ? 'una solicitud registrada'
+                    : `${solicitudesPendientesUsuario.length} registros en curso`}{' '}
+                  (
+                  <strong className="font-mono">
+                    {solicitudesPendientesUsuario.map((s) => s.id).join(', ')}
+                  </strong>
+                  ). No podrá realizar ninguna solicitud adicional en este formulario mientras se encuentre en estado{' '}
+                  <strong>Pendiente Aprobación</strong>.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* 1. DATOS DEL COLABORADOR (DESDE HOJA MAESTRO DE LA SESIÓN) */}
           <div className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-100">
               <div className="flex items-center gap-2">
@@ -1225,7 +1185,7 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
                 </h3>
               </div>
 
-              {onRecargarMaestro && (
+              {onRecargarMaestro && !colaboradorSesion.cedula && (
                 <button
                   type="button"
                   disabled={sincronizandoMaestro}
@@ -1245,11 +1205,11 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
               )}
             </div>
 
-            {!maestroTieneCedulas && (
+            {!colaboradorSesion.cedula && (
               <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start gap-2">
                 <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                 <span>
-                  Aún no se detectan números de <strong>Cédula</strong> cargados en el Maestro sincronizado. Complete la columna <strong>Cédula</strong> en la hoja <em>Maestro</em> de Drive (o importe la plantilla actualizada) y presione <strong>Sincronizar Maestro</strong>.
+                  Aún no aparece su número de <strong>Cédula</strong> en el Maestro local. Puede presionar <strong>Sincronizar Maestro</strong> o digitar su cédula manualmente.
                 </span>
               </div>
             )}
@@ -1262,37 +1222,41 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
                 >
                   Cédula <span className="text-[#E60000]">*</span>
                 </label>
-                <input
-                  id="ep-cedula"
-                  type="text"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  value={cedula}
-                  onChange={(e) => {
-                    const soloDigitos = e.target.value.replace(/\D/g, '');
-                    setCedula(soloDigitos);
-                    setErrores((prev) => {
-                      const next = { ...prev };
-                      delete next.cedula;
-                      return next;
-                    });
-                  }}
-                  placeholder="Digite el número de cédula"
-                  className={`w-full px-3.5 py-2.5 text-xs rounded-xl border font-mono font-bold outline-hidden ${
-                    errores.cedula
-                      ? 'border-rose-400 bg-rose-50/40 text-slate-900'
-                      : trabajadorPorCedula
-                      ? 'border-emerald-400 bg-emerald-50/30 text-[#0a2958]'
-                      : 'border-slate-300 focus:border-[#0a2958] text-slate-900'
-                  }`}
-                />
+                {colaboradorSesion.cedula ? (
+                  <input
+                    id="ep-cedula"
+                    type="text"
+                    value={colaboradorSesion.cedula}
+                    readOnly
+                    tabIndex={-1}
+                    className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 bg-slate-50 font-mono font-bold text-[#0a2958] outline-hidden"
+                  />
+                ) : (
+                  <input
+                    id="ep-cedula"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    value={cedulaManual}
+                    onChange={(e) => {
+                      const soloDigitos = e.target.value.replace(/\D/g, '');
+                      setCedulaManual(soloDigitos);
+                      setErrores((prev) => {
+                        const next = { ...prev };
+                        delete next.cedula;
+                        return next;
+                      });
+                    }}
+                    placeholder="Digite su número de cédula"
+                    className={`w-full px-3.5 py-2.5 text-xs rounded-xl border font-mono font-bold outline-hidden ${
+                      errores.cedula
+                        ? 'border-rose-400 bg-rose-50/40 text-slate-900'
+                        : 'border-slate-300 focus:border-[#0a2958] text-slate-900'
+                    }`}
+                  />
+                )}
                 {errores.cedula && (
                   <p className="text-[11px] text-[#E60000] font-semibold mt-1">{errores.cedula}</p>
-                )}
-                {!errores.cedula && cedula && !trabajadorPorCedula && (
-                  <p className="text-[11px] text-amber-700 font-semibold mt-1">
-                    Cédula no encontrada en el Maestro actual.
-                  </p>
                 )}
               </div>
 
@@ -1309,7 +1273,6 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
                   value={nombreBeneficiario}
                   readOnly
                   tabIndex={-1}
-                  placeholder="Se completa automáticamente"
                   className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 bg-slate-50 font-bold text-slate-800 outline-hidden"
                 />
               </div>
@@ -1327,21 +1290,10 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
                   value={sedeBeneficiario}
                   readOnly
                   tabIndex={-1}
-                  placeholder="Se completa automáticamente"
                   className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 bg-slate-50 font-bold text-[#0a2958] outline-hidden"
                 />
               </div>
             </div>
-
-            {trabajadorPorCedula && (
-              <div className="px-3.5 py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs flex items-center gap-2 font-semibold">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span>
-                  Colaborador identificado: <strong>{trabajadorPorCedula.nombre}</strong> ·{' '}
-                  {trabajadorPorCedula.sede} (Cód. {trabajadorPorCedula.codigo})
-                </span>
-              </div>
-            )}
           </div>
 
           {/* 2. PRODUCTO Y CANTIDAD */}
@@ -1371,8 +1323,8 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
                   (Puede seleccionar varios productos; cada uno se guarda por separado)
                 </span>
               </label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-start">
-                {/* Tarjeta Rosa con subopciones Rosa (Color) y Rosa (Roja) */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-start">
+                {/* Tarjeta Rosa con subopciones Rosa (Color), Rosa (Roja) y Bouquet */}
                 <div
                   className={`rounded-xl border p-3 transition ${
                     rosaExpandido
@@ -1479,7 +1431,7 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
                   )}
                 </div>
 
-                {/* Clavel, Alstroemeria, Bouquet */}
+                {/* Clavel, Alstroemeria */}
                 {PRODUCTOS_RESTO_EP.map((prod) => {
                   const activo = Object.prototype.hasOwnProperty.call(productosCantidades, prod);
                   const cantValor = productosCantidades[prod] ?? '';
@@ -1569,94 +1521,109 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
               </h3>
             </div>
 
-            {/* Motivo */}
-            <div className="space-y-2.5">
-              <label className="block text-xs font-bold text-slate-700">
-                Motivo <span className="text-[#E60000]">*</span>
-              </label>
-              <div className="flex flex-wrap gap-2">
-                {opcionesMotivoVisibles.map((mot) => (
+            {/* Motivo (lista desplegable), Fecha de Entrega (mínimo 10 días) y Semana */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
+              <div>
+                <label
+                  htmlFor="select-motivo-ep"
+                  className="block text-xs font-bold text-slate-700 mb-1.5"
+                >
+                  Motivo <span className="text-[#E60000]">*</span>
+                </label>
+                <div className="flex items-center gap-2">
+                  <div className="relative flex-1 min-w-0">
+                    <select
+                      id="select-motivo-ep"
+                      value={mostrandoInputMotivo ? '__AGREGAR__' : motivoSeleccionado}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === '__AGREGAR__') {
+                          setMostrandoInputMotivo(true);
+                        } else {
+                          setMotivoSeleccionado(val);
+                          setMostrandoInputMotivo(false);
+                        }
+                        setErrores((prev) => {
+                          const next = { ...prev };
+                          delete next.motivo;
+                          return next;
+                        });
+                      }}
+                      className={`w-full appearance-none pl-3.5 pr-9 py-2.5 text-xs rounded-xl border font-bold bg-white outline-hidden cursor-pointer truncate ${
+                        errores.motivo
+                          ? 'border-rose-400 bg-rose-50/40 text-slate-900'
+                          : 'border-slate-300 focus:border-[#0a2958] text-slate-800'
+                      }`}
+                    >
+                      <option value="">Seleccione un motivo…</option>
+                      {opcionesMotivoVisibles.map((mot) => (
+                        <option key={mot} value={mot}>
+                          {mot}
+                        </option>
+                      ))}
+                      <option value="__AGREGAR__">+ Agregar otro motivo…</option>
+                    </select>
+                    <ChevronDown className="w-4 h-4 text-slate-500 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  </div>
                   <button
-                    key={mot}
                     type="button"
                     onClick={() => {
-                      setMotivoSeleccionado(mot);
-                      setMostrandoInputMotivo(false);
+                      setMostrandoInputMotivo((prev) => !prev);
                       setErrores((prev) => {
                         const next = { ...prev };
                         delete next.motivo;
                         return next;
                       });
                     }}
-                    className={`px-3.5 py-2 rounded-xl border text-xs font-bold transition cursor-pointer ${
-                      !mostrandoInputMotivo && motivoSeleccionado === mot
-                        ? 'bg-[#0a2958] text-white border-[#0a2958] shadow-xs'
-                        : 'bg-white text-slate-700 border-slate-200 hover:border-[#0a2958]/40'
+                    title="Agregar otro motivo"
+                    aria-label="Agregar otro motivo"
+                    className={`p-2.5 rounded-xl border transition cursor-pointer shrink-0 ${
+                      mostrandoInputMotivo
+                        ? 'bg-[#E60000]/10 text-[#E60000] border-[#E60000]/40'
+                        : 'bg-slate-50 text-slate-700 border-slate-300 hover:border-[#0a2958] hover:text-[#0a2958]'
                     }`}
                   >
-                    {mot}
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMostrandoInputMotivo((prev) => !prev);
-                    setErrores((prev) => {
-                      const next = { ...prev };
-                      delete next.motivo;
-                      return next;
-                    });
-                  }}
-                  className={`px-3.5 py-2 rounded-xl border text-xs font-bold transition inline-flex items-center gap-1.5 cursor-pointer ${
-                    mostrandoInputMotivo
-                      ? 'bg-[#E60000]/10 text-[#E60000] border-[#E60000]/40'
-                      : 'bg-slate-50 text-slate-700 border-dashed border-slate-300 hover:border-[#0a2958]'
-                  }`}
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Agregar otro motivo</span>
-                </button>
-              </div>
-
-              {mostrandoInputMotivo && (
-                <div className="flex flex-col sm:flex-row gap-2 max-w-md pt-1">
-                  <input
-                    type="text"
-                    value={nuevoMotivoInput}
-                    onChange={(e) => {
-                      setNuevoMotivoInput(e.target.value);
-                      setErrores((prev) => {
-                        const next = { ...prev };
-                        delete next.motivo;
-                        return next;
-                      });
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        handleAgregarMotivoPersonalizado();
-                      }
-                    }}
-                    placeholder="Escriba el nuevo motivo…"
-                    className="flex-1 px-3.5 py-2 text-xs rounded-xl border border-slate-300 focus:border-[#0a2958] outline-hidden font-medium"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleAgregarMotivoPersonalizado}
-                    className="px-4 py-2 rounded-xl bg-[#0a2958] text-white text-xs font-bold hover:bg-[#0d346e] cursor-pointer"
-                  >
-                    Agregar
+                    <Plus className="w-4 h-4" />
                   </button>
                 </div>
-              )}
 
-              {errores.motivo && (
-                <p className="text-[11px] text-[#E60000] font-semibold">{errores.motivo}</p>
-              )}
-            </div>
+                {mostrandoInputMotivo && (
+                  <div className="flex gap-2 pt-2">
+                    <input
+                      type="text"
+                      value={nuevoMotivoInput}
+                      onChange={(e) => {
+                        setNuevoMotivoInput(e.target.value);
+                        setErrores((prev) => {
+                          const next = { ...prev };
+                          delete next.motivo;
+                          return next;
+                        });
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAgregarMotivoPersonalizado();
+                        }
+                      }}
+                      placeholder="Escriba el nuevo motivo…"
+                      className="flex-1 min-w-0 px-3 py-2 text-xs rounded-xl border border-slate-300 focus:border-[#0a2958] outline-hidden font-medium"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAgregarMotivoPersonalizado}
+                      className="px-3.5 py-2 rounded-xl bg-[#0a2958] text-white text-xs font-bold hover:bg-[#0d346e] cursor-pointer shrink-0"
+                    >
+                      Agregar
+                    </button>
+                  </div>
+                )}
 
-            {/* Fecha de Entrega & Semana calculada */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {errores.motivo && (
+                  <p className="text-[11px] text-[#E60000] font-semibold mt-1">{errores.motivo}</p>
+                )}
+              </div>
+
               <div>
                 <label
                   htmlFor="ep-fecha-entrega"
@@ -1667,6 +1634,7 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
                 <input
                   id="ep-fecha-entrega"
                   type="date"
+                  min={fechaMinimaEntrega}
                   value={fechaEntrega}
                   onChange={(e) => {
                     setFechaEntrega(e.target.value);
@@ -1682,6 +1650,12 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
                       : 'border-slate-300 focus:border-[#0a2958]'
                   }`}
                 />
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Ingrese la fecha en la que requiere la flor.{' '}
+                  <span className="text-[#0a2958] font-semibold">
+                    (Mín. 10 días de anticipación).
+                  </span>
+                </p>
                 {errores.fechaEntrega && (
                   <p className="text-[11px] text-[#E60000] font-semibold mt-1">
                     {errores.fechaEntrega}
@@ -1693,21 +1667,120 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
                 <label className="block text-xs font-bold text-slate-700 mb-1.5">
                   Semana
                 </label>
-                <div className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 bg-slate-50 font-extrabold text-[#E60000] flex items-center justify-between">
-                  <span>Semana {semanaCalculada}</span>
-                  <span className="text-[11px] font-medium text-slate-500">
+                <div className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200 bg-slate-50 font-extrabold text-[#E60000] flex items-center justify-between gap-2">
+                  <span className="shrink-0">Semana {semanaCalculada}</span>
+                  <span className="text-[11px] font-medium text-slate-500 truncate">
                     {fechaEntrega ? formatDateSpanish(fechaEntrega) : '—'}
                   </span>
                 </div>
               </div>
             </div>
 
-            {/* Foto Carta */}
+            {/* Correo de confirmación y Estado */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
+              <div>
+                <label
+                  htmlFor="ep-correo-confirmacion"
+                  className="flex items-center gap-1.5 text-xs font-bold text-slate-700 mb-1.5"
+                >
+                  <Mail className="w-3.5 h-3.5 text-[#0a2958]" />
+                  <span>Correo de confirmación</span>
+                  <span className="text-[#E60000]">*</span>
+                </label>
+                <input
+                  id="ep-correo-confirmacion"
+                  type="email"
+                  inputMode="email"
+                  autoComplete="email"
+                  value={correoConfirmacion}
+                  onChange={(e) => {
+                    setCorreoConfirmacion(e.target.value);
+                    setErrores((prev) => {
+                      const next = { ...prev };
+                      delete next.correoConfirmacion;
+                      return next;
+                    });
+                  }}
+                  placeholder="Ej. micorreo@gmail.com"
+                  className={`w-full px-3.5 py-2.5 text-xs rounded-xl border font-semibold outline-hidden ${
+                    errores.correoConfirmacion
+                      ? 'border-rose-400 bg-rose-50/40 text-slate-900'
+                      : 'border-slate-300 focus:border-[#0a2958] text-slate-800'
+                  }`}
+                />
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Ingrese un Correo de confirmación para recibir la respuesta de Solicitud.
+                </p>
+                {errores.correoConfirmacion && (
+                  <p className="text-[11px] text-[#E60000] font-semibold mt-1">
+                    {errores.correoConfirmacion}
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label
+                  htmlFor="ep-estado"
+                  className="flex items-center gap-1.5 text-xs font-bold text-slate-700 mb-1.5"
+                >
+                  <Clock className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Estado</span>
+                </label>
+                <input
+                  id="ep-estado"
+                  type="text"
+                  value={ESTADO_INICIAL_EP}
+                  readOnly
+                  tabIndex={-1}
+                  className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-amber-200 bg-amber-50/70 font-extrabold text-amber-800 outline-hidden"
+                />
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Toda solicitud registrada inicia en estado <strong>{ESTADO_INICIAL_EP}</strong>.
+                </p>
+              </div>
+            </div>
+
+            {/* Foto Carta + Modelo de carta descargable */}
             <div className="space-y-2.5">
               <label className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
                 <FileImage className="w-3.5 h-3.5 text-[#0a2958]" />
-                <span>Foto Carta (carta autorizada)</span>
+                <span>Foto Carta</span>
               </label>
+
+              {/* Carta modelo para descargar, llenar, firmar y adjuntar */}
+              <div className="p-3.5 rounded-xl border border-[#0a2958]/20 bg-[#0a2958]/[0.03] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-start gap-2.5 min-w-0">
+                  <div className="w-9 h-9 rounded-lg bg-[#0a2958] text-white flex items-center justify-center shrink-0">
+                    <FileText className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-extrabold text-[#0a2958]">
+                      Modelo de carta de solicitud
+                    </p>
+                    <p className="text-[11px] text-slate-600">
+                      Descargue el formato modelo, llénelo, fírmelo y luego adjúntelo o tómele una foto abajo.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setCartaLightboxUrl(MODELO_CARTA_PDF_URL)}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-[#0a2958] text-xs font-bold shadow-xs cursor-pointer transition"
+                  >
+                    <Eye className="w-3.5 h-3.5 text-[#E60000]" />
+                    <span>Ver modelo</span>
+                  </button>
+                  <a
+                    href={MODELO_CARTA_PDF_URL}
+                    download="Modelo_carta_solicitud_obsequio_de_flor.pdf"
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#0a2958] hover:bg-[#0d346e] text-white text-xs font-bold shadow-xs transition"
+                  >
+                    <Download className="w-3.5 h-3.5 text-[#E60000]" />
+                    <span>Descargar carta modelo (PDF)</span>
+                  </a>
+                </div>
+              </div>
 
               <div className="p-4 rounded-xl border border-dashed border-slate-300 bg-slate-50/70 space-y-3">
                 <div className="flex flex-wrap items-center gap-2.5">
@@ -1733,15 +1806,6 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
                       className="hidden"
                     />
                   </label>
-
-                  <button
-                    type="button"
-                    onClick={abrirCamaraWeb}
-                    className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-[#0a2958] hover:bg-[#0d346e] text-white text-xs font-bold shadow-xs cursor-pointer transition"
-                  >
-                    <Camera className="w-3.5 h-3.5 text-[#E60000]" />
-                    <span>Cámara en vivo</span>
-                  </button>
                 </div>
 
                 {errorFoto && (
@@ -1789,81 +1853,46 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
                   </div>
                 ) : (
                   <p className="text-[11px] text-slate-500">
-                    Puede adjuntar una imagen o PDF de la carta autorizada, o tomar la foto directamente desde su dispositivo o cámara web.
+                    Puede adjuntar una imagen o PDF de la carta, o tomar la foto directamente desde su dispositivo.
                   </p>
                 )}
               </div>
             </div>
 
-            {/* Observación */}
-            <div>
-              <label
-                htmlFor="ep-observacion"
-                className="flex items-center gap-1.5 text-xs font-bold text-slate-700 mb-1.5"
-              >
-                <MessageSquare className="w-3.5 h-3.5 text-slate-400" />
-                <span>Observación</span>
-              </label>
-              <textarea
-                id="ep-observacion"
-                rows={2}
-                value={observacion}
-                onChange={(e) => setObservacion(e.target.value)}
-                placeholder="Escriba observaciones o detalles adicionales…"
-                className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-300 focus:border-[#0a2958] outline-hidden font-medium resize-y"
-              />
-            </div>
-
-            {/* Notificado */}
-            <div>
-              <label
-                htmlFor="ep-notificado"
-                className="flex items-center gap-1.5 text-xs font-bold text-slate-700 mb-1.5"
-              >
+            {/* Notificado (destinatario fijo para revisión y respuesta) */}
+            <div className="space-y-2">
+              <label className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
                 <Mail className="w-3.5 h-3.5 text-[#0a2958]" />
                 <span>Notificado (correo electrónico)</span>
-                <span className="text-[#E60000]">*</span>
               </label>
-              <input
-                id="ep-notificado"
-                type="text"
-                inputMode="email"
-                autoComplete="email"
-                value={correoNotificacion}
-                onChange={(e) => {
-                  setCorreoNotificacion(e.target.value);
-                  setErrores((prev) => {
-                    const next = { ...prev };
-                    delete next.correoNotificacion;
-                    return next;
-                  });
-                }}
-                placeholder="Ej. correo1@mg-consultores.com, correo2@mg-consultores.com"
-                className={`w-full px-3.5 py-2.5 text-xs rounded-xl border font-semibold outline-hidden ${
-                  errores.correoNotificacion
-                    ? 'border-rose-400 bg-rose-50/40 text-slate-900'
-                    : 'border-slate-300 focus:border-[#0a2958] text-slate-800'
-                }`}
-              />
-              <p className="text-[11px] text-slate-500 mt-1">
-                Puede ingresar varios correos separados por coma (<code className="font-mono font-bold text-slate-700">,</code>). Todos recibirán la notificación completa.
-              </p>
-              {errores.correoNotificacion && (
-                <p className="text-[11px] text-[#E60000] font-semibold mt-1">
-                  {errores.correoNotificacion}
-                </p>
-              )}
+
+              <div className="rounded-xl border border-slate-200 bg-slate-50/70 px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2">
+                <span className="text-xs font-extrabold text-[#0a2958] break-all">
+                  {CORREO_NOTIFICADO_FIJO_EP}
+                </span>
+                <span className="text-[11px] text-slate-500 font-medium">
+                  Destinatario fijo para aprobación y respuesta al Correo de confirmación.
+                </span>
+              </div>
             </div>
           </div>
 
           <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="text-xs text-slate-500">
-              Campos con <span className="text-[#E60000] font-bold">*</span> son obligatorios.
+              {tieneSolicitudPendiente ? (
+                <span className="text-[#E60000] font-semibold">
+                  Formulario bloqueado mientras tenga una solicitud en estado Pendiente Aprobación.
+                </span>
+              ) : (
+                <>
+                  Campos con <span className="text-[#E60000] font-bold">*</span> son obligatorios.
+                </>
+              )}
             </div>
             <button
               type="submit"
-              disabled={isSubmitting}
-              className="w-full sm:w-auto px-8 py-3 rounded-xl bg-[#0a2958] hover:bg-[#0d346e] text-white text-xs sm:text-sm font-extrabold flex items-center justify-center gap-2 shadow-md transition cursor-pointer disabled:opacity-60"
+              disabled={isSubmitting || tieneSolicitudPendiente}
+              className="w-full sm:w-auto px-8 py-3 rounded-xl bg-[#0a2958] hover:bg-[#0d346e] text-white text-xs sm:text-sm font-extrabold flex items-center justify-center gap-2 shadow-md transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isSubmitting ? (
                 <>
@@ -1886,7 +1915,8 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
       </div>
 
       {/* Historial: Registros en Especiales Personal */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm">
+      {verRegistros && (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm">
         <div className="px-6 py-4 border-b border-slate-100 space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -1894,8 +1924,9 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
                 Registros en Especiales Personal ({solicitudesFiltradas.length})
               </h3>
               <p className="text-xs text-slate-500">
-                Mostrando <strong className="text-slate-700">{solicitudesFiltradas.length}</strong> de{' '}
-                <strong className="text-slate-700">{solicitudesEspecialesPersonal.length}</strong> registros · Total:{' '}
+                {verTodosRegistros ? 'Mostrando ' : 'Sus solicitudes registradas: '}
+                <strong className="text-slate-700">{solicitudesFiltradas.length}</strong> de{' '}
+                <strong className="text-slate-700">{solicitudesVisiblesUsuario.length}</strong> registros · Total:{' '}
                 <strong className="font-mono tabular-nums text-[#0a2958]">
                   {totalRamosFiltrados} ramos
                 </strong>
@@ -2064,7 +2095,8 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
                 <th className="py-2.5 px-3">Motivo</th>
                 <th className="py-2.5 px-3">Semana</th>
                 <th className="py-2.5 px-3">Fecha Entrega</th>
-                <th className="py-2.5 px-3">Observación</th>
+                <th className="py-2.5 px-3">Correo de confirmación</th>
+                <th className="py-2.5 px-3">Estado</th>
                 <th className="py-2.5 px-3">Foto Carta</th>
                 <th className="py-2.5 px-3">Notificado</th>
               </tr>
@@ -2072,15 +2104,16 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
             <tbody className="divide-y divide-slate-100">
               {solicitudesFiltradas.length === 0 ? (
                 <tr>
-                  <td colSpan={14} className="py-8 text-center text-slate-400">
-                    {solicitudesEspecialesPersonal.length === 0
+                  <td colSpan={15} className="py-8 text-center text-slate-400">
+                    {solicitudesVisiblesUsuario.length === 0
                       ? 'No hay registros en Especiales Personal todavía.'
                       : 'No hay registros que coincidan con los filtros seleccionados.'}
                   </td>
                 </tr>
               ) : (
                 solicitudesFiltradas.map((s, idx) => {
-                  const notificadoMostrar = s.notificado || s.estado || 'Registrada';
+                  const estadoMostrar = s.estado || ESTADO_INICIAL_EP;
+                  const notificadoMostrar = s.notificado || CORREO_NOTIFICADO_FIJO_EP;
                   return (
                     <tr key={`${s.id}-${s.cedula}-${idx}`} className="hover:bg-slate-50/80">
                       <td className="py-2.5 px-3 font-mono font-bold text-[#0a2958] whitespace-nowrap">
@@ -2103,8 +2136,20 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
                           (s.fechaEntrega ? String(getISOWeekNumber(s.fechaEntrega)) : '—')}
                       </td>
                       <td className="py-2.5 px-3 whitespace-nowrap">{s.fechaEntrega}</td>
-                      <td className="py-2.5 px-3 max-w-xs truncate" title={s.observacion}>
-                        {s.observacion || '—'}
+                      <td
+                        className="py-2.5 px-3 font-semibold text-[#0a2958] max-w-[200px] truncate"
+                        title={s.correoConfirmacion || ''}
+                      >
+                        {s.correoConfirmacion || '—'}
+                      </td>
+                      <td
+                        className={`py-2.5 px-3 whitespace-nowrap font-bold ${
+                          esEstadoPendienteAprobacion(estadoMostrar)
+                            ? 'text-amber-700'
+                            : 'text-emerald-700'
+                        }`}
+                      >
+                        {estadoMostrar}
                       </td>
                       <td className="py-2.5 px-3 whitespace-nowrap">
                         {s.fotoCarta ? (
@@ -2133,7 +2178,8 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
             </tbody>
           </table>
         </div>
-      </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -281,7 +281,7 @@ export const SidebarNavegacion: React.FC<SidebarNavegacionProps> = ({
               )}
             </div>
 
-            {/* Especiales Empresa (visible para AUXILIAR GESTIÓN HUMANA EAI y ANALISTA GESTIÓN DE INFORMACIÓN EAI) */}
+            {/* Especiales Empresa (visible para AUXILIAR GESTIÓN HUMANA EAI, ANALISTA GESTIÓN HUMANA y ANALISTA GESTIÓN DE INFORMACIÓN EAI) */}
             {verIntExt && (
               <div
                 className={`rounded-xl transition-colors ${
@@ -348,7 +348,7 @@ export const SidebarNavegacion: React.FC<SidebarNavegacionProps> = ({
               </div>
             )}
 
-            {/* Especiales Personal (visible para administradores y AUXILIAR TÉCNICO POSCOSECHA EAI) */}
+            {/* Especiales Personal (visible para todo el personal del Maestro) */}
             {verEspPersonal && (
               <div
                 className={`rounded-xl transition-colors ${
@@ -415,7 +415,7 @@ export const SidebarNavegacion: React.FC<SidebarNavegacionProps> = ({
               </div>
             )}
 
-            {/* Solicitud Comunidad (antes Especiales Externos - Activo) */}
+            {/* Solicitud Comunidad (visible para administradores, ANALISTA GESTIÓN HUMANA y AUXILIAR TÉCNICO POSCOSECHA EAI) */}
             {verComunidad && (
               <div
                 className={`rounded-xl transition-colors ${

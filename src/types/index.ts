@@ -63,7 +63,8 @@ export interface EspecialPersonal {
   motivo: string;
   semana?: string;
   fechaEntrega: string;
-  observacion: string;
+  correoConfirmacion?: string;
+  observacion?: string;
   fotoCarta?: string;
   notificado?: string;
   estado?: string;

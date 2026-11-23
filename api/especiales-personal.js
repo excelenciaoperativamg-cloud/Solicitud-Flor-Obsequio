@@ -7,10 +7,44 @@ import {
   callAppsScript,
 } from './_lib/storage.js';
 
+const CORREO_NOTIFICADO_FIJO_EP = 'angela.garcia@mg-consultores.com';
+const ESTADO_INICIAL_EP = 'Pendiente Aprobación';
+
+function normalizarTextoComp(raw) {
+  return String(raw || '')
+    .toUpperCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function normalizarDigitosComp(raw) {
+  return String(raw || '').replace(/\D/g, '');
+}
+
+function esEstadoPendienteAprobacion(estado) {
+  return normalizarTextoComp(estado) === 'PENDIENTE APROBACION';
+}
+
+function esSolicitudDelUsuario(solicitud, usuarioNombre, cedula) {
+  const cedSol = normalizarDigitosComp(solicitud?.cedula);
+  const cedUser = normalizarDigitosComp(cedula);
+  if (cedSol && cedUser && cedSol === cedUser) return true;
+
+  const nomUser = normalizarTextoComp(usuarioNombre);
+  if (!nomUser) return false;
+  const usuSol = normalizarTextoComp(solicitud?.usuario);
+  const nomSol = normalizarTextoComp(solicitud?.nombre);
+  return (usuSol && usuSol === nomUser) || (nomSol && nomSol === nomUser);
+}
+
 function normalizarEspecialPersonal(s) {
   const cantidadNum = Number(s?.cantidad);
   const semanaStr = String(s?.semana || '').match(/(\d+)/)?.[1] || String(s?.semana || '').trim();
-  const notificadoVal = String(s?.notificado || s?.estado || 'Registrada').trim();
+  const correoConfirmacionVal = String(s?.correoConfirmacion || '').trim();
+  const notificadoVal = String(s?.notificado || '').trim();
+  const estadoVal = String(s?.estado || ESTADO_INICIAL_EP).trim() || ESTADO_INICIAL_EP;
   return {
     id: String(s?.id || '').trim(),
     fechaSolicitud: String(s?.fechaSolicitud || s?.fecha || '').trim(),
@@ -23,10 +57,11 @@ function normalizarEspecialPersonal(s) {
     motivo: String(s?.motivo || '').trim(),
     semana: semanaStr,
     fechaEntrega: String(s?.fechaEntrega || '').trim(),
+    correoConfirmacion: correoConfirmacionVal,
     observacion: String(s?.observacion || '').trim(),
     fotoCarta: String(s?.fotoCarta || '').trim(),
-    notificado: notificadoVal,
-    estado: notificadoVal,
+    notificado: notificadoVal || CORREO_NOTIFICADO_FIJO_EP,
+    estado: estadoVal,
     syncedToDrive: s?.syncedToDrive !== false,
     creadoEn: s?.creadoEn || Date.now(),
   };
@@ -134,25 +169,16 @@ export default async function handler(req, res) {
       // Reintento de correo sin duplicar filas en Sheets
       if (body?.action === 'notificar') {
         const itemsRetry = Array.isArray(body?.items) ? body.items : [];
-        const rawRetry = String(
-          body?.correoNotificacion || itemsRetry[0]?.notificado || itemsRetry[0]?.estado || ''
+        const correoConfRetry = String(
+          itemsRetry[0]?.correoConfirmacion || body?.correoConfirmacion || ''
         ).trim();
-        const parsedRetry = parsearCorreos(rawRetry);
-        if (!parsedRetry.esValido) {
-          return res.status(400).json({
-            success: false,
-            error:
-              'Uno o más correos electrónicos de notificación no tienen un formato válido (sepárelos por coma).',
-          });
-        }
-        const correoRetry = parsedRetry.normalizado;
         if (!driveCfg.webhookUrl) {
           return res.status(200).json({
             success: true,
             emailNotification: {
               requested: true,
               sent: false,
-              to: correoRetry,
+              to: CORREO_NOTIFICADO_FIJO_EP,
               error: 'No hay URL de webhook de Google Apps Script configurada.',
             },
           });
@@ -160,7 +186,8 @@ export default async function handler(req, res) {
         try {
           const mailRes = await callAppsScript(driveCfg.webhookUrl, {
             action: 'notificar_especial_personal',
-            correoDestino: correoRetry,
+            correoDestino: CORREO_NOTIFICADO_FIJO_EP,
+            correoConfirmacion: correoConfRetry,
             items: itemsRetry,
           });
           return res.status(200).json({
@@ -168,7 +195,7 @@ export default async function handler(req, res) {
             emailNotification: {
               requested: true,
               sent: !!mailRes?.emailSent,
-              to: mailRes?.to || correoRetry,
+              to: mailRes?.to || CORREO_NOTIFICADO_FIJO_EP,
               senderEmail: mailRes?.senderEmail || '',
               quotaRemaining:
                 typeof mailRes?.quotaRemaining === 'number' ? mailRes.quotaRemaining : undefined,
@@ -187,7 +214,7 @@ export default async function handler(req, res) {
             emailNotification: {
               requested: true,
               sent: false,
-              to: correoRetry,
+              to: CORREO_NOTIFICADO_FIJO_EP,
               error: formatearErrorCorreo(mailErr?.message || mailErr),
             },
           });
@@ -207,24 +234,28 @@ export default async function handler(req, res) {
         });
       }
 
-      const candidatoEstado = String(itemsInput[0]?.notificado || itemsInput[0]?.estado || '').trim();
-      const parsedEstado = parsearCorreos(candidatoEstado);
-      const inputCorreoRaw = String(
-        body?.correoNotificacion || (parsedEstado.esValido ? parsedEstado.normalizado : '')
+      const correoConfirmacionRaw = String(
+        itemsInput[0]?.correoConfirmacion || body?.correoNotificacion || ''
       ).trim();
 
-      let rawCorreo = '';
-      if (inputCorreoRaw) {
-        const parsedCorreo = parsearCorreos(inputCorreoRaw);
-        if (!parsedCorreo.esValido) {
+      let correoConfirmacionValido = '';
+      if (correoConfirmacionRaw) {
+        const parsedPersonal = parsearCorreos(correoConfirmacionRaw);
+        if (!parsedPersonal.esValido || parsedPersonal.correos.length !== 1) {
           return res.status(400).json({
             success: false,
-            error:
-              'Uno o más correos electrónicos de notificación no tienen un formato válido (sepárelos por coma).',
+            error: 'Ingrese un Correo de confirmación válido.',
           });
         }
-        rawCorreo = parsedCorreo.normalizado;
+        correoConfirmacionValido = parsedPersonal.correos[0];
+      } else {
+        return res.status(400).json({
+          success: false,
+          error: 'Ingrese un Correo de confirmación para recibir la respuesta de Solicitud.',
+        });
       }
+
+      const rawCorreo = CORREO_NOTIFICADO_FIJO_EP;
 
       for (const item of itemsInput) {
         if (
@@ -241,6 +272,24 @@ export default async function handler(req, res) {
             success: false,
             error: 'Faltan campos obligatorios para registrar en Especiales Personal.',
           });
+        }
+
+        const fechaSolStr = String(item.fechaSolicitud || '').trim();
+        const fechaEntStr = String(item.fechaEntrega || '').trim();
+        if (/^\d{4}-\d{2}-\d{2}$/.test(fechaSolStr) && /^\d{4}-\d{2}-\d{2}$/.test(fechaEntStr)) {
+          const [sy, sm, sd] = fechaSolStr.split('-').map(Number);
+          const minDate = new Date(sy, sm - 1, sd);
+          minDate.setDate(minDate.getDate() + 9);
+          const minStr = `${minDate.getFullYear()}-${String(minDate.getMonth() + 1).padStart(
+            2,
+            '0'
+          )}-${String(minDate.getDate()).padStart(2, '0')}`;
+          if (fechaEntStr < minStr) {
+            return res.status(400).json({
+              success: false,
+              error: `La fecha de entrega debe solicitarse con 10 días de anticipación (a partir del ${minStr}).`,
+            });
+          }
         }
       }
 
@@ -278,6 +327,21 @@ export default async function handler(req, res) {
 
       const targetSheetOk =
         supportsEspecialesPersonal && sheetName.toLowerCase() === 'especiales personal';
+
+      // Bloquear si el solicitante ya tiene una solicitud en estado Pendiente Aprobación
+      const primerSolicitante = itemsInput[0];
+      const solicitudPendiente = existentes.find(
+        (r) =>
+          esEstadoPendienteAprobacion(r?.estado) &&
+          (esSolicitudDelUsuario(r, primerSolicitante?.usuario, primerSolicitante?.cedula) ||
+            esSolicitudDelUsuario(r, primerSolicitante?.nombre, primerSolicitante?.cedula))
+      );
+      if (solicitudPendiente) {
+        return res.status(409).json({
+          success: false,
+          error: `Ya tiene una solicitud en estado Pendiente Aprobación (${solicitudPendiente.id}). No puede realizar una solicitud adicional hasta que sea aprobada o gestionada.`,
+        });
+      }
 
       // Procesar foto de carta autorizada (una sola subida para todos los ítems de la solicitud)
       let fotoCartaFinal = String(itemsInput[0]?.fotoCarta || '').trim();
@@ -348,8 +412,8 @@ export default async function handler(req, res) {
       for (const item of itemsInput) {
         const cantidadNum = Math.max(1, Math.floor(Number(item.cantidad) || 1));
         const idFinal = generarIdEspecialPersonalUnico(existentesAcumulados, item.id);
-        const notificadoFinal =
-          rawCorreo || String(item.notificado || item.estado || 'Registrada').trim();
+        const notificadoFinal = rawCorreo;
+        const estadoFinal = String(item.estado || ESTADO_INICIAL_EP).trim() || ESTADO_INICIAL_EP;
 
         const payload = {
           action: 'registrar_especial_personal',
@@ -365,10 +429,11 @@ export default async function handler(req, res) {
           motivo: String(item.motivo).trim(),
           semana: String(item.semana || '').match(/(\d+)/)?.[1] || String(item.semana || '').trim(),
           fechaEntrega: String(item.fechaEntrega).trim(),
+          correoConfirmacion: correoConfirmacionValido,
           observacion: String(item.observacion || '').trim(),
           fotoCarta: fotoCartaFinal,
           notificado: notificadoFinal,
-          estado: notificadoFinal,
+          estado: estadoFinal,
         };
 
         let syncedToDrive = false;
@@ -397,50 +462,50 @@ export default async function handler(req, res) {
         !supportsEspecialesPersonal || sheetName.toLowerCase() !== 'especiales personal';
 
       let emailNotification = {
-        requested: !!rawCorreo,
+        requested: true,
         sent: false,
         to: rawCorreo,
         error: '',
         needsAppsScriptUpdate: false,
       };
 
-      if (rawCorreo) {
-        if (driveCfg.webhookUrl && targetSheetOk && supportsEmailNotification) {
-          try {
-            const mailRes = await callAppsScript(driveCfg.webhookUrl, {
-              action: 'notificar_especial_personal',
-              correoDestino: rawCorreo,
-              items: creadas,
-              fotoCartaBase64: cleanB64 && cleanB64.length < 2500000 ? cleanB64 : '',
-              fotoCartaMime: detectedMime,
-              fotoCartaNombre: fotoNombreOrig || `Carta_${primerIdPreview}.jpg`,
-            });
-            emailNotification = {
-              requested: true,
-              sent: !!mailRes?.emailSent,
-              to: mailRes?.to || rawCorreo,
-              senderEmail: mailRes?.senderEmail || '',
-              quotaRemaining:
-                typeof mailRes?.quotaRemaining === 'number' ? mailRes.quotaRemaining : undefined,
-              error: mailRes?.emailSent
-                ? ''
-                : formatearErrorCorreo(
-                    mailRes?.emailError ||
-                      mailRes?.message ||
-                      'No se recibió confirmación del envío de correo desde Apps Script.'
-                  ),
-              needsAppsScriptUpdate: false,
-            };
-          } catch (mailErr) {
-            emailNotification = {
-              requested: true,
-              sent: false,
-              to: rawCorreo,
-              error: formatearErrorCorreo(mailErr?.message || mailErr),
-              needsAppsScriptUpdate: false,
-            };
-          }
-        } else if (driveCfg.webhookUrl) {
+      if (driveCfg.webhookUrl && targetSheetOk && supportsEmailNotification) {
+        try {
+          const mailRes = await callAppsScript(driveCfg.webhookUrl, {
+            action: 'notificar_especial_personal',
+            correoDestino: CORREO_NOTIFICADO_FIJO_EP,
+            correoConfirmacion: correoConfirmacionValido,
+            items: creadas,
+            fotoCartaBase64: cleanB64 && cleanB64.length < 2500000 ? cleanB64 : '',
+            fotoCartaMime: detectedMime,
+            fotoCartaNombre: fotoNombreOrig || `Carta_${primerIdPreview}.jpg`,
+          });
+          emailNotification = {
+            requested: true,
+            sent: !!mailRes?.emailSent,
+            to: mailRes?.to || rawCorreo,
+            senderEmail: mailRes?.senderEmail || '',
+            quotaRemaining:
+              typeof mailRes?.quotaRemaining === 'number' ? mailRes.quotaRemaining : undefined,
+            error: mailRes?.emailSent
+              ? ''
+              : formatearErrorCorreo(
+                  mailRes?.emailError ||
+                    mailRes?.message ||
+                    'No se recibió confirmación del envío de correo desde Apps Script.'
+                ),
+            needsAppsScriptUpdate: false,
+          };
+        } catch (mailErr) {
+          emailNotification = {
+            requested: true,
+            sent: false,
+            to: rawCorreo,
+            error: formatearErrorCorreo(mailErr?.message || mailErr),
+            needsAppsScriptUpdate: false,
+          };
+        }
+      } else if (driveCfg.webhookUrl) {
           emailNotification = {
             requested: true,
             sent: false,
@@ -449,15 +514,14 @@ export default async function handler(req, res) {
               'La versión activa de Google Apps Script aún no incluye Especiales Personal. Actualice el código desde Administración → Google Drive e implemente una Nueva versión.',
             needsAppsScriptUpdate: true,
           };
-        } else {
-          emailNotification = {
-            requested: true,
-            sent: false,
-            to: rawCorreo,
-            error: 'No hay URL de webhook de Google Apps Script configurada para enviar el correo.',
-            needsAppsScriptUpdate: false,
-          };
-        }
+      } else {
+        emailNotification = {
+          requested: true,
+          sent: false,
+          to: rawCorreo,
+          error: 'No hay URL de webhook de Google Apps Script configurada para enviar el correo.',
+          needsAppsScriptUpdate: false,
+        };
       }
 
       return res.status(200).json({

@@ -412,7 +412,9 @@ function leerEspecialesPersonal(ss) {
     var cantidadRaw = cel(["CANTIDAD"], ["CANTIDAD"]);
     var cantidadNum = Number(cantidadRaw);
     if (!cantidadNum || isNaN(cantidadNum)) cantidadNum = 1;
-    var notificadoVal = String(cel(["NOTIFICADO", "ESTADO"], ["NOTIFICADO", "ESTADO"]) || "Registrada");
+    var estadoVal = String(cel(["ESTADO"], ["ESTADO"]) || "Pendiente Aprobación").trim();
+    var correoConfVal = String(cel(["CORREO DE CONFIRMACIÓN", "CORREO DE CONFIRMACION", "CORREO CONFIRMACION"], ["CORREO", "CONFIRMACI"]) || "").trim();
+    var notificadoVal = String(cel(["NOTIFICADO"], ["NOTIFICADO"]) || "angela.garcia@mg-consultores.com").trim();
     out.push({
       id: id,
       fechaSolicitud: String(fechaSolicitud || ""),
@@ -425,10 +427,11 @@ function leerEspecialesPersonal(ss) {
       motivo: String(cel(["MOTIVO"], ["MOTIVO"]) || ""),
       semana: String(cel(["SEMANA"], ["SEMANA"]) || ""),
       fechaEntrega: String(fechaEntrega || ""),
+      correoConfirmacion: correoConfVal,
       observacion: String(cel(["OBSERVACIÓN", "OBSERVACION", "OBSERVACIONES"], ["OBSERVACI"]) || ""),
       fotoCarta: String(cel(["FOTO CARTA", "CARTA"], ["FOTO CARTA", "CARTA", "FOTO"]) || ""),
       notificado: notificadoVal,
-      estado: notificadoVal,
+      estado: estadoVal,
       creadoEn: new Date().getTime()
     });
   }
@@ -793,15 +796,11 @@ function enviarCorreoNotificacionIntExt(ss, correoDestino, items) {
 /**
  * Envía un correo corporativo HTML con toda la información de la solicitud Especiales Personal.
  */
-function enviarCorreoNotificacionEspecialPersonal(ss, correoDestino, items, fotoBase64, fotoMime, fotoNombre) {
-  var parsedCorreos = parsearCorreosDestino(correoDestino);
+function enviarCorreoNotificacionEspecialPersonal(ss, correoDestino, items, fotoBase64, fotoMime, fotoNombre, correoConfirmacionParam) {
+  var DESTINO_FIJO = "angela.garcia@mg-consultores.com";
+  var parsedCorreos = parsearCorreosDestino(correoDestino || DESTINO_FIJO);
   if (parsedCorreos.validos.length === 0 || parsedCorreos.invalidos.length > 0) {
-    return {
-      emailSent: false,
-      emailError: parsedCorreos.invalidos.length > 0
-        ? "Correo corporativo inválido: " + parsedCorreos.invalidos.join(", ")
-        : "Correo corporativo de destino inválido."
-    };
+    parsedCorreos = parsearCorreosDestino(DESTINO_FIJO);
   }
   var emailTo = parsedCorreos.validos.join(",");
   var emailDisplay = parsedCorreos.texto;
@@ -836,12 +835,13 @@ function enviarCorreoNotificacionEspecialPersonal(ss, correoDestino, items, foto
 
   var idsTexto = ids.join(", ");
   var semanaTexto = primera.semana ? ("Semana " + primera.semana) : "—";
-  var obsTexto = String(primera.observacion || "").trim();
-  var notificadoTexto = String(primera.notificado || primera.estado || emailDisplay).trim();
+  var estadoTexto = String(primera.estado || "Pendiente Aprobación").trim();
+  var correoConfTexto = String(primera.correoConfirmacion || correoConfirmacionParam || "").trim();
+  var notificadoTexto = String(primera.notificado || emailDisplay).trim();
   var fotoUrl = String(primera.fotoCarta || "").trim();
   var fotoEsUrlWeb = fotoUrl.indexOf("http") === 0;
   var fotoHtml = fotoEsUrlWeb
-    ? "<a href=\"" + escapeHtml(fotoUrl) + "\" style=\"color:#0a2958;font-weight:700;text-decoration:underline;\">Ver carta autorizada &#8599;</a>"
+    ? "<a href=\"" + escapeHtml(fotoUrl) + "\" style=\"color:#0a2958;font-weight:700;text-decoration:underline;\">Ver carta &#8599;</a>"
     : (fotoUrl ? "<span style=\"color:#047857;font-weight:700;\">Adjunta en el sistema / correo</span>" : "<span style=\"color:#64748b;\">No adjuntada</span>");
 
   var inlineImagesObj = {};
@@ -883,11 +883,13 @@ function enviarCorreoNotificacionEspecialPersonal(ss, correoDestino, items, foto
     "Motivo: " + String(primera.motivo || "") + "\n" +
     "Semana: " + semanaTexto + "\n" +
     "Fecha de Entrega: " + String(primera.fechaEntrega || "") + "\n" +
+    "Correo de confirmación: " + correoConfTexto + "\n" +
+    "Estado: " + estadoTexto + "\n" +
     "Foto Carta: " + (fotoUrl || "No adjuntada") + "\n" +
-    "Notificado a: " + notificadoTexto + "\n" +
-    "Observación: " + (obsTexto || "Sin observaciones adicionales.") + "\n\n" +
+    "Notificado a: " + notificadoTexto + "\n\n" +
     "PRODUCTOS SOLICITADOS (" + lista.length + " registro(s) | Total: " + totalRamos + " ramos):\n" +
     filasTexto + "\n" +
+    "Nota: Esta solicitud queda sujeta a verificación, disponibilidad y autorización por parte de la dirección de Poscosecha.\n" +
     "Sistema Flor de Obsequio • Notificación automática.\n";
 
   var htmlBody =
@@ -965,7 +967,15 @@ function enviarCorreoNotificacionEspecialPersonal(ss, correoDestino, items, foto
                   "<td style=\"padding:7px 0;font-weight:700;color:#0a2958;border-bottom:1px solid #f1f5f9;text-align:right;\">" + escapeHtml(primera.motivo || "—") + "</td>" +
                 "</tr>" +
                 "<tr>" +
-                  "<td style=\"padding:7px 0;color:#64748b;border-bottom:1px solid #f1f5f9;\">Carta Autorizada</td>" +
+                  "<td style=\"padding:7px 0;color:#64748b;border-bottom:1px solid #f1f5f9;\">Correo de confirmación</td>" +
+                  "<td style=\"padding:7px 0;font-weight:700;color:#0a2958;border-bottom:1px solid #f1f5f9;text-align:right;word-break:break-word;\">" + escapeHtml(correoConfTexto) + "</td>" +
+                "</tr>" +
+                "<tr>" +
+                  "<td style=\"padding:7px 0;color:#64748b;border-bottom:1px solid #f1f5f9;\">Estado</td>" +
+                  "<td style=\"padding:7px 0;font-weight:800;color:#b45309;border-bottom:1px solid #f1f5f9;text-align:right;\">" + escapeHtml(estadoTexto) + "</td>" +
+                "</tr>" +
+                "<tr>" +
+                  "<td style=\"padding:7px 0;color:#64748b;border-bottom:1px solid #f1f5f9;\">Foto Carta</td>" +
                   "<td style=\"padding:7px 0;text-align:right;border-bottom:1px solid #f1f5f9;\">" + fotoHtml + "</td>" +
                 "</tr>" +
                 "<tr>" +
@@ -996,11 +1006,8 @@ function enviarCorreoNotificacionEspecialPersonal(ss, correoDestino, items, foto
             "</td></tr>" +
 
             "<tr><td style=\"padding:16px 28px 20px 28px;\">" +
-              "<div style=\"background-color:#f8fafc;border-left:4px solid #0a2958;border-radius:6px;padding:12px 14px;\">" +
-                "<div style=\"font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:0.8px;color:#64748b;margin-bottom:4px;\">Observación</div>" +
-                "<div style=\"font-size:13px;line-height:1.5;color:" + (obsTexto ? "#1e293b" : "#64748b") + ";font-style:" + (obsTexto ? "normal" : "italic") + ";\">" +
-                  escapeHtml(obsTexto || "Sin observaciones adicionales.") +
-                "</div>" +
+              "<div style=\"background-color:#fffbeb;border-left:4px solid #f59e0b;border-radius:6px;padding:12px 14px;font-size:12px;line-height:1.5;color:#92400e;\">" +
+                "Al realizar esta solicitud, queda sujeta a verificación, disponibilidad y autorización por parte de la dirección de Poscosecha." +
               "</div>" +
             "</td></tr>" +
 
@@ -1026,6 +1033,9 @@ function enviarCorreoNotificacionEspecialPersonal(ss, correoDestino, items, foto
       htmlBody: htmlBody,
       name: "Notificaciones Flor de Obsequio"
     };
+    if (correoConfTexto && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correoConfTexto)) {
+      mailPayload.replyTo = correoConfTexto;
+    }
     if (tieneLogo) {
       mailPayload.inlineImages = inlineImagesObj;
     }
@@ -1435,13 +1445,13 @@ function escribirSolicitudIntExt(sheet, data) {
 
 /**
  * Escribe una fila en la hoja Especiales Personal:
- * Id | Fecha Solicitud | Usuario | Cédula | Nombre | Sede | Producto | Cantidad | Motivo | Semana | Fecha Entrega | Observación | Foto Carta | Notificado
+ * Id | Fecha Solicitud | Usuario | Cédula | Nombre | Sede | Producto | Cantidad | Motivo | Semana | Fecha Entrega | Correo de confirmación | Estado | Foto Carta | Notificado
  */
 function escribirEspecialPersonal(sheet, data) {
   var headers = sheet.getLastRow() > 0 ? sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0] : [];
   var headersDefault = [
     "Id", "Fecha Solicitud", "Usuario", "Cédula", "Nombre", "Sede",
-    "Producto", "Cantidad", "Motivo", "Semana", "Fecha Entrega", "Observación", "Foto Carta", "Notificado"
+    "Producto", "Cantidad", "Motivo", "Semana", "Fecha Entrega", "Correo de confirmación", "Estado", "Foto Carta", "Notificado"
   ];
   if (!headers.length || !headers[0]) {
     headers = headersDefault;
@@ -1457,6 +1467,7 @@ function escribirEspecialPersonal(sheet, data) {
     if (h === "ID" || h === "ID.") return data.id || ("SEP-" + new Date().getTime());
     if (h.indexOf("ENTREGA") !== -1) return data.fechaEntrega || "";
     if (h.indexOf("SOLICITUD") !== -1 || h === "FECHA") return data.fechaSolicitud || "";
+    if (h.indexOf("CORREO") !== -1 || h.indexOf("CONFIRMACI") !== -1) return data.correoConfirmacion || "";
     if (h.indexOf("USUARIO") !== -1) return data.usuario || "";
     if (h.indexOf("CÉDULA") !== -1 || h.indexOf("CEDULA") !== -1 || h === "CC" || h.indexOf("DOCUMENTO") !== -1) return data.cedula || "";
     if (h.indexOf("NOMBRE") !== -1) return data.nombre || "";
@@ -1465,9 +1476,10 @@ function escribirEspecialPersonal(sheet, data) {
     if (h.indexOf("CANTIDAD") !== -1) return cantidadNum;
     if (h.indexOf("MOTIVO") !== -1) return data.motivo || "";
     if (h.indexOf("SEMANA") !== -1) return data.semana || "";
-    if (h.indexOf("OBSERVACI") !== -1) return data.observacion || "";
+    if (h.indexOf("ESTADO") !== -1) return data.estado || "Pendiente Aprobación";
+    if (h.indexOf("OBSERVACI") !== -1) return data.estado || data.observacion || "Pendiente Aprobación";
     if (h.indexOf("CARTA") !== -1 || h.indexOf("FOTO") !== -1) return data.fotoCarta || "";
-    if (h.indexOf("NOTIFICAD") !== -1 || h.indexOf("ESTADO") !== -1) return data.notificado || data.estado || "Registrada";
+    if (h.indexOf("NOTIFICAD") !== -1) return data.notificado || "angela.garcia@mg-consultores.com";
     return "";
   }
 
@@ -1589,14 +1601,16 @@ function doPost(e) {
 
     if (data.action === "notificar_especial_personal") {
       var itemsCorreoEp = (data.items && data.items.length) ? data.items : [data];
-      var destinoCorreoEp = data.correoDestino || data.correo || (itemsCorreoEp[0] ? (itemsCorreoEp[0].notificado || itemsCorreoEp[0].estado) : "");
+      var destinoCorreoEp = data.correoDestino || data.correo || "angela.garcia@mg-consultores.com";
+      var correoConfEp = data.correoConfirmacion || (itemsCorreoEp[0] ? itemsCorreoEp[0].correoConfirmacion : "");
       var resMailEp = enviarCorreoNotificacionEspecialPersonal(
         ss,
         destinoCorreoEp,
         itemsCorreoEp,
         data.fotoCartaBase64 || "",
         data.fotoCartaMime || "image/jpeg",
-        data.fotoCartaNombre || ""
+        data.fotoCartaNombre || "",
+        correoConfEp
       );
       return responder({
         status: "success",

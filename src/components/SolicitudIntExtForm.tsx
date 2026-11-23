@@ -1059,93 +1059,108 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
               </h3>
             </div>
 
-            {/* Motivo con opciones + Floreros + Agregar otro motivo */}
-            <div className="space-y-2.5">
-              <label className="block text-xs font-bold text-slate-700">
-                Motivo <span className="text-[#E60000]">*</span>
-              </label>
-              <div className="flex flex-wrap gap-2">
-                {opcionesMotivoVisibles.map((mot) => (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
+              <div>
+                <label
+                  htmlFor="select-motivo-especiales"
+                  className="block text-xs font-bold text-slate-700 mb-1.5"
+                >
+                  Motivo <span className="text-[#E60000]">*</span>
+                </label>
+                <div className="flex items-center gap-2">
+                  <div className="relative flex-1 min-w-0">
+                    <select
+                      id="select-motivo-especiales"
+                      value={mostrandoInputMotivo ? '__AGREGAR__' : motivoSeleccionado}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === '__AGREGAR__') {
+                          setMostrandoInputMotivo(true);
+                        } else {
+                          setMotivoSeleccionado(val);
+                          setMostrandoInputMotivo(false);
+                        }
+                        setErrores((prev) => {
+                          const next = { ...prev };
+                          delete next.motivo;
+                          return next;
+                        });
+                      }}
+                      className={`w-full appearance-none pl-3.5 pr-9 py-2.5 text-xs rounded-xl border font-bold bg-white outline-hidden cursor-pointer truncate ${
+                        errores.motivo
+                          ? 'border-rose-400 bg-rose-50/40 text-slate-900'
+                          : 'border-slate-300 focus:border-[#0a2958] text-slate-800'
+                      }`}
+                    >
+                      <option value="">Seleccione un motivo…</option>
+                      {opcionesMotivoVisibles.map((mot) => (
+                        <option key={mot} value={mot}>
+                          {mot}
+                        </option>
+                      ))}
+                      <option value="__AGREGAR__">+ Agregar otro motivo…</option>
+                    </select>
+                    <ChevronDown className="w-4 h-4 text-slate-500 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  </div>
                   <button
-                    key={mot}
                     type="button"
                     onClick={() => {
-                      setMotivoSeleccionado(mot);
-                      setMostrandoInputMotivo(false);
+                      setMostrandoInputMotivo((prev) => !prev);
                       setErrores((prev) => {
                         const next = { ...prev };
                         delete next.motivo;
                         return next;
                       });
                     }}
-                    className={`px-3.5 py-2 rounded-xl border text-xs font-bold transition cursor-pointer ${
-                      !mostrandoInputMotivo && motivoSeleccionado === mot
-                        ? 'bg-[#0a2958] text-white border-[#0a2958] shadow-xs'
-                        : 'bg-white text-slate-700 border-slate-200 hover:border-[#0a2958]/40'
+                    title="Agregar otro motivo"
+                    aria-label="Agregar otro motivo"
+                    className={`p-2.5 rounded-xl border transition cursor-pointer shrink-0 ${
+                      mostrandoInputMotivo
+                        ? 'bg-[#E60000]/10 text-[#E60000] border-[#E60000]/40'
+                        : 'bg-slate-50 text-slate-700 border-slate-300 hover:border-[#0a2958] hover:text-[#0a2958]'
                     }`}
                   >
-                    {mot}
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMostrandoInputMotivo((prev) => !prev);
-                    setErrores((prev) => {
-                      const next = { ...prev };
-                      delete next.motivo;
-                      return next;
-                    });
-                  }}
-                  className={`px-3.5 py-2 rounded-xl border text-xs font-bold transition inline-flex items-center gap-1.5 cursor-pointer ${
-                    mostrandoInputMotivo
-                      ? 'bg-[#E60000]/10 text-[#E60000] border-[#E60000]/40'
-                      : 'bg-slate-50 text-slate-700 border-dashed border-slate-300 hover:border-[#0a2958]'
-                  }`}
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Agregar otro motivo</span>
-                </button>
-              </div>
-
-              {mostrandoInputMotivo && (
-                <div className="flex flex-col sm:flex-row gap-2 max-w-md pt-1">
-                  <input
-                    type="text"
-                    value={nuevoMotivoInput}
-                    onChange={(e) => {
-                      setNuevoMotivoInput(e.target.value);
-                      setErrores((prev) => {
-                        const next = { ...prev };
-                        delete next.motivo;
-                        return next;
-                      });
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        handleAgregarMotivoPersonalizado();
-                      }
-                    }}
-                    placeholder="Escriba el nuevo motivo…"
-                    className="flex-1 px-3.5 py-2 text-xs rounded-xl border border-slate-300 focus:border-[#0a2958] outline-hidden font-medium"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleAgregarMotivoPersonalizado}
-                    className="px-4 py-2 rounded-xl bg-[#0a2958] text-white text-xs font-bold hover:bg-[#0d346e] cursor-pointer"
-                  >
-                    Agregar
+                    <Plus className="w-4 h-4" />
                   </button>
                 </div>
-              )}
 
-              {errores.motivo && (
-                <p className="text-[11px] text-[#E60000] font-semibold">{errores.motivo}</p>
-              )}
-            </div>
+                {mostrandoInputMotivo && (
+                  <div className="flex items-center gap-2 mt-2">
+                    <input
+                      type="text"
+                      value={nuevoMotivoInput}
+                      onChange={(e) => {
+                        setNuevoMotivoInput(e.target.value);
+                        setErrores((prev) => {
+                          const next = { ...prev };
+                          delete next.motivo;
+                          return next;
+                        });
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAgregarMotivoPersonalizado();
+                        }
+                      }}
+                      placeholder="Escriba el nuevo motivo…"
+                      className="flex-1 min-w-0 px-3 py-2 text-xs rounded-xl border border-slate-300 focus:border-[#0a2958] outline-hidden font-medium"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAgregarMotivoPersonalizado}
+                      className="px-3.5 py-2 rounded-xl bg-[#0a2958] text-white text-xs font-bold hover:bg-[#0d346e] cursor-pointer shrink-0"
+                    >
+                      Agregar
+                    </button>
+                  </div>
+                )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
+                {errores.motivo && (
+                  <p className="text-[11px] text-[#E60000] font-semibold mt-1">{errores.motivo}</p>
+                )}
+              </div>
+
               <div>
                 <label
                   htmlFor="fecha-entrega-especiales"

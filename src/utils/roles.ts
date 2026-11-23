@@ -100,20 +100,39 @@ export function tieneFormularioTodosLosDias(trabajador?: TrabajadorMaestro | nul
   );
 }
 
-/**
- * Controla si el usuario puede acceder al formulario "Especiales Empresa" (antes Solicitud Extra):
- * - AUXILIAR GESTIÓN HUMANA EAI
- * - ANALISTA GESTIÓN DE INFORMACIÓN EAI (administrador)
- */
-export function puedeVerSolicitudIntExt(trabajador?: TrabajadorMaestro | null): boolean {
-  if (!trabajador) return false;
-
-  const cargo = String(trabajador.cargo || '')
+function normalizarTextoRol(s: string): string {
+  return String(s || '')
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+/**
+ * Verifica si el trabajador tiene el cargo ANALISTA GESTIÓN HUMANA (incluye variantes como 1 EAI, 2 EAI, 3 EAI).
+ */
+export function esAnalistaGestionHumana(trabajador?: TrabajadorMaestro | null): boolean {
+  if (!trabajador) return false;
+  const cargo = normalizarTextoRol(trabajador.cargo || '');
+  return (
+    cargo.includes('analista') &&
+    cargo.includes('gestion') &&
+    cargo.includes('humana')
+  );
+}
+
+/**
+ * Controla si el usuario puede acceder al formulario "Especiales Empresa" (antes Solicitud Extra):
+ * - AUXILIAR GESTIÓN HUMANA EAI
+ * - ANALISTA GESTIÓN HUMANA (1 EAI, 2 EAI, 3 EAI, etc.)
+ * - ANALISTA GESTIÓN DE INFORMACIÓN EAI (administrador)
+ */
+export function puedeVerSolicitudIntExt(trabajador?: TrabajadorMaestro | null): boolean {
+  if (!trabajador) return false;
+  if (esAnalistaGestionHumana(trabajador)) return true;
+
+  const cargo = normalizarTextoRol(trabajador.cargo || '');
 
   if (cargo.includes('auxiliar') && cargo.includes('gestion') && cargo.includes('humana')) {
     return true;
@@ -127,12 +146,11 @@ export function puedeVerSolicitudIntExt(trabajador?: TrabajadorMaestro | null): 
 }
 
 /**
- * Controla si el usuario visualiza el menú lateral derecho de módulos:
- * - AUXILIAR GESTIÓN HUMANA EAI
- * - ANALISTA GESTIÓN DE INFORMACIÓN EAI
+ * Controla si el usuario visualiza módulos adicionales en el menú lateral:
+ * Todo trabajador del Maestro tiene al menos Solicitud Personal y Especiales Personal.
  */
 export function puedeVerMenuLateral(trabajador?: TrabajadorMaestro | null): boolean {
-  return puedeVerSolicitudIntExt(trabajador);
+  return Boolean(trabajador);
 }
 
 /**
@@ -142,12 +160,7 @@ export function puedeVerMenuLateral(trabajador?: TrabajadorMaestro | null): bool
 export function esAdministradorSistema(trabajador?: TrabajadorMaestro | null): boolean {
   if (!trabajador) return false;
 
-  const cargo = String(trabajador.cargo || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
+  const cargo = normalizarTextoRol(trabajador.cargo || '');
 
   if (
     cargo.includes('analista') &&
@@ -170,12 +183,7 @@ export function puedeVerResumenSolicitud(trabajador?: TrabajadorMaestro | null):
   if (!trabajador) return false;
   if (esAdministradorSistema(trabajador)) return true;
 
-  const cargo = String(trabajador.cargo || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
+  const cargo = normalizarTextoRol(trabajador.cargo || '');
 
   if (
     cargo.includes('auxiliar') &&
@@ -194,42 +202,47 @@ export function puedeVerResumenSolicitud(trabajador?: TrabajadorMaestro | null):
 
 /**
  * Controla si el usuario puede acceder al formulario "Especiales Personal":
- * - Administradores del sistema (ANALISTA GESTIÓN DE INFORMACIÓN EAI / Administrador)
- * - AUXILIAR TÉCNICO POSCOSECHA EAI
+ * Visible para todo el personal del Maestro.
  */
 export function puedeVerEspecialesPersonal(trabajador?: TrabajadorMaestro | null): boolean {
+  return Boolean(trabajador);
+}
+
+/**
+ * Controla si el usuario puede visualizar la sección "Registros en Especiales Personal":
+ * Visible para la persona que realizó la solicitud (sus propios registros),
+ * ANALISTA GESTIÓN HUMANA y administradores.
+ */
+export function puedeVerRegistrosEspecialesPersonal(
+  trabajador?: TrabajadorMaestro | null
+): boolean {
+  return Boolean(trabajador);
+}
+
+/**
+ * Controla si el usuario puede ver TODAS las solicitudes en "Registros en Especiales Personal":
+ * - ANALISTA GESTIÓN HUMANA (1 EAI, 2 EAI, 3 EAI, etc.)
+ * - Administradores del sistema (ANALISTA GESTIÓN DE INFORMACIÓN EAI / Administrador)
+ */
+export function puedeVerTodosRegistrosEspecialesPersonal(
+  trabajador?: TrabajadorMaestro | null
+): boolean {
   if (!trabajador) return false;
-  if (esAdministradorSistema(trabajador)) return true;
-
-  const cargo = String(trabajador.cargo || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-  return (
-    cargo.includes('auxiliar') &&
-    cargo.includes('tecnico') &&
-    cargo.includes('poscosecha')
-  );
+  return esAdministradorSistema(trabajador) || esAnalistaGestionHumana(trabajador);
 }
 
 /**
  * Controla si el usuario puede acceder al formulario "Solicitud Comunidad" (antes Especiales Externos):
  * - Administradores del sistema (ANALISTA GESTIÓN DE INFORMACIÓN EAI / Administrador)
+ * - ANALISTA GESTIÓN HUMANA (1 EAI, 2 EAI, 3 EAI, etc.)
  * - AUXILIAR TÉCNICO POSCOSECHA EAI
  */
 export function puedeVerSolicitudComunidad(trabajador?: TrabajadorMaestro | null): boolean {
   if (!trabajador) return false;
   if (esAdministradorSistema(trabajador)) return true;
+  if (esAnalistaGestionHumana(trabajador)) return true;
 
-  const cargo = String(trabajador.cargo || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
+  const cargo = normalizarTextoRol(trabajador.cargo || '');
 
   return (
     cargo.includes('auxiliar') &&

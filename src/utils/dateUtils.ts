@@ -82,6 +82,14 @@ export const toDateString = (d: Date): string => {
   return `${year}-${month}-${day}`;
 };
 
+export const addDaysToDateString = (dateString: string, days: number): string => {
+  const [year, month, day] = String(dateString || '').split('-').map(Number);
+  if (!year || !month || !day) return getTodayString();
+  const d = new Date(year, month - 1, day);
+  d.setDate(d.getDate() + days);
+  return toDateString(d);
+};
+
 /**
  * El formulario solo se habilita los dos primeros días hábiles de la semana (lunes y martes).
  * La entrega es el viernes de esa misma semana.
