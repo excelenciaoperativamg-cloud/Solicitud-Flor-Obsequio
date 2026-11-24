@@ -1,4 +1,4 @@
-import { getSolicitudesStorage, saveSolicitudesStorage, getDriveConfigStorage, callAppsScript } from './_lib/storage.js';
+import { getSolicitudesStorage, saveSolicitudesStorage, getDriveConfigStorage, callAppsScript } from '../_lib/storage.js';
 
 function soloSemana(valor) {
   const m = String(valor || '').match(/(\d+)/);

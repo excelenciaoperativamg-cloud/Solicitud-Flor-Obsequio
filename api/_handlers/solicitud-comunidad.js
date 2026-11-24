@@ -5,7 +5,7 @@ import {
   readCartaLocalFile,
   getDriveConfigStorage,
   callAppsScript,
-} from './_lib/storage.js';
+} from '../_lib/storage.js';
 
 const ESTADO_INICIAL_SC = 'Pendiente Aprobación';
 

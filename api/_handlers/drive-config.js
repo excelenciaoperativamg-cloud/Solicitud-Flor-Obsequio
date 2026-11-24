@@ -1,4 +1,4 @@
-import { getDriveConfigStorage, saveDriveConfigStorage, DEFAULT_CONFIG } from './_lib/storage.js';
+import { getDriveConfigStorage, saveDriveConfigStorage, DEFAULT_CONFIG } from '../_lib/storage.js';
 
 export default async function handler(req, res) {
   try {

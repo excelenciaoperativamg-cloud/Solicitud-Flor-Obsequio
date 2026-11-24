@@ -3,7 +3,7 @@ import {
   saveIngresosSeleccionStorage,
   getDriveConfigStorage,
   callAppsScript,
-} from './_lib/storage.js';
+} from '../_lib/storage.js';
 
 const SEDES_VALIDAS = new Set(['MG', 'HA', 'SC']);
 const PRODUCTOS_POR_SEDE = {

@@ -3,7 +3,7 @@ import {
   saveMaestroStorage,
   callAppsScript,
   sanitizeMaestroWorkers,
-} from './_lib/storage.js';
+} from '../_lib/storage.js';
 
 export default async function handler(req, res) {
   try {

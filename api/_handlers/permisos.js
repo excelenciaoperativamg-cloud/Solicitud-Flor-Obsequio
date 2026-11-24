@@ -4,7 +4,7 @@ import {
   getDriveConfigStorage,
   getMaestroStorage,
   callAppsScript,
-} from './_lib/storage.js';
+} from '../_lib/storage.js';
 
 export const DEFAULT_PERMISOS_FORMULARIOS = {
   formulario: {

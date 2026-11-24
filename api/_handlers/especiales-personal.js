@@ -6,7 +6,7 @@ import {
   getDriveConfigStorage,
   getMaestroStorage,
   callAppsScript,
-} from './_lib/storage.js';
+} from '../_lib/storage.js';
 
 const CORREO_NOTIFICADO_FIJO_EP = 'angela.garcia@mg-consultores.com';
 const ESTADO_INICIAL_EP = 'Pendiente Aprobación';

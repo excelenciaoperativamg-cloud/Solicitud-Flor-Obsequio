@@ -5,7 +5,7 @@ import {
   callAppsScript,
   sanitizeMaestroWorkers,
   isValidWorker,
-} from './_lib/storage.js';
+} from '../_lib/storage.js';
 
 async function maestroDesdeHoja() {
   const driveCfg = getDriveConfigStorage();
