@@ -10,12 +10,25 @@ import { SolicitudForm } from './components/SolicitudForm';
 import { SolicitudIntExtForm } from './components/SolicitudIntExtForm';
 import { EspecialesPersonalForm } from './components/EspecialesPersonalForm';
 import { SolicitudComunidadForm } from './components/SolicitudComunidadForm';
+import { IngresosSeleccionForm } from './components/IngresosSeleccionForm';
+import { ObsequioVisitantesForm } from './components/ObsequioVisitantesForm';
 import { SolicitudesTable } from './components/SolicitudesTable';
 import { MaestroTrabajadores } from './components/MaestroTrabajadores';
+import { PermisosFormulariosPanel } from './components/PermisosFormulariosPanel';
 import { LoginCodigo } from './components/LoginCodigo';
 import { DriveConfigModal } from './components/DriveConfigModal';
 import { SidebarNavegacion, TabNavegacion } from './components/SidebarNavegacion';
-import { SolicitudFlor, SolicitudIntExt, EspecialPersonal, SolicitudComunidad, TrabajadorMaestro } from './types';
+import {
+  SolicitudFlor,
+  SolicitudIntExt,
+  EspecialPersonal,
+  SolicitudComunidad,
+  IngresoSeleccion,
+  ObsequioVisitante,
+  TrabajadorMaestro,
+  FormularioPermisoKey,
+  PermisosFormulariosMap,
+} from './types';
 import {
   TRABAJADORES_INICIALES,
 } from './data/initialData';
@@ -34,6 +47,14 @@ import {
   EstadoEspecialPersonal,
   fetchSolicitudComunidadApi,
   createSolicitudComunidadApi,
+  fetchIngresosSeleccionApi,
+  createIngresosSeleccionApi,
+  fetchObsequioVisitantesApi,
+  createObsequioVisitantesApi,
+  fetchPermisosFormulariosApi,
+  savePermisosFormulariosApi,
+  restoreDefaultPermisosApi,
+  getPermisosLocalCache,
   fetchMaestroApi,
   fetchMaestroConEstadoApi,
   getMaestroLocalCache,
@@ -53,10 +74,14 @@ import {
 import {
   esAdministradorSistema,
   puedeVerHojaMaestro,
+  puedeVerSolicitudPersonal,
   puedeVerResumenSolicitud,
   puedeVerSolicitudIntExt,
   puedeVerEspecialesPersonal,
   puedeVerSolicitudComunidad,
+  puedeVerIngresosSeleccion,
+  puedeVerObsequioVisitantes,
+  setPermisosFormulariosCache,
 } from './utils/roles';
 
 function combinarMaestroLista(
@@ -121,12 +146,54 @@ export default function App() {
   const [scSheetActual, setScSheetActual] = useState<string>('');
   const [scNeedsAppsScriptUpdate, setScNeedsAppsScriptUpdate] = useState<boolean>(false);
 
+  const [ingresosSeleccion, setIngresosSeleccion] = useState<IngresoSeleccion[]>([]);
+  const [isSheetsSupported, setIsSheetsSupported] = useState<boolean>(true);
+  const [isEmailSupported, setIsEmailSupported] = useState<boolean>(true);
+  const [isSheetActual, setIsSheetActual] = useState<string>('');
+  const [isNeedsAppsScriptUpdate, setIsNeedsAppsScriptUpdate] = useState<boolean>(false);
+
+  const [obsequioVisitantes, setObsequioVisitantes] = useState<ObsequioVisitante[]>([]);
+  const [ovSheetsSupported, setOvSheetsSupported] = useState<boolean>(true);
+  const [ovEmailSupported, setOvEmailSupported] = useState<boolean>(true);
+  const [ovSheetActual, setOvSheetActual] = useState<string>('');
+  const [ovNeedsAppsScriptUpdate, setOvNeedsAppsScriptUpdate] = useState<boolean>(false);
+
+  const [permisosFormularios, setPermisosFormularios] = useState<PermisosFormulariosMap>(() => {
+    const inicial = getPermisosLocalCache();
+    setPermisosFormulariosCache(inicial);
+    return inicial;
+  });
+  const [permisosSheetsSupported, setPermisosSheetsSupported] = useState<boolean>(false);
+  const [permisosNeedsAppsScriptUpdate, setPermisosNeedsAppsScriptUpdate] = useState<boolean>(false);
+
   const esAdminSistema = esAdministradorSistema(sesion);
   const puedeVerMaestro = puedeVerHojaMaestro(sesion);
-  const puedeVerResumen = puedeVerResumenSolicitud(sesion);
-  const puedeVerIntExt = puedeVerSolicitudIntExt(sesion);
-  const puedeVerEp = puedeVerEspecialesPersonal(sesion);
-  const puedeVerComunidad = puedeVerSolicitudComunidad(sesion);
+  const puedeVerPersonal = puedeVerSolicitudPersonal(sesion, permisosFormularios);
+  const puedeVerResumen = puedeVerResumenSolicitud(sesion, permisosFormularios);
+  const puedeVerIntExt = puedeVerSolicitudIntExt(sesion, permisosFormularios);
+  const puedeVerEp = puedeVerEspecialesPersonal(sesion, permisosFormularios);
+  const puedeVerComunidad = puedeVerSolicitudComunidad(sesion, permisosFormularios);
+  const puedeVerIngresos = puedeVerIngresosSeleccion(sesion, permisosFormularios);
+  const puedeVerVisitantes = puedeVerObsequioVisitantes(sesion, permisosFormularios);
+
+  const obtenerPrimeraTabPermitida = React.useCallback((): TabNavegacion => {
+    if (puedeVerPersonal) return 'formulario';
+    if (puedeVerEp) return 'especiales-personal';
+    if (puedeVerIntExt) return 'int-ext';
+    if (puedeVerComunidad) return 'solicitud-comunidad';
+    if (puedeVerIngresos) return 'ingresos-seleccion';
+    if (puedeVerVisitantes) return 'obsequio-visitantes';
+    if (puedeVerResumen) return 'solicitudes';
+    return 'formulario';
+  }, [
+    puedeVerPersonal,
+    puedeVerEp,
+    puedeVerIntExt,
+    puedeVerComunidad,
+    puedeVerIngresos,
+    puedeVerVisitantes,
+    puedeVerResumen,
+  ]);
 
   // Mantener actualizada la sesión activa (cargo/sede/cédula) cada vez que se sincroniza el Maestro
   useEffect(() => {
@@ -147,21 +214,40 @@ export default function App() {
     }
   }, [maestro, sesion]);
 
-  // Redirigir al formulario si el usuario no tiene permiso para la pestaña actual
+  // Redirigir a la primera pestaña permitida si el usuario no tiene permiso para la pestaña actual
   useEffect(() => {
     if (!sesion) return;
-    if (activeTab === 'int-ext' && !puedeVerIntExt) {
-      setActiveTab('formulario');
-    } else if (activeTab === 'especiales-personal' && !puedeVerEp) {
-      setActiveTab('formulario');
-    } else if (activeTab === 'solicitud-comunidad' && !puedeVerComunidad) {
-      setActiveTab('formulario');
-    } else if (activeTab === 'solicitudes' && !puedeVerResumen) {
-      setActiveTab('formulario');
-    } else if (activeTab === 'maestro' && !puedeVerMaestro) {
-      setActiveTab('formulario');
+    const tienePermisoActual =
+      (activeTab === 'formulario' && puedeVerPersonal) ||
+      (activeTab === 'int-ext' && puedeVerIntExt) ||
+      (activeTab === 'especiales-personal' && puedeVerEp) ||
+      (activeTab === 'solicitud-comunidad' && puedeVerComunidad) ||
+      (activeTab === 'ingresos-seleccion' && puedeVerIngresos) ||
+      (activeTab === 'obsequio-visitantes' && puedeVerVisitantes) ||
+      (activeTab === 'solicitudes' && puedeVerResumen) ||
+      (activeTab === 'maestro' && puedeVerMaestro) ||
+      (activeTab === 'permisos' && esAdminSistema);
+
+    if (!tienePermisoActual) {
+      const destino = obtenerPrimeraTabPermitida();
+      if (destino !== activeTab) {
+        setActiveTab(destino);
+      }
     }
-  }, [sesion, puedeVerResumen, puedeVerMaestro, puedeVerIntExt, puedeVerEp, puedeVerComunidad, activeTab]);
+  }, [
+    sesion,
+    esAdminSistema,
+    puedeVerPersonal,
+    puedeVerResumen,
+    puedeVerMaestro,
+    puedeVerIntExt,
+    puedeVerEp,
+    puedeVerComunidad,
+    puedeVerIngresos,
+    puedeVerVisitantes,
+    activeTab,
+    obtenerPrimeraTabPermitida,
+  ]);
 
   // Mostrar toast temporal
   const mostrarToast = (mensaje: string) => {
@@ -210,6 +296,14 @@ export default function App() {
       try {
         await Promise.all([
           sincronizarMaestroPrioritario(),
+          fetchPermisosFormulariosApi().then((permRes) => {
+            if (!cancelado && permRes?.permisos) {
+              setPermisosFormulariosCache(permRes.permisos);
+              setPermisosFormularios(permRes.permisos);
+              setPermisosSheetsSupported(!!permRes.sheetsSupported);
+              setPermisosNeedsAppsScriptUpdate(!!permRes.needsAppsScriptUpdate);
+            }
+          }),
           getDriveConfigApi().then((cfg) => {
             if (!cancelado && cfg) {
               setDriveConfig(cfg);
@@ -222,11 +316,13 @@ export default function App() {
 
         if (cancelado) return;
 
-        const [solis, intExtRes, epRes, scRes] = await Promise.all([
+        const [solis, intExtRes, epRes, scRes, isRes, ovRes] = await Promise.all([
           fetchSolicitudesApi(),
           fetchSolicitudesIntExtApi(),
           fetchEspecialesPersonalApi(),
           fetchSolicitudComunidadApi(),
+          fetchIngresosSeleccionApi(),
+          fetchObsequioVisitantesApi(),
         ]);
 
         if (cancelado) return;
@@ -254,6 +350,20 @@ export default function App() {
           setScEmailSupported(!!scRes.supportsEmailNotification);
           setScSheetActual(scRes.solicitudComunidadSheetName || '');
           setScNeedsAppsScriptUpdate(!!scRes.needsAppsScriptUpdate);
+        }
+        if (isRes && Array.isArray(isRes.solicitudes)) {
+          setIngresosSeleccion(isRes.solicitudes);
+          setIsSheetsSupported(isRes.sheetsSupported || isRes.source === 'sheets');
+          setIsEmailSupported(!!isRes.supportsEmailNotification);
+          setIsSheetActual(isRes.ingresosSeleccionSheetName || '');
+          setIsNeedsAppsScriptUpdate(!!isRes.needsAppsScriptUpdate);
+        }
+        if (ovRes && Array.isArray(ovRes.solicitudes)) {
+          setObsequioVisitantes(ovRes.solicitudes);
+          setOvSheetsSupported(ovRes.sheetsSupported || ovRes.source === 'sheets');
+          setOvEmailSupported(!!ovRes.supportsEmailNotification);
+          setOvSheetActual(ovRes.obsequioVisitantesSheetName || '');
+          setOvNeedsAppsScriptUpdate(!!ovRes.needsAppsScriptUpdate);
         }
       } catch (e) {
         console.warn('Carga inicial desde servidor:', e);
@@ -633,6 +743,241 @@ export default function App() {
     setScNeedsAppsScriptUpdate(!!res.needsAppsScriptUpdate);
   };
 
+  const handleGuardarIngresoSeleccion = async (
+    nuevaOLista: IngresoSeleccion | IngresoSeleccion[],
+    correoNotificacion?: string
+  ): Promise<{
+    success: boolean;
+    error?: string;
+    solicitud?: IngresoSeleccion;
+    solicitudes?: IngresoSeleccion[];
+    pendingAppsScriptUpdate?: boolean;
+    ingresosSeleccionSheetName?: string;
+    needsAppsScriptUpdate?: boolean;
+    emailNotification?: EmailNotificationResult;
+  }> => {
+    try {
+      const res = await createIngresosSeleccionApi(nuevaOLista, correoNotificacion);
+      const guardadas = res.solicitudes.length > 0 ? res.solicitudes : [res.solicitud];
+      const idsGuardados = new Set(guardadas.map((g) => g.id));
+      setIngresosSeleccion((prev) => [
+        ...guardadas,
+        ...prev.filter((s) => !idsGuardados.has(s.id)),
+      ]);
+      const total = guardadas.length;
+      setIsSheetActual(res.ingresosSeleccionSheetName || '');
+      setIsNeedsAppsScriptUpdate(!!res.needsAppsScriptUpdate);
+      if (typeof res.supportsEmailNotification === 'boolean') {
+        setIsEmailSupported(res.supportsEmailNotification);
+      }
+
+      if (res.pendingAppsScriptUpdate || res.needsAppsScriptUpdate) {
+        setIsSheetsSupported(!res.pendingAppsScriptUpdate);
+        mostrarToast(
+          total > 1
+            ? `${total} registros guardados en respaldo local (actualice Apps Script para Ingresos Selección)`
+            : 'Guardado en respaldo local (actualice Apps Script para Ingresos Selección)'
+        );
+      } else if (res.emailNotification?.requested && res.emailNotification.sent) {
+        setIsSheetsSupported(true);
+        mostrarToast(
+          total > 1
+            ? `${total} registros guardados en Ingresos Selección y notificación enviada a ${res.emailNotification.to}`
+            : `Solicitud guardada en Ingresos Selección y notificación enviada a ${res.emailNotification.to}`
+        );
+      } else if (res.emailNotification?.requested && !res.emailNotification.sent) {
+        setIsSheetsSupported(true);
+        mostrarToast(
+          total > 1
+            ? `${total} registros guardados en Ingresos Selección (notificación por correo pendiente)`
+            : 'Solicitud guardada en Ingresos Selección (notificación por correo pendiente)'
+        );
+      } else {
+        setIsSheetsSupported(true);
+        mostrarToast(
+          total > 1
+            ? `${total} registros guardados en la hoja Ingresos Selección`
+            : 'Solicitud registrada en la hoja Ingresos Selección'
+        );
+      }
+
+      return {
+        success: true,
+        solicitud: guardadas[0],
+        solicitudes: guardadas,
+        pendingAppsScriptUpdate: res.pendingAppsScriptUpdate,
+        ingresosSeleccionSheetName: res.ingresosSeleccionSheetName,
+        needsAppsScriptUpdate: res.needsAppsScriptUpdate,
+        emailNotification: res.emailNotification,
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        error: err.message || 'Error al guardar en Ingresos Selección',
+      };
+    }
+  };
+
+  const handleRecargarIngresosSeleccion = async () => {
+    const res = await fetchIngresosSeleccionApi();
+    setIngresosSeleccion(res.solicitudes || []);
+    setIsSheetsSupported(res.sheetsSupported || res.source === 'sheets');
+    setIsEmailSupported(!!res.supportsEmailNotification);
+    setIsSheetActual(res.ingresosSeleccionSheetName || '');
+    setIsNeedsAppsScriptUpdate(!!res.needsAppsScriptUpdate);
+  };
+
+  const handleGuardarObsequioVisitante = async (
+    nuevaOLista: ObsequioVisitante | ObsequioVisitante[],
+    correoNotificacion?: string
+  ): Promise<{
+    success: boolean;
+    error?: string;
+    solicitud?: ObsequioVisitante;
+    solicitudes?: ObsequioVisitante[];
+    pendingAppsScriptUpdate?: boolean;
+    obsequioVisitantesSheetName?: string;
+    needsAppsScriptUpdate?: boolean;
+    emailNotification?: EmailNotificationResult;
+  }> => {
+    try {
+      const res = await createObsequioVisitantesApi(nuevaOLista, correoNotificacion);
+      const guardadas = res.solicitudes.length > 0 ? res.solicitudes : [res.solicitud];
+      const idsGuardados = new Set(guardadas.map((g) => g.id));
+      setObsequioVisitantes((prev) => [
+        ...guardadas,
+        ...prev.filter((s) => !idsGuardados.has(s.id)),
+      ]);
+      const total = guardadas.length;
+      setOvSheetActual(res.obsequioVisitantesSheetName || '');
+      setOvNeedsAppsScriptUpdate(!!res.needsAppsScriptUpdate);
+      if (typeof res.supportsEmailNotification === 'boolean') {
+        setOvEmailSupported(res.supportsEmailNotification);
+      }
+
+      if (res.pendingAppsScriptUpdate || res.needsAppsScriptUpdate) {
+        setOvSheetsSupported(!res.pendingAppsScriptUpdate);
+        mostrarToast(
+          total > 1
+            ? `${total} registros guardados en respaldo local (actualice Apps Script para Obsequio Visitantes)`
+            : 'Guardado en respaldo local (actualice Apps Script para Obsequio Visitantes)'
+        );
+      } else if (res.emailNotification?.requested && res.emailNotification.sent) {
+        setOvSheetsSupported(true);
+        mostrarToast(
+          total > 1
+            ? `${total} registros guardados en Obsequio Visitantes y notificación enviada a ${res.emailNotification.to}`
+            : `Solicitud guardada en Obsequio Visitantes y notificación enviada a ${res.emailNotification.to}`
+        );
+      } else if (res.emailNotification?.requested && !res.emailNotification.sent) {
+        setOvSheetsSupported(true);
+        mostrarToast(
+          total > 1
+            ? `${total} registros guardados en Obsequio Visitantes (notificación por correo pendiente)`
+            : 'Solicitud guardada en Obsequio Visitantes (notificación por correo pendiente)'
+        );
+      } else {
+        setOvSheetsSupported(true);
+        mostrarToast(
+          total > 1
+            ? `${total} registros guardados en la hoja Obsequio Visitantes`
+            : 'Solicitud registrada en la hoja Obsequio Visitantes'
+        );
+      }
+
+      return {
+        success: true,
+        solicitud: guardadas[0],
+        solicitudes: guardadas,
+        pendingAppsScriptUpdate: res.pendingAppsScriptUpdate,
+        obsequioVisitantesSheetName: res.obsequioVisitantesSheetName,
+        needsAppsScriptUpdate: res.needsAppsScriptUpdate,
+        emailNotification: res.emailNotification,
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        error: err.message || 'Error al guardar en Obsequio Visitantes',
+      };
+    }
+  };
+
+  const handleRecargarObsequioVisitantes = async () => {
+    const res = await fetchObsequioVisitantesApi();
+    setObsequioVisitantes(res.solicitudes || []);
+    setOvSheetsSupported(res.sheetsSupported || res.source === 'sheets');
+    setOvEmailSupported(!!res.supportsEmailNotification);
+    setOvSheetActual(res.obsequioVisitantesSheetName || '');
+    setOvNeedsAppsScriptUpdate(!!res.needsAppsScriptUpdate);
+  };
+
+  const handleGuardarPermisos = async (
+    nuevosPermisos: PermisosFormulariosMap
+  ): Promise<{
+    success: boolean;
+    error?: string;
+    syncedToDrive?: boolean;
+    pendingAppsScriptUpdate?: boolean;
+  }> => {
+    if (!sesion) {
+      return { success: false, error: 'No hay sesión activa.' };
+    }
+    try {
+      const res = await savePermisosFormulariosApi({
+        permisos: nuevosPermisos,
+        usuarioCodigo: sesion.codigo,
+        usuarioCargo: sesion.cargo || '',
+        usuarioNombre: sesion.nombre,
+      });
+      setPermisosFormulariosCache(res.permisos);
+      setPermisosFormularios(res.permisos);
+      setPermisosNeedsAppsScriptUpdate(res.pendingAppsScriptUpdate);
+      setPermisosSheetsSupported(!res.pendingAppsScriptUpdate);
+      mostrarToast(
+        res.syncedToDrive
+          ? 'Permisos de formularios guardados y sincronizados con Google Drive'
+          : 'Permisos de formularios actualizados correctamente'
+      );
+      return {
+        success: true,
+        syncedToDrive: res.syncedToDrive,
+        pendingAppsScriptUpdate: res.pendingAppsScriptUpdate,
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        error: err?.message || 'Error al guardar los permisos',
+      };
+    }
+  };
+
+  const handleRestaurarPermisosDefecto = async (
+    formKey?: FormularioPermisoKey
+  ): Promise<{ success: boolean; error?: string }> => {
+    if (!sesion) {
+      return { success: false, error: 'No hay sesión activa.' };
+    }
+    try {
+      const res = await restoreDefaultPermisosApi({
+        formKey,
+        usuarioCodigo: sesion.codigo,
+        usuarioCargo: sesion.cargo || '',
+        usuarioNombre: sesion.nombre,
+      });
+      setPermisosFormulariosCache(res.permisos);
+      setPermisosFormularios(res.permisos);
+      setPermisosNeedsAppsScriptUpdate(res.pendingAppsScriptUpdate);
+      setPermisosSheetsSupported(!res.pendingAppsScriptUpdate);
+      mostrarToast('Permisos restaurados a su configuración por defecto');
+      return { success: true };
+    } catch (err: any) {
+      return {
+        success: false,
+        error: err?.message || 'No se pudieron restaurar los permisos',
+      };
+    }
+  };
+
   const handleRecargarMaestroSilencioso = async () => {
     const maest = await fetchMaestroApi();
     if (maest && maest.length > 0) {
@@ -730,24 +1075,40 @@ export default function App() {
   };
 
   const handleSetActiveTab = (tab: TabNavegacion) => {
+    if (tab === 'formulario' && !puedeVerPersonal) {
+      setActiveTab(obtenerPrimeraTabPermitida());
+      return;
+    }
     if (tab === 'int-ext' && !puedeVerIntExt) {
-      setActiveTab('formulario');
+      setActiveTab(obtenerPrimeraTabPermitida());
       return;
     }
     if (tab === 'especiales-personal' && !puedeVerEp) {
-      setActiveTab('formulario');
+      setActiveTab(obtenerPrimeraTabPermitida());
       return;
     }
     if (tab === 'solicitud-comunidad' && !puedeVerComunidad) {
-      setActiveTab('formulario');
+      setActiveTab(obtenerPrimeraTabPermitida());
+      return;
+    }
+    if (tab === 'ingresos-seleccion' && !puedeVerIngresos) {
+      setActiveTab(obtenerPrimeraTabPermitida());
+      return;
+    }
+    if (tab === 'obsequio-visitantes' && !puedeVerVisitantes) {
+      setActiveTab(obtenerPrimeraTabPermitida());
       return;
     }
     if (tab === 'solicitudes' && !puedeVerResumen) {
-      setActiveTab('formulario');
+      setActiveTab(obtenerPrimeraTabPermitida());
       return;
     }
     if (tab === 'maestro' && !puedeVerMaestro) {
-      setActiveTab('formulario');
+      setActiveTab(obtenerPrimeraTabPermitida());
+      return;
+    }
+    if (tab === 'permisos' && !esAdminSistema) {
+      setActiveTab(obtenerPrimeraTabPermitida());
       return;
     }
     setActiveTab(tab);
@@ -783,6 +1144,7 @@ export default function App() {
           sesion={sesion}
           onCerrarSesion={handleCerrarSesion}
           totalSolicitudes={solicitudes.length}
+          permisosFormularios={permisosFormularios}
           driveConfig={driveConfig}
           userGoogleConnected={!!user}
           onOpenDriveModal={() => {
@@ -825,7 +1187,7 @@ export default function App() {
             />
           ) : (
             <>
-              {activeTab === 'formulario' && (
+              {puedeVerPersonal && activeTab === 'formulario' && (
                 <SolicitudForm
                   maestro={maestro}
                   solicitudes={solicitudes}
@@ -883,6 +1245,34 @@ export default function App() {
                 />
               )}
 
+              {puedeVerIngresos && activeTab === 'ingresos-seleccion' && (
+                <IngresosSeleccionForm
+                  sesion={sesion}
+                  ingresosSeleccion={ingresosSeleccion}
+                  sheetsSupported={isSheetsSupported}
+                  emailSupported={isEmailSupported}
+                  ingresosSeleccionSheetActual={isSheetActual}
+                  needsAppsScriptUpdate={isNeedsAppsScriptUpdate}
+                  onGuardarIngresoSeleccion={handleGuardarIngresoSeleccion}
+                  onRecargarIngresosSeleccion={handleRecargarIngresosSeleccion}
+                  onCerrarSesion={handleCerrarSesion}
+                />
+              )}
+
+              {puedeVerVisitantes && activeTab === 'obsequio-visitantes' && (
+                <ObsequioVisitantesForm
+                  sesion={sesion}
+                  obsequioVisitantes={obsequioVisitantes}
+                  sheetsSupported={ovSheetsSupported}
+                  emailSupported={ovEmailSupported}
+                  obsequioVisitantesSheetActual={ovSheetActual}
+                  needsAppsScriptUpdate={ovNeedsAppsScriptUpdate}
+                  onGuardarObsequioVisitante={handleGuardarObsequioVisitante}
+                  onRecargarObsequioVisitantes={handleRecargarObsequioVisitantes}
+                  onCerrarSesion={handleCerrarSesion}
+                />
+              )}
+
               {puedeVerResumen && activeTab === 'solicitudes' && (
                 <SolicitudesTable
                   solicitudes={solicitudes}
@@ -903,6 +1293,18 @@ export default function App() {
                   isDriveConnected={!!(driveConfig.webhookUrl || user)}
                   onRecargarDeDrive={handleRecargarDeDrive}
                   isSyncing={isSyncing}
+                />
+              )}
+
+              {esAdminSistema && activeTab === 'permisos' && (
+                <PermisosFormulariosPanel
+                  sesion={sesion}
+                  maestro={maestro}
+                  permisos={permisosFormularios}
+                  sheetsSupported={permisosSheetsSupported}
+                  needsAppsScriptUpdate={permisosNeedsAppsScriptUpdate}
+                  onGuardarPermisos={handleGuardarPermisos}
+                  onRestaurarDefecto={handleRestaurarPermisosDefecto}
                 />
               )}
             </>

@@ -14,17 +14,23 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   X,
+  UserPlus,
+  Gift,
+  ShieldCheck,
 } from 'lucide-react';
-import { TrabajadorMaestro } from '../types';
+import { TrabajadorMaestro, PermisosFormulariosMap } from '../types';
 import { DriveConfig } from '../services/apiClient';
 import {
   esRolAdmin,
   esAdministradorSistema,
   puedeVerHojaMaestro,
+  puedeVerSolicitudPersonal,
   puedeVerResumenSolicitud,
   puedeVerSolicitudIntExt,
   puedeVerEspecialesPersonal,
   puedeVerSolicitudComunidad,
+  puedeVerIngresosSeleccion,
+  puedeVerObsequioVisitantes,
 } from '../utils/roles';
 
 export type TabNavegacion =
@@ -32,8 +38,11 @@ export type TabNavegacion =
   | 'int-ext'
   | 'especiales-personal'
   | 'solicitud-comunidad'
+  | 'ingresos-seleccion'
+  | 'obsequio-visitantes'
   | 'solicitudes'
-  | 'maestro';
+  | 'maestro'
+  | 'permisos';
 
 interface SidebarNavegacionProps {
   activeTab: TabNavegacion;
@@ -41,6 +50,7 @@ interface SidebarNavegacionProps {
   sesion: TrabajadorMaestro;
   onCerrarSesion: () => void;
   totalSolicitudes: number;
+  permisosFormularios?: PermisosFormulariosMap;
   driveConfig: DriveConfig;
   userGoogleConnected: boolean;
   onOpenDriveModal: () => void;
@@ -64,6 +74,7 @@ export const SidebarNavegacion: React.FC<SidebarNavegacionProps> = ({
   sesion,
   onCerrarSesion,
   totalSolicitudes,
+  permisosFormularios,
   driveConfig,
   userGoogleConnected,
   onOpenDriveModal,
@@ -75,21 +86,29 @@ export const SidebarNavegacion: React.FC<SidebarNavegacionProps> = ({
   const [submenuEmpresaAbierto, setSubmenuEmpresaAbierto] = useState(false);
   const [submenuEspPersonalAbierto, setSubmenuEspPersonalAbierto] = useState(false);
   const [submenuComunidadAbierto, setSubmenuComunidadAbierto] = useState(false);
+  const [submenuIngresosAbierto, setSubmenuIngresosAbierto] = useState(false);
+  const [submenuVisitantesAbierto, setSubmenuVisitantesAbierto] = useState(false);
 
   const esAdmin = esRolAdmin(sesion);
   const esAdminSistema = esAdministradorSistema(sesion);
   const verMaestro = puedeVerHojaMaestro(sesion);
-  const verResumen = puedeVerResumenSolicitud(sesion);
-  const verIntExt = puedeVerSolicitudIntExt(sesion);
-  const verEspPersonal = puedeVerEspecialesPersonal(sesion);
-  const verComunidad = puedeVerSolicitudComunidad(sesion);
+  const verPersonal = puedeVerSolicitudPersonal(sesion, permisosFormularios);
+  const verResumen = puedeVerResumenSolicitud(sesion, permisosFormularios);
+  const verIntExt = puedeVerSolicitudIntExt(sesion, permisosFormularios);
+  const verEspPersonal = puedeVerEspecialesPersonal(sesion, permisosFormularios);
+  const verComunidad = puedeVerSolicitudComunidad(sesion, permisosFormularios);
+  const verIngresosSeleccion = puedeVerIngresosSeleccion(sesion, permisosFormularios);
+  const verObsequioVisitantes = puedeVerObsequioVisitantes(sesion, permisosFormularios);
   const isDriveActive = !!(driveConfig.webhookUrl || userGoogleConnected);
 
   const personalActivo = activeTab === 'formulario' || activeTab === 'solicitudes';
   const empresaActivo = activeTab === 'int-ext';
   const espPersonalActivo = activeTab === 'especiales-personal';
   const comunidadActivo = activeTab === 'solicitud-comunidad';
+  const ingresosActivo = activeTab === 'ingresos-seleccion';
+  const visitantesActivo = activeTab === 'obsequio-visitantes';
   const maestroActivo = activeTab === 'maestro';
+  const permisosActivo = activeTab === 'permisos';
 
   const iniciales = obtenerIniciales(sesion.nombre);
 
@@ -183,103 +202,107 @@ export const SidebarNavegacion: React.FC<SidebarNavegacionProps> = ({
             )}
 
             {/* Solicitud Personal (con submenú expandible/contraíble) */}
-            <div
-              className={`rounded-xl transition-colors ${
-                personalActivo
-                  ? 'bg-[#E60000] text-white shadow-sm'
-                  : 'bg-white/[0.04] hover:bg-white/[0.08] text-slate-100'
-              }`}
-            >
-              <button
-                type="button"
-                onClick={() => {
-                  if (colapsado) {
-                    manejarSeleccion('formulario');
-                  } else {
-                    setSubmenuPersonalAbierto((prev) => !prev);
-                  }
-                }}
-                aria-expanded={!colapsado ? submenuPersonalAbierto : undefined}
-                title="Solicitud Personal"
-                className={`w-full flex items-center ${
-                  colapsado ? 'justify-center px-2 py-2.5' : 'justify-between px-3 py-2.5'
-                } text-left rounded-xl cursor-pointer transition-colors focus-visible:outline-2 focus-visible:outline-white`}
+            {(verPersonal || verResumen) && (
+              <div
+                className={`rounded-xl transition-colors ${
+                  personalActivo
+                    ? 'bg-[#E60000] text-white shadow-sm'
+                    : 'bg-white/[0.04] hover:bg-white/[0.08] text-slate-100'
+                }`}
               >
-                <span className="flex items-center gap-2.5 min-w-0">
-                  <UserCheck className="w-4 h-4 shrink-0 text-white" />
-                  {!colapsado && (
-                    <span className="text-xs font-extrabold truncate whitespace-nowrap">
-                      Solicitud Personal
-                    </span>
-                  )}
-                </span>
-                {!colapsado &&
-                  (submenuPersonalAbierto ? (
-                    <ChevronDown className="w-3.5 h-3.5 shrink-0 opacity-90" />
-                  ) : (
-                    <ChevronRight className="w-3.5 h-3.5 shrink-0 opacity-90" />
-                  ))}
-              </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (colapsado) {
+                      manejarSeleccion(verPersonal ? 'formulario' : 'solicitudes');
+                    } else {
+                      setSubmenuPersonalAbierto((prev) => !prev);
+                    }
+                  }}
+                  aria-expanded={!colapsado ? submenuPersonalAbierto : undefined}
+                  title="Solicitud Personal"
+                  className={`w-full flex items-center ${
+                    colapsado ? 'justify-center px-2 py-2.5' : 'justify-between px-3 py-2.5'
+                  } text-left rounded-xl cursor-pointer transition-colors focus-visible:outline-2 focus-visible:outline-white`}
+                >
+                  <span className="flex items-center gap-2.5 min-w-0">
+                    <UserCheck className="w-4 h-4 shrink-0 text-white" />
+                    {!colapsado && (
+                      <span className="text-xs font-extrabold truncate whitespace-nowrap">
+                        Solicitud Personal
+                      </span>
+                    )}
+                  </span>
+                  {!colapsado &&
+                    (submenuPersonalAbierto ? (
+                      <ChevronDown className="w-3.5 h-3.5 shrink-0 opacity-90" />
+                    ) : (
+                      <ChevronRight className="w-3.5 h-3.5 shrink-0 opacity-90" />
+                    ))}
+                </button>
 
-              {!colapsado && submenuPersonalAbierto && (
-                <div className="px-2 pb-2 pt-0.5 space-y-1">
-                  <button
-                    type="button"
-                    onClick={() => manejarSeleccion('formulario')}
-                    aria-current={activeTab === 'formulario' ? 'page' : undefined}
-                    className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs transition-colors cursor-pointer whitespace-nowrap ${
-                      activeTab === 'formulario'
-                        ? 'bg-white text-[#0a2958] font-extrabold shadow-xs'
-                        : personalActivo
-                        ? 'text-white/95 hover:bg-white/15 font-semibold'
-                        : 'text-slate-200 hover:bg-white/10 font-medium'
-                    }`}
-                  >
-                    <Flower
-                      className={`w-3.5 h-3.5 shrink-0 ${
-                        activeTab === 'formulario' ? 'text-[#E60000]' : 'opacity-85'
-                      }`}
-                    />
-                    <span className="truncate">Formulario de Solicitud</span>
-                  </button>
-
-                  {verResumen && (
-                    <button
-                      type="button"
-                      onClick={() => manejarSeleccion('solicitudes')}
-                      aria-current={activeTab === 'solicitudes' ? 'page' : undefined}
-                      className={`w-full flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg text-xs transition-colors cursor-pointer whitespace-nowrap ${
-                        activeTab === 'solicitudes'
-                          ? 'bg-white text-[#0a2958] font-extrabold shadow-xs'
-                          : personalActivo
-                          ? 'text-white/95 hover:bg-white/15 font-semibold'
-                          : 'text-slate-200 hover:bg-white/10 font-medium'
-                      }`}
-                    >
-                      <span className="flex items-center gap-2 min-w-0">
-                        <FileText
+                {!colapsado && submenuPersonalAbierto && (
+                  <div className="px-2 pb-2 pt-0.5 space-y-1">
+                    {verPersonal && (
+                      <button
+                        type="button"
+                        onClick={() => manejarSeleccion('formulario')}
+                        aria-current={activeTab === 'formulario' ? 'page' : undefined}
+                        className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs transition-colors cursor-pointer whitespace-nowrap ${
+                          activeTab === 'formulario'
+                            ? 'bg-white text-[#0a2958] font-extrabold shadow-xs'
+                            : personalActivo
+                            ? 'text-white/95 hover:bg-white/15 font-semibold'
+                            : 'text-slate-200 hover:bg-white/10 font-medium'
+                        }`}
+                      >
+                        <Flower
                           className={`w-3.5 h-3.5 shrink-0 ${
-                            activeTab === 'solicitudes' ? 'text-[#E60000]' : 'opacity-85'
+                            activeTab === 'formulario' ? 'text-[#E60000]' : 'opacity-85'
                           }`}
                         />
-                        <span className="truncate">Resumen Solicitud</span>
-                      </span>
-                      {totalSolicitudes > 0 && (
-                        <span
-                          className={`font-mono tabular-nums text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${
-                            activeTab === 'solicitudes'
-                              ? 'bg-[#0a2958]/10 text-[#0a2958]'
-                              : 'bg-black/20 text-white'
-                          }`}
-                        >
-                          {totalSolicitudes}
+                        <span className="truncate">Formulario de Solicitud</span>
+                      </button>
+                    )}
+
+                    {verResumen && (
+                      <button
+                        type="button"
+                        onClick={() => manejarSeleccion('solicitudes')}
+                        aria-current={activeTab === 'solicitudes' ? 'page' : undefined}
+                        className={`w-full flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg text-xs transition-colors cursor-pointer whitespace-nowrap ${
+                          activeTab === 'solicitudes'
+                            ? 'bg-white text-[#0a2958] font-extrabold shadow-xs'
+                            : personalActivo
+                            ? 'text-white/95 hover:bg-white/15 font-semibold'
+                            : 'text-slate-200 hover:bg-white/10 font-medium'
+                        }`}
+                      >
+                        <span className="flex items-center gap-2 min-w-0">
+                          <FileText
+                            className={`w-3.5 h-3.5 shrink-0 ${
+                              activeTab === 'solicitudes' ? 'text-[#E60000]' : 'opacity-85'
+                            }`}
+                          />
+                          <span className="truncate">Resumen Solicitud</span>
                         </span>
-                      )}
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
+                        {totalSolicitudes > 0 && (
+                          <span
+                            className={`font-mono tabular-nums text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${
+                              activeTab === 'solicitudes'
+                                ? 'bg-[#0a2958]/10 text-[#0a2958]'
+                                : 'bg-black/20 text-white'
+                            }`}
+                          >
+                            {totalSolicitudes}
+                          </span>
+                        )}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Especiales Empresa (visible para AUXILIAR GESTIÓN HUMANA EAI, ANALISTA GESTIÓN HUMANA y ANALISTA GESTIÓN DE INFORMACIÓN EAI) */}
             {verIntExt && (
@@ -481,6 +504,140 @@ export const SidebarNavegacion: React.FC<SidebarNavegacionProps> = ({
                 )}
               </div>
             )}
+
+            {/* Ingresos Selección */}
+            {verIngresosSeleccion && (
+              <div
+                className={`rounded-xl transition-colors ${
+                  ingresosActivo
+                    ? 'bg-[#E60000] text-white shadow-sm'
+                    : 'bg-white/[0.04] hover:bg-white/[0.08] text-slate-100'
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (colapsado) {
+                      manejarSeleccion('ingresos-seleccion');
+                    } else {
+                      setSubmenuIngresosAbierto((prev) => !prev);
+                      if (!ingresosActivo) {
+                        manejarSeleccion('ingresos-seleccion');
+                      }
+                    }
+                  }}
+                  aria-expanded={!colapsado ? submenuIngresosAbierto : undefined}
+                  title="Ingresos Selección"
+                  className={`w-full flex items-center ${
+                    colapsado ? 'justify-center px-2 py-2.5' : 'justify-between px-3 py-2.5'
+                  } text-left rounded-xl cursor-pointer transition-colors focus-visible:outline-2 focus-visible:outline-white`}
+                >
+                  <span className="flex items-center gap-2.5 min-w-0">
+                    <UserPlus className="w-4 h-4 shrink-0 text-white" />
+                    {!colapsado && (
+                      <span className="text-xs font-extrabold truncate whitespace-nowrap">
+                        Ingresos Selección
+                      </span>
+                    )}
+                  </span>
+                  {!colapsado &&
+                    (submenuIngresosAbierto ? (
+                      <ChevronDown className="w-3.5 h-3.5 shrink-0 opacity-90" />
+                    ) : (
+                      <ChevronRight className="w-3.5 h-3.5 shrink-0 opacity-90" />
+                    ))}
+                </button>
+
+                {!colapsado && submenuIngresosAbierto && (
+                  <div className="px-2 pb-2 pt-0.5 space-y-1">
+                    <button
+                      type="button"
+                      onClick={() => manejarSeleccion('ingresos-seleccion')}
+                      aria-current={activeTab === 'ingresos-seleccion' ? 'page' : undefined}
+                      className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs transition-colors cursor-pointer whitespace-nowrap ${
+                        activeTab === 'ingresos-seleccion'
+                          ? 'bg-white text-[#0a2958] font-extrabold shadow-xs'
+                          : 'text-slate-200 hover:bg-white/10 font-medium'
+                      }`}
+                    >
+                      <FilePlus2
+                        className={`w-3.5 h-3.5 shrink-0 ${
+                          activeTab === 'ingresos-seleccion' ? 'text-[#E60000]' : 'opacity-85'
+                        }`}
+                      />
+                      <span className="truncate">Formulario Ingresos Selección</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Obsequio Visitantes */}
+            {verObsequioVisitantes && (
+              <div
+                className={`rounded-xl transition-colors ${
+                  visitantesActivo
+                    ? 'bg-[#E60000] text-white shadow-sm'
+                    : 'bg-white/[0.04] hover:bg-white/[0.08] text-slate-100'
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (colapsado) {
+                      manejarSeleccion('obsequio-visitantes');
+                    } else {
+                      setSubmenuVisitantesAbierto((prev) => !prev);
+                      if (!visitantesActivo) {
+                        manejarSeleccion('obsequio-visitantes');
+                      }
+                    }
+                  }}
+                  aria-expanded={!colapsado ? submenuVisitantesAbierto : undefined}
+                  title="Obsequio Visitantes"
+                  className={`w-full flex items-center ${
+                    colapsado ? 'justify-center px-2 py-2.5' : 'justify-between px-3 py-2.5'
+                  } text-left rounded-xl cursor-pointer transition-colors focus-visible:outline-2 focus-visible:outline-white`}
+                >
+                  <span className="flex items-center gap-2.5 min-w-0">
+                    <Gift className="w-4 h-4 shrink-0 text-white" />
+                    {!colapsado && (
+                      <span className="text-xs font-extrabold truncate whitespace-nowrap">
+                        Obsequio Visitantes
+                      </span>
+                    )}
+                  </span>
+                  {!colapsado &&
+                    (submenuVisitantesAbierto ? (
+                      <ChevronDown className="w-3.5 h-3.5 shrink-0 opacity-90" />
+                    ) : (
+                      <ChevronRight className="w-3.5 h-3.5 shrink-0 opacity-90" />
+                    ))}
+                </button>
+
+                {!colapsado && submenuVisitantesAbierto && (
+                  <div className="px-2 pb-2 pt-0.5 space-y-1">
+                    <button
+                      type="button"
+                      onClick={() => manejarSeleccion('obsequio-visitantes')}
+                      aria-current={activeTab === 'obsequio-visitantes' ? 'page' : undefined}
+                      className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs transition-colors cursor-pointer whitespace-nowrap ${
+                        activeTab === 'obsequio-visitantes'
+                          ? 'bg-white text-[#0a2958] font-extrabold shadow-xs'
+                          : 'text-slate-200 hover:bg-white/10 font-medium'
+                      }`}
+                    >
+                      <FilePlus2
+                        className={`w-3.5 h-3.5 shrink-0 ${
+                          activeTab === 'obsequio-visitantes' ? 'text-[#E60000]' : 'opacity-85'
+                        }`}
+                      />
+                      <span className="truncate">Formulario Obsequio Visitantes</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* SECCIÓN: ADMINISTRACIÓN */}
@@ -510,6 +667,25 @@ export const SidebarNavegacion: React.FC<SidebarNavegacionProps> = ({
                 >
                   <Users className="w-4 h-4 shrink-0" />
                   {!colapsado && <span className="truncate">Actualizar Maestro</span>}
+                </button>
+              )}
+
+              {esAdminSistema && (
+                <button
+                  type="button"
+                  onClick={() => manejarSeleccion('permisos')}
+                  aria-current={permisosActivo ? 'page' : undefined}
+                  title="Permisos Formularios"
+                  className={`w-full flex items-center ${
+                    colapsado ? 'justify-center px-2 py-2.5' : 'gap-2.5 px-3 py-2.5'
+                  } rounded-xl text-xs font-bold transition-colors cursor-pointer whitespace-nowrap ${
+                    permisosActivo
+                      ? 'bg-[#E60000] text-white shadow-sm'
+                      : 'text-slate-100 hover:bg-white/10'
+                  }`}
+                >
+                  <ShieldCheck className="w-4 h-4 shrink-0" />
+                  {!colapsado && <span className="truncate">Permisos Formularios</span>}
                 </button>
               )}
 

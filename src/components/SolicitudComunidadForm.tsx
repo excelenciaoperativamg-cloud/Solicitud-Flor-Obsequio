@@ -23,6 +23,7 @@ import {
   Camera,
   Upload,
   FileImage,
+  FileText,
   ExternalLink,
   Eye,
   Trash2,
@@ -78,6 +79,8 @@ const MOTIVOS_BASE_SC = [
   'Evento Social',
 ] as const;
 const ESTADO_INICIAL_SC = 'Pendiente Aprobación';
+const MODELO_CARTA_COMUNIDAD_PDF_URL =
+  '/assets/aistudio/Modelo_carta_solicitud_obsequio_de_flor_para_la_comunidad_069a67d8.pdf';
 
 function getProductosPermitidosPorSede(sede: string): string[] {
   switch (sede) {
@@ -1690,12 +1693,47 @@ export const SolicitudComunidadForm: React.FC<SolicitudComunidadFormProps> = ({
               </div>
             </div>
 
-            {/* Foto Carta */}
+            {/* Foto Carta + Modelo de carta descargable */}
             <div className="space-y-2.5">
               <label className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
                 <FileImage className="w-3.5 h-3.5 text-[#0a2958]" />
                 <span>Foto Carta</span>
               </label>
+
+              {/* Carta modelo para descargar, llenar, firmar y adjuntar */}
+              <div className="p-3.5 rounded-xl border border-[#0a2958]/20 bg-[#0a2958]/[0.03] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-start gap-2.5 min-w-0">
+                  <div className="w-9 h-9 rounded-lg bg-[#0a2958] text-white flex items-center justify-center shrink-0">
+                    <FileText className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-extrabold text-[#0a2958]">
+                      Modelo de carta de solicitud (Comunidad)
+                    </p>
+                    <p className="text-[11px] text-slate-600">
+                      Descargue el formato modelo, llénelo, fírmelo y luego adjúntelo o tómele una foto abajo.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setCartaLightboxUrl(MODELO_CARTA_COMUNIDAD_PDF_URL)}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-[#0a2958] text-xs font-bold shadow-xs cursor-pointer transition"
+                  >
+                    <Eye className="w-3.5 h-3.5 text-[#E60000]" />
+                    <span>Ver modelo</span>
+                  </button>
+                  <a
+                    href={MODELO_CARTA_COMUNIDAD_PDF_URL}
+                    download="Modelo_carta_solicitud_obsequio_de_flor_para_la_comunidad.pdf"
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#0a2958] hover:bg-[#0d346e] text-white text-xs font-bold shadow-xs transition"
+                  >
+                    <Download className="w-3.5 h-3.5 text-[#E60000]" />
+                    <span>Descargar carta modelo (PDF)</span>
+                  </a>
+                </div>
+              </div>
 
               <div className="p-4 rounded-xl border border-dashed border-slate-300 bg-slate-50/70 space-y-3">
                 <div className="flex flex-wrap items-center gap-2.5">

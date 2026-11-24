@@ -3,8 +3,16 @@ import {
   SolicitudIntExt,
   EspecialPersonal,
   SolicitudComunidad,
+  IngresoSeleccion,
+  ObsequioVisitante,
   TrabajadorMaestro,
+  FormularioPermisoKey,
+  PermisosFormulariosMap,
 } from '../types';
+import {
+  DEFAULT_PERMISOS_FORMULARIOS,
+  clonarPermisosFormularios,
+} from '../utils/roles';
 
 export interface DriveConfig {
   webhookUrl: string;
@@ -445,12 +453,208 @@ export const retryEmailSolicitudComunidadApi = async (
   };
 };
 
+export const fetchIngresosSeleccionApi = async (): Promise<{
+  solicitudes: IngresoSeleccion[];
+  sheetsSupported: boolean;
+  supportsEmailNotification?: boolean;
+  source: string;
+  ingresosSeleccionSheetName?: string;
+  needsAppsScriptUpdate?: boolean;
+}> => {
+  try {
+    const res = await fetch('/api/ingresos-seleccion');
+    if (!res.ok) throw new Error('Error al consultar Ingresos Selección');
+    const data = await res.json();
+    return {
+      solicitudes: data.solicitudes || [],
+      sheetsSupported: !!data.sheetsSupported,
+      supportsEmailNotification: !!data.supportsEmailNotification,
+      source: data.source || 'local',
+      ingresosSeleccionSheetName: data.ingresosSeleccionSheetName || '',
+      needsAppsScriptUpdate: !!data.needsAppsScriptUpdate,
+    };
+  } catch (error) {
+    console.warn('Error consultando Ingresos Selección:', error);
+    return {
+      solicitudes: [],
+      sheetsSupported: false,
+      supportsEmailNotification: false,
+      source: 'error',
+      ingresosSeleccionSheetName: '',
+      needsAppsScriptUpdate: true,
+    };
+  }
+};
+
+export const createIngresosSeleccionApi = async (
+  solicitudOrList: IngresoSeleccion | IngresoSeleccion[],
+  correoNotificacion?: string
+): Promise<{
+  solicitud: IngresoSeleccion;
+  solicitudes: IngresoSeleccion[];
+  pendingAppsScriptUpdate?: boolean;
+  supportsEmailNotification?: boolean;
+  ingresosSeleccionSheetName?: string;
+  needsAppsScriptUpdate?: boolean;
+  emailNotification?: EmailNotificationResult;
+}> => {
+  const payload = Array.isArray(solicitudOrList)
+    ? { items: solicitudOrList, correoNotificacion: correoNotificacion || '' }
+    : { ...solicitudOrList, correoNotificacion: correoNotificacion || '' };
+
+  const res = await fetch('/api/ingresos-seleccion', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Error al guardar en Ingresos Selección');
+  }
+  const data = await res.json();
+  const solicitudes: IngresoSeleccion[] = Array.isArray(data.solicitudes)
+    ? data.solicitudes
+    : data.solicitud
+    ? [data.solicitud]
+    : [];
+  return {
+    solicitud: data.solicitud || solicitudes[0],
+    solicitudes,
+    pendingAppsScriptUpdate: !!data.pendingAppsScriptUpdate,
+    supportsEmailNotification: !!data.supportsEmailNotification,
+    ingresosSeleccionSheetName: data.ingresosSeleccionSheetName || '',
+    needsAppsScriptUpdate: !!data.needsAppsScriptUpdate,
+    emailNotification: data.emailNotification,
+  };
+};
+
+export const retryEmailIngresosSeleccionApi = async (
+  items: IngresoSeleccion[],
+  correoNotificacion: string
+): Promise<EmailNotificationResult> => {
+  const res = await fetch('/api/ingresos-seleccion', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      action: 'notificar',
+      items,
+      correoNotificacion,
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (data?.emailNotification) return data.emailNotification;
+  return {
+    requested: true,
+    sent: false,
+    to: correoNotificacion,
+    error: data?.error || 'No se pudo reintentar el envío de correo.',
+  };
+};
+
+export const fetchObsequioVisitantesApi = async (): Promise<{
+  solicitudes: ObsequioVisitante[];
+  sheetsSupported: boolean;
+  supportsEmailNotification?: boolean;
+  source: string;
+  obsequioVisitantesSheetName?: string;
+  needsAppsScriptUpdate?: boolean;
+}> => {
+  try {
+    const res = await fetch('/api/obsequio-visitantes');
+    if (!res.ok) throw new Error('Error al consultar Obsequio Visitantes');
+    const data = await res.json();
+    return {
+      solicitudes: data.solicitudes || [],
+      sheetsSupported: !!data.sheetsSupported,
+      supportsEmailNotification: !!data.supportsEmailNotification,
+      source: data.source || 'local',
+      obsequioVisitantesSheetName: data.obsequioVisitantesSheetName || '',
+      needsAppsScriptUpdate: !!data.needsAppsScriptUpdate,
+    };
+  } catch (error) {
+    console.warn('Error consultando Obsequio Visitantes:', error);
+    return {
+      solicitudes: [],
+      sheetsSupported: false,
+      supportsEmailNotification: false,
+      source: 'error',
+      obsequioVisitantesSheetName: '',
+      needsAppsScriptUpdate: true,
+    };
+  }
+};
+
+export const createObsequioVisitantesApi = async (
+  solicitudOrList: ObsequioVisitante | ObsequioVisitante[],
+  correoNotificacion?: string
+): Promise<{
+  solicitud: ObsequioVisitante;
+  solicitudes: ObsequioVisitante[];
+  pendingAppsScriptUpdate?: boolean;
+  supportsEmailNotification?: boolean;
+  obsequioVisitantesSheetName?: string;
+  needsAppsScriptUpdate?: boolean;
+  emailNotification?: EmailNotificationResult;
+}> => {
+  const payload = Array.isArray(solicitudOrList)
+    ? { items: solicitudOrList, correoNotificacion: correoNotificacion || '' }
+    : { ...solicitudOrList, correoNotificacion: correoNotificacion || '' };
+
+  const res = await fetch('/api/obsequio-visitantes', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Error al guardar en Obsequio Visitantes');
+  }
+  const data = await res.json();
+  const solicitudes: ObsequioVisitante[] = Array.isArray(data.solicitudes)
+    ? data.solicitudes
+    : data.solicitud
+    ? [data.solicitud]
+    : [];
+  return {
+    solicitud: data.solicitud || solicitudes[0],
+    solicitudes,
+    pendingAppsScriptUpdate: !!data.pendingAppsScriptUpdate,
+    supportsEmailNotification: !!data.supportsEmailNotification,
+    obsequioVisitantesSheetName: data.obsequioVisitantesSheetName || '',
+    needsAppsScriptUpdate: !!data.needsAppsScriptUpdate,
+    emailNotification: data.emailNotification,
+  };
+};
+
+export const retryEmailObsequioVisitantesApi = async (
+  items: ObsequioVisitante[],
+  correoNotificacion: string
+): Promise<EmailNotificationResult> => {
+  const res = await fetch('/api/obsequio-visitantes', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      action: 'notificar',
+      items,
+      correoNotificacion,
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (data?.emailNotification) return data.emailNotification;
+  return {
+    requested: true,
+    sent: false,
+    to: correoNotificacion,
+    error: data?.error || 'No se pudo reintentar el envío de correo.',
+  };
+};
+
 const isValidWorkerClient = (w: any): w is TrabajadorMaestro => {
   if (!w || typeof w !== 'object') return false;
   const codigo = String(w.codigo || '').trim();
   const nombre = String(w.nombre || '').trim();
   if (!codigo || !nombre) return false;
-  if (/^(SFO|SIE|SE|SEP|SC)-\d{4}-/i.test(codigo)) return false;
+  if (/^(SFO|SIE|SE|SEP|SC|IS|OV)-\d{4}-/i.test(codigo)) return false;
   if (/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+[A-Z][a-z]{2}\s+\d{1,2}\s+\d{4}/i.test(nombre)) return false;
   if (/^\d{4}-\d{2}-\d{2}/.test(nombre)) return false;
   return true;
@@ -620,3 +824,115 @@ export const syncMaestroFromDriveApi = async (): Promise<{
     return { success: false, error: err.message };
   }
 };
+
+const PERMISOS_LOCAL_KEY = 'sfo_permisos_formularios_v1';
+
+export function getPermisosLocalCache(): PermisosFormulariosMap {
+  try {
+    const raw = localStorage.getItem(PERMISOS_LOCAL_KEY);
+    if (!raw) return clonarPermisosFormularios(DEFAULT_PERMISOS_FORMULARIOS);
+    const parsed = JSON.parse(raw);
+    return clonarPermisosFormularios(parsed);
+  } catch {
+    return clonarPermisosFormularios(DEFAULT_PERMISOS_FORMULARIOS);
+  }
+}
+
+function savePermisosLocalCache(permisos: PermisosFormulariosMap) {
+  try {
+    localStorage.setItem(PERMISOS_LOCAL_KEY, JSON.stringify(permisos));
+  } catch {}
+}
+
+export const fetchPermisosFormulariosApi = async (): Promise<{
+  permisos: PermisosFormulariosMap;
+  source: string;
+  sheetsSupported: boolean;
+  needsAppsScriptUpdate: boolean;
+}> => {
+  try {
+    const res = await fetch(`/api/permisos?_ts=${Date.now()}`, { cache: 'no-store' });
+    if (!res.ok) throw new Error('Error al consultar permisos de formularios');
+    const data = await res.json();
+    const permisos = clonarPermisosFormularios(data.permisos);
+    savePermisosLocalCache(permisos);
+    return {
+      permisos,
+      source: data.source || 'local',
+      sheetsSupported: !!data.sheetsSupported,
+      needsAppsScriptUpdate: !!data.needsAppsScriptUpdate,
+    };
+  } catch (error) {
+    console.warn('Usando respaldo local para permisos de formularios:', error);
+    return {
+      permisos: getPermisosLocalCache(),
+      source: 'local',
+      sheetsSupported: false,
+      needsAppsScriptUpdate: true,
+    };
+  }
+};
+
+export const savePermisosFormulariosApi = async (params: {
+  permisos: PermisosFormulariosMap;
+  usuarioCodigo: string;
+  usuarioCargo: string;
+  usuarioNombre?: string;
+}): Promise<{
+  success: boolean;
+  permisos: PermisosFormulariosMap;
+  syncedToDrive: boolean;
+  pendingAppsScriptUpdate: boolean;
+}> => {
+  const res = await fetch('/api/permisos', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data?.success) {
+    throw new Error(data?.error || 'No se pudieron guardar los permisos.');
+  }
+  const permisos = clonarPermisosFormularios(data.permisos);
+  savePermisosLocalCache(permisos);
+  return {
+    success: true,
+    permisos,
+    syncedToDrive: !!data.syncedToDrive,
+    pendingAppsScriptUpdate: !!data.pendingAppsScriptUpdate,
+  };
+};
+
+export const restoreDefaultPermisosApi = async (params: {
+  formKey?: FormularioPermisoKey;
+  usuarioCodigo: string;
+  usuarioCargo: string;
+  usuarioNombre?: string;
+}): Promise<{
+  success: boolean;
+  permisos: PermisosFormulariosMap;
+  syncedToDrive: boolean;
+  pendingAppsScriptUpdate: boolean;
+}> => {
+  const res = await fetch('/api/permisos', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      action: 'restaurar_defecto',
+      ...params,
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data?.success) {
+    throw new Error(data?.error || 'No se pudieron restaurar los permisos por defecto.');
+  }
+  const permisos = clonarPermisosFormularios(data.permisos);
+  savePermisosLocalCache(permisos);
+  return {
+    success: true,
+    permisos,
+    syncedToDrive: !!data.syncedToDrive,
+    pendingAppsScriptUpdate: !!data.pendingAppsScriptUpdate,
+  };
+};
+

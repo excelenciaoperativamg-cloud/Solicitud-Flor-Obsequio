@@ -41,10 +41,25 @@ const CONTEXTO_POR_TAB: Record<TabNavegacion, { seccion: string; modulo: string;
     modulo: 'Solicitud Comunidad',
     pagina: 'Formulario Solicitud Comunidad',
   },
+  'ingresos-seleccion': {
+    seccion: 'Gestión de Solicitudes',
+    modulo: 'Ingresos Selección',
+    pagina: 'Formulario Ingresos Selección',
+  },
+  'obsequio-visitantes': {
+    seccion: 'Gestión de Solicitudes',
+    modulo: 'Obsequio Visitantes',
+    pagina: 'Formulario Obsequio Visitantes',
+  },
   maestro: {
     seccion: 'Administración',
     modulo: 'Personal',
     pagina: 'Actualizar Maestro',
+  },
+  permisos: {
+    seccion: 'Administración',
+    modulo: 'Control de Acceso',
+    pagina: 'Permisos Formularios',
   },
 };
 

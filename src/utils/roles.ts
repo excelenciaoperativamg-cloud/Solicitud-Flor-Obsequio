@@ -1,106 +1,11 @@
-import { TrabajadorMaestro } from '../types';
+import {
+  TrabajadorMaestro,
+  FormularioPermisoKey,
+  PermisoFormulario,
+  PermisosFormulariosMap,
+} from '../types';
 
-/**
- * Roles con acceso a pestañas administrativas y a la hoja de Drive:
- * - Auxiliar de Gestión humana (o área Gestión Humana)
- * - Cargos administrativos de Poscosecha (Auxiliar, Líder, Supervisor, Director)
- * No incluye operarios de línea aunque digan "Poscosecha" en el cargo.
- */
-export function esRolAdmin(trabajador?: TrabajadorMaestro | null): boolean {
-  if (!trabajador) return false;
-
-  const normalizar = (s: string) =>
-    String(s || '')
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-  const cargo = normalizar(trabajador.cargo || '');
-  const area = normalizar(trabajador.area || '');
-  const full = `${cargo} ${area}`;
-
-  // Gestión Humana / Auxiliar de Gestión
-  if (full.includes('gestion humana') || full.includes('auxiliar de gestion')) {
-    return true;
-  }
-
-  // Analista Gestión de Información EAI
-  if (full.includes('analista') && full.includes('gestion') && full.includes('informacion')) {
-    return true;
-  }
-
-  // Cargo exactamente "Poscosecha" (rol de área)
-  if (cargo === 'poscosecha') {
-    return true;
-  }
-
-  // Poscosecha con cargo de apoyo/administración (no operario de línea)
-  if (full.includes('poscosecha')) {
-    const esAdminPoscosecha =
-      full.includes('auxiliar') ||
-      full.includes('lider') ||
-      full.includes('supervisor') ||
-      full.includes('director') ||
-      full.includes('coordinador');
-    if (esAdminPoscosecha) return true;
-  }
-
-  return false;
-}
-
-/**
- * Controla si el usuario puede visualizar la sección "Actualizar Maestro" (Hoja Maestro).
- * Exclusivo para el administrador (ANALISTA GESTIÓN DE INFORMACIÓN EAI).
- */
-export function puedeVerHojaMaestro(trabajador?: TrabajadorMaestro | null): boolean {
-  return esAdministradorSistema(trabajador);
-}
-
-/**
- * Verifica si el trabajador tiene el cargo de DIRECTOR POSCOSECHA,
- * quien tiene habilitado el formulario todos los días de la semana.
- */
-export function esDirectorPoscosecha(trabajador?: TrabajadorMaestro | null): boolean {
-  if (!trabajador) return false;
-
-  const normalizar = (s: string) =>
-    String(s || '')
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-  const cargo = normalizar(trabajador.cargo || '');
-  return cargo.includes('director') && cargo.includes('poscosecha');
-}
-
-/**
- * Verifica si el trabajador tiene habilitado el formulario todos los días de la semana:
- * - DIRECTOR POSCOSECHA
- * - ANALISTA GESTIÓN DE INFORMACIÓN EAI
- */
-export function tieneFormularioTodosLosDias(trabajador?: TrabajadorMaestro | null): boolean {
-  if (!trabajador) return false;
-  if (esDirectorPoscosecha(trabajador)) return true;
-
-  const cargo = String(trabajador.cargo || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-  return (
-    cargo.includes('analista') &&
-    cargo.includes('gestion') &&
-    cargo.includes('informacion')
-  );
-}
-
-function normalizarTextoRol(s: string): string {
+export function normalizarTextoRol(s: string): string {
   return String(s || '')
     .toLowerCase()
     .normalize('NFD')
@@ -109,53 +14,154 @@ function normalizarTextoRol(s: string): string {
     .trim();
 }
 
-/**
- * Verifica si el trabajador tiene el cargo ANALISTA GESTIÓN HUMANA (incluye variantes como 1 EAI, 2 EAI, 3 EAI).
- */
-export function esAnalistaGestionHumana(trabajador?: TrabajadorMaestro | null): boolean {
-  if (!trabajador) return false;
-  const cargo = normalizarTextoRol(trabajador.cargo || '');
-  return (
-    cargo.includes('analista') &&
-    cargo.includes('gestion') &&
-    cargo.includes('humana')
-  );
+export interface FormularioMeta {
+  key: FormularioPermisoKey;
+  nombre: string;
+  modulo: string;
+  descripcion: string;
 }
 
-/**
- * Controla si el usuario puede acceder al formulario "Especiales Empresa" (antes Solicitud Extra):
- * - AUXILIAR GESTIÓN HUMANA EAI
- * - ANALISTA GESTIÓN HUMANA (1 EAI, 2 EAI, 3 EAI, etc.)
- * - ANALISTA GESTIÓN DE INFORMACIÓN EAI (administrador)
- */
-export function puedeVerSolicitudIntExt(trabajador?: TrabajadorMaestro | null): boolean {
-  if (!trabajador) return false;
-  if (esAnalistaGestionHumana(trabajador)) return true;
+export const FORMULARIOS_PERMISOS_META: FormularioMeta[] = [
+  {
+    key: 'formulario',
+    nombre: 'Solicitud Personal',
+    modulo: 'Solicitud Personal',
+    descripcion: 'Formulario principal de solicitud semanal de flor para colaboradores.',
+  },
+  {
+    key: 'int-ext',
+    nombre: 'Especiales Empresa',
+    modulo: 'Especiales Empresa',
+    descripcion: 'Solicitudes internas o especiales registradas a nombre de la empresa.',
+  },
+  {
+    key: 'especiales-personal',
+    nombre: 'Especiales Personal',
+    modulo: 'Especiales Personal',
+    descripcion: 'Solicitudes especiales de trabajadores con carta de solicitud adjunta.',
+  },
+  {
+    key: 'solicitud-comunidad',
+    nombre: 'Solicitud Comunidad',
+    modulo: 'Solicitud Comunidad',
+    descripcion: 'Solicitudes de obsequio de flor dirigidas a entidades y comunidad.',
+  },
+  {
+    key: 'ingresos-seleccion',
+    nombre: 'Ingresos Selección',
+    modulo: 'Ingresos Selección',
+    descripcion: 'Solicitudes de flor para procesos de ingresos y selección.',
+  },
+  {
+    key: 'obsequio-visitantes',
+    nombre: 'Obsequio Visitantes',
+    modulo: 'Obsequio Visitantes',
+    descripcion: 'Solicitudes de obsequio de flor para visitantes externos o institucionales.',
+  },
+  {
+    key: 'solicitudes',
+    nombre: 'Resumen Solicitud',
+    modulo: 'Solicitud Personal',
+    descripcion: 'Tabla consolidada con el resumen de solicitudes personales registradas.',
+  },
+];
 
-  const cargo = normalizarTextoRol(trabajador.cargo || '');
+export const DEFAULT_PERMISOS_FORMULARIOS: PermisosFormulariosMap = {
+  formulario: {
+    todos: true,
+    cargos: [],
+    palabrasClaveCargo: [],
+    codigos: [],
+    codigosExcluidos: [],
+  },
+  'int-ext': {
+    todos: false,
+    cargos: [],
+    palabrasClaveCargo: ['AUXILIAR GESTIÓN HUMANA', 'ANALISTA GESTIÓN HUMANA'],
+    codigos: [],
+    codigosExcluidos: [],
+  },
+  'especiales-personal': {
+    todos: true,
+    cargos: [],
+    palabrasClaveCargo: [],
+    codigos: [],
+    codigosExcluidos: [],
+  },
+  'solicitud-comunidad': {
+    todos: false,
+    cargos: [],
+    palabrasClaveCargo: ['ANALISTA GESTIÓN HUMANA', 'AUXILIAR TÉCNICO POSCOSECHA'],
+    codigos: [],
+    codigosExcluidos: [],
+  },
+  'ingresos-seleccion': {
+    todos: false,
+    cargos: [],
+    palabrasClaveCargo: [],
+    codigos: ['8558', '2151'],
+    codigosExcluidos: [],
+  },
+  'obsequio-visitantes': {
+    todos: false,
+    cargos: [],
+    palabrasClaveCargo: ['DIRECTOR', 'ANALISTA GESTIÓN HUMANA'],
+    codigos: [],
+    codigosExcluidos: [],
+  },
+  solicitudes: {
+    todos: false,
+    cargos: [],
+    palabrasClaveCargo: ['AUXILIAR GESTIÓN HUMANA', 'AUXILIAR TÉCNICO POSCOSECHA'],
+    codigos: [],
+    codigosExcluidos: [],
+  },
+};
 
-  if (cargo.includes('auxiliar') && cargo.includes('gestion') && cargo.includes('humana')) {
-    return true;
+function clonarReglaPermiso(regla?: Partial<PermisoFormulario>): PermisoFormulario {
+  return {
+    todos: Boolean(regla?.todos),
+    cargos: Array.isArray(regla?.cargos) ? [...regla.cargos] : [],
+    palabrasClaveCargo: Array.isArray(regla?.palabrasClaveCargo)
+      ? [...regla.palabrasClaveCargo]
+      : [],
+    codigos: Array.isArray(regla?.codigos) ? [...regla.codigos] : [],
+    codigosExcluidos: Array.isArray(regla?.codigosExcluidos)
+      ? [...regla.codigosExcluidos]
+      : [],
+  };
+}
+
+export function clonarPermisosFormularios(
+  origen?: Partial<Record<FormularioPermisoKey, Partial<PermisoFormulario>>> | null
+): PermisosFormulariosMap {
+  const resultado = {} as PermisosFormulariosMap;
+  for (const meta of FORMULARIOS_PERMISOS_META) {
+    const k = meta.key;
+    const custom = origen && origen[k] ? origen[k] : undefined;
+    resultado[k] = clonarReglaPermiso(custom || DEFAULT_PERMISOS_FORMULARIOS[k]);
   }
+  return resultado;
+}
 
-  if (cargo.includes('analista') && cargo.includes('gestion') && cargo.includes('informacion')) {
-    return true;
-  }
+let permisosFormulariosCache: PermisosFormulariosMap = clonarPermisosFormularios(
+  DEFAULT_PERMISOS_FORMULARIOS
+);
 
-  return false;
+export function setPermisosFormulariosCache(
+  permisos?: Partial<Record<FormularioPermisoKey, Partial<PermisoFormulario>>> | null
+): PermisosFormulariosMap {
+  permisosFormulariosCache = clonarPermisosFormularios(permisos);
+  return permisosFormulariosCache;
+}
+
+export function getPermisosFormulariosCache(): PermisosFormulariosMap {
+  return permisosFormulariosCache;
 }
 
 /**
- * Controla si el usuario visualiza módulos adicionales en el menú lateral:
- * Todo trabajador del Maestro tiene al menos Solicitud Personal y Especiales Personal.
- */
-export function puedeVerMenuLateral(trabajador?: TrabajadorMaestro | null): boolean {
-  return Boolean(trabajador);
-}
-
-/**
- * Administradores del sistema (ANALISTA GESTIÓN DE INFORMACIÓN EAI):
- * Únicos usuarios autorizados para visualizar el estado y configuración de Google Drive.
+ * Administradores del sistema (ANALISTA GESTIÓN DE INFORMACIÓN EAI / Administrador):
+ * Únicos usuarios con acceso administrativo total, configuración de Google Drive y editor de permisos.
  */
 export function esAdministradorSistema(trabajador?: TrabajadorMaestro | null): boolean {
   if (!trabajador) return false;
@@ -174,56 +180,188 @@ export function esAdministradorSistema(trabajador?: TrabajadorMaestro | null): b
 }
 
 /**
- * Controla si el usuario puede visualizar "Resumen Solicitud":
- * - AUXILIAR GESTIÓN HUMANA EAI
- * - AUXILIAR TÉCNICO POSCOSECHA EAI
- * - Administradores (ANALISTA GESTIÓN DE INFORMACIÓN EAI)
+ * Roles con acceso a pestañas administrativas y a la hoja de Drive:
+ * - Auxiliar de Gestión humana (o área Gestión Humana)
+ * - Cargos administrativos de Poscosecha (Auxiliar, Líder, Supervisor, Director)
+ * No incluye operarios de línea aunque digan "Poscosecha" en el cargo.
  */
-export function puedeVerResumenSolicitud(trabajador?: TrabajadorMaestro | null): boolean {
+export function esRolAdmin(trabajador?: TrabajadorMaestro | null): boolean {
   if (!trabajador) return false;
-  if (esAdministradorSistema(trabajador)) return true;
 
   const cargo = normalizarTextoRol(trabajador.cargo || '');
+  const area = normalizarTextoRol(trabajador.area || '');
+  const full = `${cargo} ${area}`;
 
-  if (
-    cargo.includes('auxiliar') &&
-    cargo.includes('gestion') &&
-    cargo.includes('humana')
-  ) {
+  if (full.includes('gestion humana') || full.includes('auxiliar de gestion')) {
     return true;
   }
 
+  if (full.includes('analista') && full.includes('gestion') && full.includes('informacion')) {
+    return true;
+  }
+
+  if (cargo === 'poscosecha') {
+    return true;
+  }
+
+  if (full.includes('poscosecha')) {
+    const esAdminPoscosecha =
+      full.includes('auxiliar') ||
+      full.includes('lider') ||
+      full.includes('supervisor') ||
+      full.includes('director') ||
+      full.includes('coordinador');
+    if (esAdminPoscosecha) return true;
+  }
+
+  return false;
+}
+
+/**
+ * Controla si el usuario puede visualizar la sección "Actualizar Maestro" (Hoja Maestro).
+ * Exclusivo para el administrador (ANALISTA GESTIÓN DE INFORMACIÓN EAI / Administrador).
+ */
+export function puedeVerHojaMaestro(trabajador?: TrabajadorMaestro | null): boolean {
+  return esAdministradorSistema(trabajador);
+}
+
+/**
+ * Verifica si el trabajador tiene el cargo de DIRECTOR POSCOSECHA,
+ * quien tiene habilitado el formulario todos los días de la semana.
+ */
+export function esDirectorPoscosecha(trabajador?: TrabajadorMaestro | null): boolean {
+  if (!trabajador) return false;
+  const cargo = normalizarTextoRol(trabajador.cargo || '');
+  return cargo.includes('director') && cargo.includes('poscosecha');
+}
+
+/**
+ * Verifica si el trabajador tiene habilitado el formulario todos los días de la semana:
+ * - DIRECTOR POSCOSECHA
+ * - ANALISTA GESTIÓN DE INFORMACIÓN EAI
+ */
+export function tieneFormularioTodosLosDias(trabajador?: TrabajadorMaestro | null): boolean {
+  if (!trabajador) return false;
+  if (esDirectorPoscosecha(trabajador)) return true;
+
+  const cargo = normalizarTextoRol(trabajador.cargo || '');
   return (
-    cargo.includes('auxiliar') &&
-    cargo.includes('tecnico') &&
-    cargo.includes('poscosecha')
+    cargo.includes('analista') &&
+    cargo.includes('gestion') &&
+    cargo.includes('informacion')
   );
 }
 
 /**
- * Controla si el usuario puede acceder al formulario "Especiales Personal":
- * Visible para todo el personal del Maestro.
+ * Verifica si el trabajador tiene el cargo ANALISTA GESTIÓN HUMANA (incluye variantes como 1 EAI, 2 EAI, 3 EAI).
  */
-export function puedeVerEspecialesPersonal(trabajador?: TrabajadorMaestro | null): boolean {
-  return Boolean(trabajador);
+export function esAnalistaGestionHumana(trabajador?: TrabajadorMaestro | null): boolean {
+  if (!trabajador) return false;
+  const cargo = normalizarTextoRol(trabajador.cargo || '');
+  return (
+    cargo.includes('analista') &&
+    cargo.includes('gestion') &&
+    cargo.includes('humana')
+  );
 }
 
 /**
- * Controla si el usuario puede visualizar la sección "Registros en Especiales Personal":
- * Visible para la persona que realizó la solicitud (sus propios registros),
- * ANALISTA GESTIÓN HUMANA y administradores.
+ * Evalúa si un colaborador tiene permiso para acceder a un formulario específico
+ * según la configuración editable por el administrador.
+ * Los administradores del sistema siempre conservan acceso.
  */
+export function evaluarPermisoFormulario(
+  trabajador: TrabajadorMaestro | null | undefined,
+  formKey: FormularioPermisoKey,
+  permisosMap?: PermisosFormulariosMap | null
+): boolean {
+  if (!trabajador) return false;
+  if (esAdministradorSistema(trabajador)) return true;
+
+  const mapa = permisosMap || permisosFormulariosCache || DEFAULT_PERMISOS_FORMULARIOS;
+  const regla = mapa[formKey] || DEFAULT_PERMISOS_FORMULARIOS[formKey];
+  if (!regla) return false;
+
+  const codigoTrab = String(trabajador.codigo || '').trim().toUpperCase();
+
+  if (
+    Array.isArray(regla.codigosExcluidos) &&
+    regla.codigosExcluidos.some((c) => String(c || '').trim().toUpperCase() === codigoTrab)
+  ) {
+    return false;
+  }
+
+  if (regla.todos) return true;
+
+  if (
+    codigoTrab &&
+    Array.isArray(regla.codigos) &&
+    regla.codigos.some((c) => String(c || '').trim().toUpperCase() === codigoTrab)
+  ) {
+    return true;
+  }
+
+  const cargoTrab = normalizarTextoRol(trabajador.cargo || '');
+  if (!cargoTrab) return false;
+
+  if (
+    Array.isArray(regla.cargos) &&
+    regla.cargos.some((c) => normalizarTextoRol(c) === cargoTrab)
+  ) {
+    return true;
+  }
+
+  if (
+    Array.isArray(regla.palabrasClaveCargo) &&
+    regla.palabrasClaveCargo.some((kw) => {
+      const kwNorm = normalizarTextoRol(kw);
+      return kwNorm.length > 0 && cargoTrab.includes(kwNorm);
+    })
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+export function puedeVerSolicitudPersonal(
+  trabajador?: TrabajadorMaestro | null,
+  permisosMap?: PermisosFormulariosMap | null
+): boolean {
+  return evaluarPermisoFormulario(trabajador, 'formulario', permisosMap);
+}
+
+export function puedeVerSolicitudIntExt(
+  trabajador?: TrabajadorMaestro | null,
+  permisosMap?: PermisosFormulariosMap | null
+): boolean {
+  return evaluarPermisoFormulario(trabajador, 'int-ext', permisosMap);
+}
+
+export function puedeVerMenuLateral(trabajador?: TrabajadorMaestro | null): boolean {
+  return Boolean(trabajador);
+}
+
+export function puedeVerResumenSolicitud(
+  trabajador?: TrabajadorMaestro | null,
+  permisosMap?: PermisosFormulariosMap | null
+): boolean {
+  return evaluarPermisoFormulario(trabajador, 'solicitudes', permisosMap);
+}
+
+export function puedeVerEspecialesPersonal(
+  trabajador?: TrabajadorMaestro | null,
+  permisosMap?: PermisosFormulariosMap | null
+): boolean {
+  return evaluarPermisoFormulario(trabajador, 'especiales-personal', permisosMap);
+}
+
 export function puedeVerRegistrosEspecialesPersonal(
   trabajador?: TrabajadorMaestro | null
 ): boolean {
   return Boolean(trabajador);
 }
 
-/**
- * Controla si el usuario puede ver TODAS las solicitudes en "Registros en Especiales Personal":
- * - ANALISTA GESTIÓN HUMANA (1 EAI, 2 EAI, 3 EAI, etc.)
- * - Administradores del sistema (ANALISTA GESTIÓN DE INFORMACIÓN EAI / Administrador)
- */
 export function puedeVerTodosRegistrosEspecialesPersonal(
   trabajador?: TrabajadorMaestro | null
 ): boolean {
@@ -231,12 +369,6 @@ export function puedeVerTodosRegistrosEspecialesPersonal(
   return esAdministradorSistema(trabajador) || esAnalistaGestionHumana(trabajador);
 }
 
-/**
- * Controla si el usuario puede editar el Estado (Pendiente Aprobación / Aprobado / No Aprobado)
- * en Registros en Especiales Personal:
- * - Administradores del sistema
- * - ANALISTA GESTIÓN HUMANA
- */
 export function puedeEditarEstadoEspecialesPersonal(
   trabajador?: TrabajadorMaestro | null
 ): boolean {
@@ -244,22 +376,23 @@ export function puedeEditarEstadoEspecialesPersonal(
   return esAdministradorSistema(trabajador) || esAnalistaGestionHumana(trabajador);
 }
 
-/**
- * Controla si el usuario puede acceder al formulario "Solicitud Comunidad" (antes Especiales Externos):
- * - Administradores del sistema (ANALISTA GESTIÓN DE INFORMACIÓN EAI / Administrador)
- * - ANALISTA GESTIÓN HUMANA (1 EAI, 2 EAI, 3 EAI, etc.)
- * - AUXILIAR TÉCNICO POSCOSECHA EAI
- */
-export function puedeVerSolicitudComunidad(trabajador?: TrabajadorMaestro | null): boolean {
-  if (!trabajador) return false;
-  if (esAdministradorSistema(trabajador)) return true;
-  if (esAnalistaGestionHumana(trabajador)) return true;
+export function puedeVerSolicitudComunidad(
+  trabajador?: TrabajadorMaestro | null,
+  permisosMap?: PermisosFormulariosMap | null
+): boolean {
+  return evaluarPermisoFormulario(trabajador, 'solicitud-comunidad', permisosMap);
+}
 
-  const cargo = normalizarTextoRol(trabajador.cargo || '');
+export function puedeVerIngresosSeleccion(
+  trabajador?: TrabajadorMaestro | null,
+  permisosMap?: PermisosFormulariosMap | null
+): boolean {
+  return evaluarPermisoFormulario(trabajador, 'ingresos-seleccion', permisosMap);
+}
 
-  return (
-    cargo.includes('auxiliar') &&
-    cargo.includes('tecnico') &&
-    cargo.includes('poscosecha')
-  );
+export function puedeVerObsequioVisitantes(
+  trabajador?: TrabajadorMaestro | null,
+  permisosMap?: PermisosFormulariosMap | null
+): boolean {
+  return evaluarPermisoFormulario(trabajador, 'obsequio-visitantes', permisosMap);
 }

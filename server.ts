@@ -12,6 +12,9 @@ import solicitudesHandler from './api/solicitudes.js';
 import solicitudesIntExtHandler from './api/solicitudes-int-ext.js';
 import especialesPersonalHandler from './api/especiales-personal.js';
 import solicitudComunidadHandler from './api/solicitud-comunidad.js';
+import ingresosSeleccionHandler from './api/ingresos-seleccion.js';
+import obsequioVisitantesHandler from './api/obsequio-visitantes.js';
+import permisosHandler from './api/permisos.js';
 import maestroSyncHandler from './api/maestro/sync-from-drive.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -36,6 +39,9 @@ app.all('/api/especiales-personal', (req, res) => especialesPersonalHandler(req,
 app.all('/api/especiales-personal/carta/:file', (req, res) => especialesPersonalHandler(req, res));
 app.all('/api/solicitud-comunidad', (req, res) => solicitudComunidadHandler(req, res));
 app.all('/api/solicitud-comunidad/carta/:file', (req, res) => solicitudComunidadHandler(req, res));
+app.all('/api/ingresos-seleccion', (req, res) => ingresosSeleccionHandler(req, res));
+app.all('/api/obsequio-visitantes', (req, res) => obsequioVisitantesHandler(req, res));
+app.all('/api/permisos', (req, res) => permisosHandler(req, res));
 app.all('/api/maestro/sync-from-drive', (req, res) => maestroSyncHandler(req, res));
 
 // Iniciar servidor Vite o estático

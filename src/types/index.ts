@@ -93,6 +93,43 @@ export interface SolicitudComunidad {
   creadoEn?: number;
 }
 
+export interface IngresoSeleccion {
+  id: string;
+  fechaSolicitud: string;
+  codigo: string;
+  nombre: string;
+  sede: string;
+  producto: string;
+  cantidad: number;
+  motivo: string;
+  semana?: string;
+  fechaEntrega: string;
+  observacion: string;
+  notificado?: string;
+  estado?: string;
+  syncedToDrive?: boolean;
+  creadoEn?: number;
+}
+
+export interface ObsequioVisitante {
+  id: string;
+  fechaSolicitud: string;
+  codigo: string;
+  nombre: string;
+  sede: string;
+  producto: string;
+  cantidad: number;
+  motivo: string;
+  nombreVisitante: string;
+  semana?: string;
+  fechaEntrega: string;
+  observacion: string;
+  notificado?: string;
+  estado?: string;
+  syncedToDrive?: boolean;
+  creadoEn?: number;
+}
+
 export interface TrabajadorMaestro {
   codigo: string;
   cedula?: string;
@@ -119,3 +156,23 @@ export interface ResumenCuposSede {
   bouquetsUsados?: number;
   bouquetsDisponibles?: number;
 }
+
+export type FormularioPermisoKey =
+  | 'formulario'
+  | 'int-ext'
+  | 'especiales-personal'
+  | 'solicitud-comunidad'
+  | 'ingresos-seleccion'
+  | 'obsequio-visitantes'
+  | 'solicitudes';
+
+export interface PermisoFormulario {
+  todos: boolean;
+  cargos: string[];
+  palabrasClaveCargo: string[];
+  codigos: string[];
+  codigosExcluidos: string[];
+}
+
+export type PermisosFormulariosMap = Record<FormularioPermisoKey, PermisoFormulario>;
+
