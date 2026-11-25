@@ -18,12 +18,19 @@ import {
   X,
   ChevronDown,
   Mail,
+  Lock,
+  AlertCircle,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import * as XLSX from 'xlsx';
 import { SolicitudIntExt, TrabajadorMaestro } from '../types';
 import { EmailNotificationResult, retryEmailIntExtApi } from '../services/apiClient';
-import { getTodayString, formatDateSpanish, getISOWeekNumber } from '../utils/dateUtils';
+import {
+  getTodayString,
+  formatDateSpanish,
+  getISOWeekNumber,
+  getVentanaEspecialesEmpresa,
+} from '../utils/dateUtils';
 
 interface SolicitudIntExtFormProps {
   sesion: TrabajadorMaestro;
@@ -49,15 +56,7 @@ interface SolicitudIntExtFormProps {
   onCerrarSesion?: () => void;
 }
 
-const ROSA_VARIANTES_INT_EXT = ['Rosa (Color)', 'Rosa (Roja)', 'Bouquet'] as const;
-const PRODUCTOS_RESTO_INT_EXT = ['Clavel', 'Alstroemeria'] as const;
-const PRODUCTOS_INT_EXT = [
-  'Rosa (Color)',
-  'Rosa (Roja)',
-  'Bouquet',
-  'Clavel',
-  'Alstroemeria',
-] as const;
+const PRODUCTOS_INT_EXT = ['Rosa', 'Clavel', 'Alstroemeria'] as const;
 const MOTIVOS_BASE_INT_EXT = [
   'Cumpleaños',
   'Grados',
@@ -123,10 +122,11 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
   onCerrarSesion,
 }) => {
   const fechaSolicitud = getTodayString();
+  const ventanaEmpresa = useMemo(() => getVentanaEspecialesEmpresa(), []);
+  const formularioHabilitado = ventanaEmpresa.abierto;
 
   // Mapa con máximo 1 producto seleccionado -> cantidad ingresada como string
   const [productosCantidades, setProductosCantidades] = useState<Record<string, string>>({});
-  const [rosaAbierto, setRosaAbierto] = useState(false);
 
   const [motivosPersonalizados, setMotivosPersonalizados] = useState<string[]>(() => {
     try {
@@ -212,47 +212,13 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
     return Array.from(set);
   }, [motivosPersonalizados]);
 
-  const rosaColorActivo = Object.prototype.hasOwnProperty.call(productosCantidades, 'Rosa (Color)');
-  const rosaRojaActivo = Object.prototype.hasOwnProperty.call(productosCantidades, 'Rosa (Roja)');
-  const bouquetActivo = Object.prototype.hasOwnProperty.call(productosCantidades, 'Bouquet');
-  const rosaTieneSeleccion = rosaColorActivo || rosaRojaActivo || bouquetActivo;
-  const rosaExpandido = rosaAbierto || rosaTieneSeleccion;
-
-  const toggleRosaPrincipal = () => {
-    if (rosaExpandido) {
-      setRosaAbierto(false);
-      setProductosCantidades({});
-    } else {
-      setRosaAbierto(true);
-      // Al abrir Rosa, limpiar cualquier otro producto externo seleccionado para mantener selección única
-      setProductosCantidades((prev) => {
-        const tieneVarianteRosa = ROSA_VARIANTES_INT_EXT.some((v) =>
-          Object.prototype.hasOwnProperty.call(prev, v)
-        );
-        return tieneVarianteRosa ? prev : {};
-      });
-    }
-    setErrores((prev) => {
-      const next = { ...prev };
-      delete next.producto;
-      delete next.cantidad;
-      return next;
-    });
-  };
-
   const toggleProducto = (prod: string) => {
-    const esVarianteRosa = (ROSA_VARIANTES_INT_EXT as readonly string[]).includes(prod);
     setProductosCantidades((prev) => {
       if (Object.prototype.hasOwnProperty.call(prev, prod)) {
         return {};
       }
       return { [prod]: '1' };
     });
-    if (!esVarianteRosa) {
-      setRosaAbierto(false);
-    } else {
-      setRosaAbierto(true);
-    }
     setErrores((prev) => {
       const next: Record<string, string> = {};
       for (const k of Object.keys(prev)) {
@@ -295,7 +261,6 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
 
   const limpiarFormulario = () => {
     setProductosCantidades({});
-    setRosaAbierto(false);
     setMotivoSeleccionado('');
     setMostrandoInputMotivo(false);
     setNuevoMotivoInput('');
@@ -308,12 +273,13 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
 
   const validar = (): boolean => {
     const nuevos: Record<string, string> = {};
+    if (!formularioHabilitado) {
+      nuevos.general = `${ventanaEmpresa.mensajeNota} ${ventanaEmpresa.mensajeCerrado}`;
+    }
     if (!fechaSolicitud) nuevos.fechaSolicitud = 'La fecha de solicitud es obligatoria.';
 
     if (productosSeleccionadosOrdenados.length === 0) {
-      nuevos.producto = rosaAbierto
-        ? 'Seleccione Rosa (Color), Rosa (Roja) o Bouquet, o elija otro producto.'
-        : 'Seleccione un producto.';
+      nuevos.producto = 'Seleccione un producto.';
     } else if (productosSeleccionadosOrdenados.length > 1) {
       nuevos.producto = 'Solo se permite seleccionar un producto por solicitud.';
     } else {
@@ -346,6 +312,12 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!formularioHabilitado) {
+      setErrores({
+        general: `${ventanaEmpresa.mensajeNota} ${ventanaEmpresa.mensajeCerrado}`,
+      });
+      return;
+    }
     if (!validar()) return;
 
     if (mostrandoInputMotivo && nuevoMotivoInput.trim()) {
@@ -816,7 +788,32 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
           </div>
         )}
 
+        {!formularioHabilitado ? (
+          <div className="p-6">
+            <div className="p-5 sm:p-6 rounded-2xl border border-rose-200 bg-rose-50/80 flex flex-col sm:flex-row items-start gap-4">
+              <div className="w-11 h-11 rounded-xl bg-[#E60000]/10 text-[#E60000] flex items-center justify-center shrink-0">
+                <Lock className="w-6 h-6" />
+              </div>
+              <div className="space-y-1.5">
+                <h3 className="text-sm font-extrabold text-[#0a2958]">
+                  Formulario deshabilitado ({ventanaEmpresa.nombreDia})
+                </h3>
+                <p className="text-xs font-bold text-slate-800">
+                  {ventanaEmpresa.mensajeNota}
+                </p>
+                <p className="text-xs text-rose-800 font-medium">
+                  {ventanaEmpresa.mensajeCerrado} Puede consultar las solicitudes registradas en la tabla inferior.
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : (
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
+          <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center gap-2.5">
+            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+            <p className="font-extrabold text-[#0a2958]">{ventanaEmpresa.mensajeNota}</p>
+          </div>
+
           {/* 1. PRODUCTO Y CANTIDAD */}
           <div className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-100">
@@ -844,124 +841,7 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
                 </span>
               </label>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-start">
-                {/* Tarjeta Rosa con subopciones Rosa (Color), Rosa (Roja) y Bouquet */}
-                <div
-                  className={`rounded-xl border p-3 transition ${
-                    rosaExpandido
-                      ? 'border-[#0a2958] bg-[#0a2958]/[0.04] shadow-xs'
-                      : 'border-slate-200 bg-white hover:border-[#0a2958]/40'
-                  }`}
-                >
-                  <button
-                    type="button"
-                    onClick={toggleRosaPrincipal}
-                    aria-pressed={rosaExpandido}
-                    className="w-full flex items-center justify-between gap-2 text-left cursor-pointer"
-                  >
-                    <span
-                      className={`text-xs font-extrabold ${
-                        rosaExpandido ? 'text-[#0a2958]' : 'text-slate-700'
-                      }`}
-                    >
-                      Rosa
-                    </span>
-                    <span
-                      className={`w-5 h-5 rounded-md flex items-center justify-center border transition ${
-                        rosaExpandido
-                          ? 'bg-[#0a2958] border-[#0a2958] text-white'
-                          : 'border-slate-300 bg-white'
-                      }`}
-                    >
-                      {rosaExpandido && <Check className="w-3.5 h-3.5" />}
-                    </span>
-                  </button>
-
-                  {rosaExpandido && (
-                    <div className="mt-3 pt-2.5 border-t border-slate-200/80 space-y-2">
-                      {ROSA_VARIANTES_INT_EXT.map((variante) => {
-                        const activoVar = Object.prototype.hasOwnProperty.call(
-                          productosCantidades,
-                          variante
-                        );
-                        const cantValorVar = productosCantidades[variante] ?? '';
-                        const errCantVar = errores[`cant_${variante}`];
-
-                        return (
-                          <div
-                            key={variante}
-                            className={`rounded-lg border p-2 transition ${
-                              activoVar
-                                ? 'border-[#0a2958]/60 bg-white shadow-2xs'
-                                : 'border-slate-200 bg-white/80 hover:border-[#0a2958]/30'
-                            }`}
-                          >
-                            <button
-                              type="button"
-                              onClick={() => toggleProducto(variante)}
-                              aria-pressed={activoVar}
-                              className="w-full flex items-center justify-between gap-2 text-left cursor-pointer"
-                            >
-                              <span
-                                className={`text-[11px] font-bold ${
-                                  activoVar ? 'text-[#0a2958]' : 'text-slate-700'
-                                }`}
-                              >
-                                {variante}
-                              </span>
-                              <span
-                                className={`w-4 h-4 rounded flex items-center justify-center border transition shrink-0 ${
-                                  activoVar
-                                    ? 'bg-[#0a2958] border-[#0a2958] text-white'
-                                    : 'border-slate-300 bg-white'
-                                }`}
-                              >
-                                {activoVar && <Check className="w-3 h-3" />}
-                              </span>
-                            </button>
-
-                            {activoVar && (
-                              <div className="mt-2 pt-2 border-t border-slate-100">
-                                <label
-                                  htmlFor={`cantidad-${variante}`}
-                                  className="block text-[10px] font-bold text-slate-600 mb-1"
-                                >
-                                  Cantidad <span className="text-[#E60000]">*</span>
-                                </label>
-                                <input
-                                  id={`cantidad-${variante}`}
-                                  type="text"
-                                  inputMode="numeric"
-                                  pattern="[0-9]*"
-                                  value={cantValorVar}
-                                  onChange={(e) =>
-                                    cambiarCantidadProducto(
-                                      variante,
-                                      e.target.value.replace(/\D/g, '')
-                                    )
-                                  }
-                                  placeholder="Ej: 1"
-                                  className={`w-full px-2.5 py-1 text-xs rounded-lg border font-mono font-bold text-[#0a2958] bg-white outline-hidden ${
-                                    errCantVar
-                                      ? 'border-rose-400 bg-rose-50/40'
-                                      : 'border-slate-300 focus:border-[#0a2958]'
-                                  }`}
-                                />
-                                {errCantVar && (
-                                  <p className="text-[10px] text-[#E60000] font-semibold mt-1">
-                                    {errCantVar}
-                                  </p>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-
-                {/* Clavel, Alstroemeria */}
-                {PRODUCTOS_RESTO_INT_EXT.map((prod) => {
+                {PRODUCTOS_INT_EXT.map((prod) => {
                   const activo = Object.prototype.hasOwnProperty.call(
                     productosCantidades,
                     prod
@@ -1294,6 +1174,7 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
             </button>
           </div>
         </form>
+        )}
       </div>
 
       {/* Historial de registros en hoja Especiales Empresa */}

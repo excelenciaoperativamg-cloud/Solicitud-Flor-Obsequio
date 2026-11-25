@@ -409,6 +409,7 @@ function leerSolicitudesIntExt(ss) {
       fechaEntrega: String(fechaEntrega || ""),
       horaEntrega: String(horaEntrega || ""),
       observacion: String(cel(["OBSERVACIÓN", "OBSERVACION", "OBSERVACIONES"]) || ""),
+      fotoCarta: String(cel(["FOTO CARTA", "CARTA", "FOTO"]) || ""),
       notificado: notificadoVal,
       estado: notificadoVal,
       creadoEn: new Date().getTime()
@@ -703,7 +704,7 @@ function parsearCorreosDestino(raw) {
 /**
  * Envía un correo corporativo HTML con toda la información de la solicitud Especiales Empresa.
  */
-function enviarCorreoNotificacionIntExt(ss, correoDestino, items) {
+function enviarCorreoNotificacionIntExt(ss, correoDestino, items, fotoBase64, fotoMime, fotoNombre) {
   var parsedCorreos = parsearCorreosDestino(correoDestino);
   if (parsedCorreos.validos.length === 0 || parsedCorreos.invalidos.length > 0) {
     return {
@@ -748,6 +749,11 @@ function enviarCorreoNotificacionIntExt(ss, correoDestino, items) {
   var semanaTexto = primera.semana ? ("Semana " + primera.semana) : "—";
   var obsTexto = String(primera.observacion || "").trim();
   var notificadoTexto = String(primera.notificado || primera.estado || emailDisplay).trim();
+  var fotoUrl = String(primera.fotoCarta || "").trim();
+  var fotoEsUrlWeb = fotoUrl.indexOf("http") === 0;
+  var fotoHtml = fotoEsUrlWeb
+    ? "<a href=\\"" + escapeHtml(fotoUrl) + "\\" style=\\"color:#0a2958;font-weight:700;text-decoration:underline;\\">Ver carta &#8599;</a>"
+    : (fotoUrl ? "<span style=\\"color:#047857;font-weight:700;\\">Adjunta en el sistema / correo</span>" : "<span style=\\"color:#64748b;\\">No adjuntada</span>");
 
   var inlineImagesObj = {};
   var tieneLogo = false;
@@ -757,6 +763,14 @@ function enviarCorreoNotificacionIntExt(ss, correoDestino, items) {
     tieneLogo = true;
   } catch (logoErr) {
     tieneLogo = false;
+  }
+
+  var attachmentsList = [];
+  if (fotoBase64) {
+    try {
+      var fotoBytes = Utilities.base64Decode(fotoBase64);
+      attachmentsList.push(Utilities.newBlob(fotoBytes, fotoMime || "image/jpeg", fotoNombre || ("Carta_" + ids[0] + ".jpg")));
+    } catch (attErr) {}
   }
 
   var logoHeaderHtml = tieneLogo
@@ -778,6 +792,7 @@ function enviarCorreoNotificacionIntExt(ss, correoDestino, items) {
     "Semana: " + semanaTexto + "\\n" +
     "Fecha de Entrega: " + String(primera.fechaEntrega || "") + "\\n" +
     "Hora de Entrega: " + String(primera.horaEntrega || "—") + "\\n" +
+    "Foto Carta: " + (fotoUrl || (attachmentsList.length > 0 ? "Adjunta en este correo" : "No adjuntada")) + "\\n" +
     "Notificado a: " + notificadoTexto + "\\n" +
     "Observación: " + (obsTexto || "Sin observaciones adicionales.") + "\\n\\n" +
     "PRODUCTOS SOLICITADOS (" + lista.length + " registro(s) | Total: " + totalRamos + " ramos):\\n" +
@@ -851,6 +866,10 @@ function enviarCorreoNotificacionIntExt(ss, correoDestino, items) {
                   "<td style=\\"padding:7px 0;font-weight:700;color:#0a2958;border-bottom:1px solid #f1f5f9;text-align:right;\\">" + escapeHtml(primera.motivo || "—") + "</td>" +
                 "</tr>" +
                 "<tr>" +
+                  "<td style=\\"padding:7px 0;color:#64748b;border-bottom:1px solid #f1f5f9;\\">Foto Carta</td>" +
+                  "<td style=\\"padding:7px 0;text-align:right;border-bottom:1px solid #f1f5f9;\\">" + fotoHtml + "</td>" +
+                "</tr>" +
+                "<tr>" +
                   "<td style=\\"padding:7px 0;color:#64748b;\\">Notificado</td>" +
                   "<td style=\\"padding:7px 0;font-weight:700;color:#047857;text-align:right;word-break:break-word;\\">" + escapeHtml(notificadoTexto) + "</td>" +
                 "</tr>" +
@@ -910,6 +929,9 @@ function enviarCorreoNotificacionIntExt(ss, correoDestino, items) {
     };
     if (tieneLogo) {
       mailPayload.inlineImages = inlineImagesObj;
+    }
+    if (attachmentsList.length > 0) {
+      mailPayload.attachments = attachmentsList;
     }
     MailApp.sendEmail(mailPayload);
     var quotaRemaining = null;
@@ -1977,12 +1999,29 @@ function escribirSolicitudIntExt(sheet, data) {
   var headers = sheet.getLastRow() > 0 ? sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0] : [];
   var headersDefault = [
     "Id", "Fecha Solicitud", "Código", "Nombre",
-    "Producto", "Cantidad", "Motivo", "Semana", "Fecha Entrega", "Hora Entrega", "Observación", "Notificado"
+    "Producto", "Cantidad", "Motivo", "Semana", "Fecha Entrega", "Hora Entrega", "Observación", "Foto Carta", "Notificado"
   ];
   if (!headers.length || !headers[0]) {
     headers = headersDefault;
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
     sheet.getRange(1, 1, 1, headers.length).setFontWeight("bold").setBackground("#0a2958").setFontColor("#ffffff");
+  } else {
+    var tieneColCarta = false;
+    for (var hc = 0; hc < headers.length; hc++) {
+      var hCheck = String(headers[hc] || "").toUpperCase();
+      if (hCheck.indexOf("CARTA") !== -1 || hCheck.indexOf("FOTO") !== -1) {
+        tieneColCarta = true;
+        break;
+      }
+    }
+    if (!tieneColCarta) {
+      sheet.getRange(1, headers.length + 1)
+        .setValue("Foto Carta")
+        .setFontWeight("bold")
+        .setBackground("#0a2958")
+        .setFontColor("#ffffff");
+      headers.push("Foto Carta");
+    }
   }
 
   var cantidadNum = Number(data.cantidad);
@@ -2003,6 +2042,7 @@ function escribirSolicitudIntExt(sheet, data) {
     if (h.indexOf("MOTIVO") !== -1) return data.motivo || "";
     if (h.indexOf("SEMANA") !== -1) return data.semana || "";
     if (h.indexOf("OBSERVACI") !== -1) return data.observacion || "";
+    if (h.indexOf("CARTA") !== -1 || h.indexOf("FOTO") !== -1) return data.fotoCarta || "";
     if (h.indexOf("NOTIFICAD") !== -1 || h.indexOf("ESTADO") !== -1) return data.notificado || data.estado || "Registrada";
     return "";
   }
@@ -2359,20 +2399,20 @@ function guardarPermisosFormularios(ss, permisosObj, actualizadoPor) {
   var sheet = buscarHojaPorNombre(ss, ["Permisos Formularios", "Permisos"]) || ss.insertSheet("Permisos Formularios");
   var etiquetas = {
     "formulario": "Solicitud Personal",
-    "int-ext": "Especiales Empresa",
     "especiales-personal": "Especiales Personal",
-    "solicitud-comunidad": "Solicitud Comunidad",
+    "int-ext": "Especiales Empresa",
     "ingresos-seleccion": "Ingresos Selección",
     "obsequio-visitantes": "Obsequio Visitantes",
+    "solicitud-comunidad": "Solicitud Comunidad",
     "solicitudes": "Resumen Solicitud"
   };
   var keys = [
     "formulario",
-    "int-ext",
     "especiales-personal",
-    "solicitud-comunidad",
+    "int-ext",
     "ingresos-seleccion",
     "obsequio-visitantes",
+    "solicitud-comunidad",
     "solicitudes"
   ];
 
@@ -2474,7 +2514,14 @@ function doPost(e) {
     if (data.action === "notificar_int_ext") {
       var itemsCorreo = (data.items && data.items.length) ? data.items : [data];
       var destinoCorreo = data.correoDestino || data.correo || (itemsCorreo[0] ? (itemsCorreo[0].notificado || itemsCorreo[0].estado) : "");
-      var resMail = enviarCorreoNotificacionIntExt(ss, destinoCorreo, itemsCorreo);
+      var resMail = enviarCorreoNotificacionIntExt(
+        ss,
+        destinoCorreo,
+        itemsCorreo,
+        data.fotoCartaBase64 || "",
+        data.fotoCartaMime || "image/jpeg",
+        data.fotoCartaNombre || ""
+      );
       return responder({
         status: "success",
         emailSent: !!resMail.emailSent,

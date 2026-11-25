@@ -100,7 +100,8 @@ export const fetchSolicitudesIntExtApi = async (): Promise<{
 
 export const createSolicitudIntExtApi = async (
   solicitudOrList: SolicitudIntExt | SolicitudIntExt[],
-  correoNotificacion?: string
+  correoNotificacion?: string,
+  fotoCarta?: { base64: string; mimeType: string; fileName: string } | null
 ): Promise<{
   solicitud: SolicitudIntExt;
   solicitudes: SolicitudIntExt[];
@@ -108,11 +109,21 @@ export const createSolicitudIntExtApi = async (
   supportsEmailNotification?: boolean;
   intExtSheetName?: string;
   needsAppsScriptSheetUpdate?: boolean;
+  fotoCartaDriveError?: string;
   emailNotification?: EmailNotificationResult;
 }> => {
-  const payload = Array.isArray(solicitudOrList)
+  const basePayload = Array.isArray(solicitudOrList)
     ? { items: solicitudOrList, correoNotificacion: correoNotificacion || '' }
     : { ...solicitudOrList, correoNotificacion: correoNotificacion || '' };
+
+  const payload = fotoCarta
+    ? {
+        ...basePayload,
+        fotoCartaBase64: fotoCarta.base64,
+        fotoCartaMime: fotoCarta.mimeType,
+        fotoCartaNombre: fotoCarta.fileName,
+      }
+    : basePayload;
 
   const res = await fetch('/api/solicitudes-int-ext', {
     method: 'POST',
@@ -136,13 +147,15 @@ export const createSolicitudIntExtApi = async (
     supportsEmailNotification: !!data.supportsEmailNotification,
     intExtSheetName: data.intExtSheetName || '',
     needsAppsScriptSheetUpdate: !!data.needsAppsScriptSheetUpdate,
+    fotoCartaDriveError: data.fotoCartaDriveError || '',
     emailNotification: data.emailNotification,
   };
 };
 
 export const retryEmailIntExtApi = async (
   items: SolicitudIntExt[],
-  correoNotificacion: string
+  correoNotificacion: string,
+  fotoCarta?: { base64: string; mimeType: string; fileName: string } | null
 ): Promise<EmailNotificationResult> => {
   const res = await fetch('/api/solicitudes-int-ext', {
     method: 'POST',
@@ -151,6 +164,13 @@ export const retryEmailIntExtApi = async (
       action: 'notificar',
       items,
       correoNotificacion,
+      ...(fotoCarta
+        ? {
+            fotoCartaBase64: fotoCarta.base64,
+            fotoCartaMime: fotoCarta.mimeType,
+            fotoCartaNombre: fotoCarta.fileName,
+          }
+        : {}),
     }),
   });
   const data = await res.json().catch(() => ({}));

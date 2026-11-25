@@ -63,7 +63,14 @@ export default async function handler(req, res) {
   if (route === 'maestro') return maestroHandler(req, res);
   if (route === 'maestro/sync-from-drive') return maestroSyncHandler(req, res);
   if (route === 'solicitudes') return solicitudesHandler(req, res);
-  if (route === 'solicitudes-int-ext') return solicitudesIntExtHandler(req, res);
+  if (route === 'solicitudes-int-ext') {
+    return solicitudesIntExtHandler(req, res);
+  }
+  if (route.startsWith('solicitudes-int-ext/carta/')) {
+    const file = route.slice('solicitudes-int-ext/carta/'.length);
+    req.params = { ...(req.params || {}), file: decodeURIComponent(file) };
+    return solicitudesIntExtHandler(req, res);
+  }
   if (route === 'ingresos-seleccion') return ingresosSeleccionHandler(req, res);
   if (route === 'obsequio-visitantes') return obsequioVisitantesHandler(req, res);
   if (route === 'permisos') return permisosHandler(req, res);

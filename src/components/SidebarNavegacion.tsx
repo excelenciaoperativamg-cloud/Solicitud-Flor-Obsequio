@@ -304,73 +304,6 @@ export const SidebarNavegacion: React.FC<SidebarNavegacionProps> = ({
               </div>
             )}
 
-            {/* Especiales Empresa (visible para AUXILIAR GESTIÓN HUMANA EAI, ANALISTA GESTIÓN HUMANA y ANALISTA GESTIÓN DE INFORMACIÓN EAI) */}
-            {verIntExt && (
-              <div
-                className={`rounded-xl transition-colors ${
-                  empresaActivo
-                    ? 'bg-[#E60000] text-white shadow-sm'
-                    : 'bg-white/[0.04] hover:bg-white/[0.08] text-slate-100'
-                }`}
-              >
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (colapsado) {
-                      manejarSeleccion('int-ext');
-                    } else {
-                      setSubmenuEmpresaAbierto((prev) => !prev);
-                      if (!empresaActivo) {
-                        manejarSeleccion('int-ext');
-                      }
-                    }
-                  }}
-                  aria-expanded={!colapsado ? submenuEmpresaAbierto : undefined}
-                  title="Especiales Empresa"
-                  className={`w-full flex items-center ${
-                    colapsado ? 'justify-center px-2 py-2.5' : 'justify-between px-3 py-2.5'
-                  } text-left rounded-xl cursor-pointer transition-colors focus-visible:outline-2 focus-visible:outline-white`}
-                >
-                  <span className="flex items-center gap-2.5 min-w-0">
-                    <Building2 className="w-4 h-4 shrink-0 text-white" />
-                    {!colapsado && (
-                      <span className="text-xs font-extrabold truncate whitespace-nowrap">
-                        Especiales Empresa
-                      </span>
-                    )}
-                  </span>
-                  {!colapsado &&
-                    (submenuEmpresaAbierto ? (
-                      <ChevronDown className="w-3.5 h-3.5 shrink-0 opacity-90" />
-                    ) : (
-                      <ChevronRight className="w-3.5 h-3.5 shrink-0 opacity-90" />
-                    ))}
-                </button>
-
-                {!colapsado && submenuEmpresaAbierto && (
-                  <div className="px-2 pb-2 pt-0.5 space-y-1">
-                    <button
-                      type="button"
-                      onClick={() => manejarSeleccion('int-ext')}
-                      aria-current={activeTab === 'int-ext' ? 'page' : undefined}
-                      className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs transition-colors cursor-pointer whitespace-nowrap ${
-                        activeTab === 'int-ext'
-                          ? 'bg-white text-[#0a2958] font-extrabold shadow-xs'
-                          : 'text-slate-200 hover:bg-white/10 font-medium'
-                      }`}
-                    >
-                      <FilePlus2
-                        className={`w-3.5 h-3.5 shrink-0 ${
-                          activeTab === 'int-ext' ? 'text-[#E60000]' : 'opacity-85'
-                        }`}
-                      />
-                      <span className="truncate">Formulario Especiales</span>
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-
             {/* Especiales Personal (visible para todo el personal del Maestro) */}
             {verEspPersonal && (
               <div
@@ -438,11 +371,11 @@ export const SidebarNavegacion: React.FC<SidebarNavegacionProps> = ({
               </div>
             )}
 
-            {/* Solicitud Comunidad (visible para administradores, ANALISTA GESTIÓN HUMANA y AUXILIAR TÉCNICO POSCOSECHA EAI) */}
-            {verComunidad && (
+            {/* Especiales Empresa (visible para AUXILIAR GESTIÓN HUMANA EAI, ANALISTA GESTIÓN HUMANA y ANALISTA GESTIÓN DE INFORMACIÓN EAI) */}
+            {verIntExt && (
               <div
                 className={`rounded-xl transition-colors ${
-                  comunidadActivo
+                  empresaActivo
                     ? 'bg-[#E60000] text-white shadow-sm'
                     : 'bg-white/[0.04] hover:bg-white/[0.08] text-slate-100'
                 }`}
@@ -451,54 +384,54 @@ export const SidebarNavegacion: React.FC<SidebarNavegacionProps> = ({
                   type="button"
                   onClick={() => {
                     if (colapsado) {
-                      manejarSeleccion('solicitud-comunidad');
+                      manejarSeleccion('int-ext');
                     } else {
-                      setSubmenuComunidadAbierto((prev) => !prev);
-                      if (!comunidadActivo) {
-                        manejarSeleccion('solicitud-comunidad');
+                      setSubmenuEmpresaAbierto((prev) => !prev);
+                      if (!empresaActivo) {
+                        manejarSeleccion('int-ext');
                       }
                     }
                   }}
-                  aria-expanded={!colapsado ? submenuComunidadAbierto : undefined}
-                  title="Solicitud Comunidad"
+                  aria-expanded={!colapsado ? submenuEmpresaAbierto : undefined}
+                  title="Especiales Empresa"
                   className={`w-full flex items-center ${
                     colapsado ? 'justify-center px-2 py-2.5' : 'justify-between px-3 py-2.5'
                   } text-left rounded-xl cursor-pointer transition-colors focus-visible:outline-2 focus-visible:outline-white`}
                 >
                   <span className="flex items-center gap-2.5 min-w-0">
-                    <Briefcase className="w-4 h-4 shrink-0 text-white" />
+                    <Building2 className="w-4 h-4 shrink-0 text-white" />
                     {!colapsado && (
                       <span className="text-xs font-extrabold truncate whitespace-nowrap">
-                        Solicitud Comunidad
+                        Especiales Empresa
                       </span>
                     )}
                   </span>
                   {!colapsado &&
-                    (submenuComunidadAbierto ? (
+                    (submenuEmpresaAbierto ? (
                       <ChevronDown className="w-3.5 h-3.5 shrink-0 opacity-90" />
                     ) : (
                       <ChevronRight className="w-3.5 h-3.5 shrink-0 opacity-90" />
                     ))}
                 </button>
 
-                {!colapsado && submenuComunidadAbierto && (
+                {!colapsado && submenuEmpresaAbierto && (
                   <div className="px-2 pb-2 pt-0.5 space-y-1">
                     <button
                       type="button"
-                      onClick={() => manejarSeleccion('solicitud-comunidad')}
-                      aria-current={activeTab === 'solicitud-comunidad' ? 'page' : undefined}
+                      onClick={() => manejarSeleccion('int-ext')}
+                      aria-current={activeTab === 'int-ext' ? 'page' : undefined}
                       className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs transition-colors cursor-pointer whitespace-nowrap ${
-                        activeTab === 'solicitud-comunidad'
+                        activeTab === 'int-ext'
                           ? 'bg-white text-[#0a2958] font-extrabold shadow-xs'
                           : 'text-slate-200 hover:bg-white/10 font-medium'
                       }`}
                     >
                       <FilePlus2
                         className={`w-3.5 h-3.5 shrink-0 ${
-                          activeTab === 'solicitud-comunidad' ? 'text-[#E60000]' : 'opacity-85'
+                          activeTab === 'int-ext' ? 'text-[#E60000]' : 'opacity-85'
                         }`}
                       />
-                      <span className="truncate">Formulario Solicitud Comunidad</span>
+                      <span className="truncate">Formulario Especiales</span>
                     </button>
                   </div>
                 )}
@@ -633,6 +566,73 @@ export const SidebarNavegacion: React.FC<SidebarNavegacionProps> = ({
                         }`}
                       />
                       <span className="truncate">Formulario Obsequio Visitantes</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Solicitud Comunidad (visible para administradores, ANALISTA GESTIÓN HUMANA y AUXILIAR TÉCNICO POSCOSECHA EAI) */}
+            {verComunidad && (
+              <div
+                className={`rounded-xl transition-colors ${
+                  comunidadActivo
+                    ? 'bg-[#E60000] text-white shadow-sm'
+                    : 'bg-white/[0.04] hover:bg-white/[0.08] text-slate-100'
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (colapsado) {
+                      manejarSeleccion('solicitud-comunidad');
+                    } else {
+                      setSubmenuComunidadAbierto((prev) => !prev);
+                      if (!comunidadActivo) {
+                        manejarSeleccion('solicitud-comunidad');
+                      }
+                    }
+                  }}
+                  aria-expanded={!colapsado ? submenuComunidadAbierto : undefined}
+                  title="Solicitud Comunidad"
+                  className={`w-full flex items-center ${
+                    colapsado ? 'justify-center px-2 py-2.5' : 'justify-between px-3 py-2.5'
+                  } text-left rounded-xl cursor-pointer transition-colors focus-visible:outline-2 focus-visible:outline-white`}
+                >
+                  <span className="flex items-center gap-2.5 min-w-0">
+                    <Briefcase className="w-4 h-4 shrink-0 text-white" />
+                    {!colapsado && (
+                      <span className="text-xs font-extrabold truncate whitespace-nowrap">
+                        Solicitud Comunidad
+                      </span>
+                    )}
+                  </span>
+                  {!colapsado &&
+                    (submenuComunidadAbierto ? (
+                      <ChevronDown className="w-3.5 h-3.5 shrink-0 opacity-90" />
+                    ) : (
+                      <ChevronRight className="w-3.5 h-3.5 shrink-0 opacity-90" />
+                    ))}
+                </button>
+
+                {!colapsado && submenuComunidadAbierto && (
+                  <div className="px-2 pb-2 pt-0.5 space-y-1">
+                    <button
+                      type="button"
+                      onClick={() => manejarSeleccion('solicitud-comunidad')}
+                      aria-current={activeTab === 'solicitud-comunidad' ? 'page' : undefined}
+                      className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs transition-colors cursor-pointer whitespace-nowrap ${
+                        activeTab === 'solicitud-comunidad'
+                          ? 'bg-white text-[#0a2958] font-extrabold shadow-xs'
+                          : 'text-slate-200 hover:bg-white/10 font-medium'
+                      }`}
+                    >
+                      <FilePlus2
+                        className={`w-3.5 h-3.5 shrink-0 ${
+                          activeTab === 'solicitud-comunidad' ? 'text-[#E60000]' : 'opacity-85'
+                        }`}
+                      />
+                      <span className="truncate">Formulario Solicitud Comunidad</span>
                     </button>
                   </div>
                 )}

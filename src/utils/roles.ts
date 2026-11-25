@@ -29,22 +29,16 @@ export const FORMULARIOS_PERMISOS_META: FormularioMeta[] = [
     descripcion: 'Formulario principal de solicitud semanal de flor para colaboradores.',
   },
   {
-    key: 'int-ext',
-    nombre: 'Especiales Empresa',
-    modulo: 'Especiales Empresa',
-    descripcion: 'Solicitudes internas o especiales registradas a nombre de la empresa.',
-  },
-  {
     key: 'especiales-personal',
     nombre: 'Especiales Personal',
     modulo: 'Especiales Personal',
     descripcion: 'Solicitudes especiales de trabajadores con carta de solicitud adjunta.',
   },
   {
-    key: 'solicitud-comunidad',
-    nombre: 'Solicitud Comunidad',
-    modulo: 'Solicitud Comunidad',
-    descripcion: 'Solicitudes de obsequio de flor dirigidas a entidades y comunidad.',
+    key: 'int-ext',
+    nombre: 'Especiales Empresa',
+    modulo: 'Especiales Empresa',
+    descripcion: 'Solicitudes internas o especiales registradas a nombre de la empresa.',
   },
   {
     key: 'ingresos-seleccion',
@@ -57,6 +51,12 @@ export const FORMULARIOS_PERMISOS_META: FormularioMeta[] = [
     nombre: 'Obsequio Visitantes',
     modulo: 'Obsequio Visitantes',
     descripcion: 'Solicitudes de obsequio de flor para visitantes externos o institucionales.',
+  },
+  {
+    key: 'solicitud-comunidad',
+    nombre: 'Solicitud Comunidad',
+    modulo: 'Solicitud Comunidad',
+    descripcion: 'Solicitudes de obsequio de flor dirigidas a entidades y comunidad.',
   },
   {
     key: 'solicitudes',

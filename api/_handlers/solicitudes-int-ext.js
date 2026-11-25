@@ -5,6 +5,21 @@ import {
   callAppsScript,
 } from '../_lib/storage.js';
 
+const PRODUCTOS_PERMITIDOS_INT_EXT = new Set(['Rosa', 'Clavel', 'Alstroemeria']);
+
+function esDiaDeshabilitadoEspecialesEmpresaBogota(now = new Date()) {
+  try {
+    const weekday = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Bogota',
+      weekday: 'short',
+    }).format(now);
+    return weekday === 'Fri' || weekday === 'Sat' || weekday === 'Sun';
+  } catch {
+    const day = now.getDay();
+    return day === 5 || day === 6 || day === 0;
+  }
+}
+
 function normalizarHoraEntrega(raw) {
   const txt = String(raw || '').trim();
   if (!txt) return '';
@@ -177,6 +192,14 @@ export default async function handler(req, res) {
         }
       }
 
+      if (esDiaDeshabilitadoEspecialesEmpresaBogota()) {
+        return res.status(403).json({
+          success: false,
+          error:
+            'Los ramos se deben solicitar antes del jueves de cada semana para la siguiente. El formulario de Especiales Empresa está deshabilitado los días viernes, sábado y domingo.',
+        });
+      }
+
       const itemsInput = Array.isArray(body?.items)
         ? body.items
         : Array.isArray(body)
@@ -229,6 +252,13 @@ export default async function handler(req, res) {
           return res.status(400).json({
             success: false,
             error: 'Faltan campos obligatorios para registrar en Especiales Empresa.',
+          });
+        }
+        if (!PRODUCTOS_PERMITIDOS_INT_EXT.has(String(item.producto).trim())) {
+          return res.status(400).json({
+            success: false,
+            error:
+              'Producto no permitido en Especiales Empresa. Seleccione Rosa, Clavel o Alstroemeria.',
           });
         }
       }

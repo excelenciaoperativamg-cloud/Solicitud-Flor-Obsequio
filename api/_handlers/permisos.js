@@ -14,13 +14,6 @@ export const DEFAULT_PERMISOS_FORMULARIOS = {
     codigos: [],
     codigosExcluidos: [],
   },
-  'int-ext': {
-    todos: false,
-    cargos: [],
-    palabrasClaveCargo: ['AUXILIAR GESTIÓN HUMANA', 'ANALISTA GESTIÓN HUMANA'],
-    codigos: [],
-    codigosExcluidos: [],
-  },
   'especiales-personal': {
     todos: true,
     cargos: [],
@@ -28,10 +21,10 @@ export const DEFAULT_PERMISOS_FORMULARIOS = {
     codigos: [],
     codigosExcluidos: [],
   },
-  'solicitud-comunidad': {
+  'int-ext': {
     todos: false,
     cargos: [],
-    palabrasClaveCargo: ['ANALISTA GESTIÓN HUMANA', 'AUXILIAR TÉCNICO POSCOSECHA'],
+    palabrasClaveCargo: ['AUXILIAR GESTIÓN HUMANA', 'ANALISTA GESTIÓN HUMANA'],
     codigos: [],
     codigosExcluidos: [],
   },
@@ -46,6 +39,13 @@ export const DEFAULT_PERMISOS_FORMULARIOS = {
     todos: false,
     cargos: [],
     palabrasClaveCargo: ['DIRECTOR', 'ANALISTA GESTIÓN HUMANA'],
+    codigos: [],
+    codigosExcluidos: [],
+  },
+  'solicitud-comunidad': {
+    todos: false,
+    cargos: [],
+    palabrasClaveCargo: ['ANALISTA GESTIÓN HUMANA', 'AUXILIAR TÉCNICO POSCOSECHA'],
     codigos: [],
     codigosExcluidos: [],
   },

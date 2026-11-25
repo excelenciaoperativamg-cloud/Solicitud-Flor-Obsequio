@@ -141,6 +141,38 @@ export const getVentanaSolicitud = (now = new Date()): VentanaSolicitud => {
   };
 };
 
+export interface VentanaEspecialesEmpresa {
+  abierto: boolean;
+  diaSemana: number; // 0=dom … 6=sáb
+  nombreDia: string;
+  mensajeNota: string;
+  mensajeCerrado: string;
+}
+
+/**
+ * Especiales Empresa: habilitado de lunes a jueves; deshabilitado viernes, sábado y domingo.
+ */
+export const getVentanaEspecialesEmpresa = (
+  now = new Date()
+): VentanaEspecialesEmpresa => {
+  const day = now.getDay();
+  const nombres = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+  const abierto = day >= 1 && day <= 4; // Lunes (1) a Jueves (4)
+  const mensajeNota =
+    'Los ramos se deben solicitar antes del jueves de cada semana para la siguiente.';
+  const mensajeCerrado = abierto
+    ? ''
+    : 'Este formulario se encuentra deshabilitado los días viernes, sábado y domingo.';
+
+  return {
+    abierto,
+    diaSemana: day,
+    nombreDia: nombres[day],
+    mensajeNota,
+    mensajeCerrado,
+  };
+};
+
 // Compatibilidad con código existente
 export const getNextFriday = (fromDate?: Date): Date => getFridayOfSameWeek(fromDate);
 

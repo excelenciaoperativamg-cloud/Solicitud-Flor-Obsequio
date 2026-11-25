@@ -629,6 +629,10 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
         : 'El correo electrónico ingresado no tiene un formato válido.';
     }
 
+    if (!fotoCarta) {
+      errs.fotoCarta = 'Debe adjuntar la foto o PDF de la carta para registrar la solicitud.';
+    }
+
     setErrores(errs);
     return Object.keys(errs).length === 0;
   };
@@ -1386,7 +1390,7 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
               <div className="flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-[#0a2958]" />
                 <h3 className="text-sm font-extrabold text-[#0a2958] uppercase tracking-wider">
-                  2. PRODUCTO Y CANTIDAD
+                  2. PRODUCTO Y CANTIDAD (Ramos)
                 </h3>
               </div>
               {productosSeleccionadosOrdenados.length > 0 && (
@@ -1828,7 +1832,9 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
             <div className="space-y-2.5">
               <label className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
                 <FileImage className="w-3.5 h-3.5 text-[#0a2958]" />
-                <span>Foto Carta</span>
+                <span>
+                  Foto Carta <span className="text-[#E60000]">*</span>
+                </span>
               </label>
 
               {/* Carta modelo para descargar, llenar, firmar y adjuntar */}
@@ -1866,7 +1872,13 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
                 </div>
               </div>
 
-              <div className="p-4 rounded-xl border border-dashed border-slate-300 bg-slate-50/70 space-y-3">
+              <div
+                className={`p-4 rounded-xl border border-dashed space-y-3 ${
+                  errores.fotoCarta
+                    ? 'border-rose-400 bg-rose-50/40'
+                    : 'border-slate-300 bg-slate-50/70'
+                }`}
+              >
                 <div className="flex flex-wrap items-center gap-2.5">
                   <label className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 text-xs font-bold shadow-xs cursor-pointer transition">
                     <Upload className="w-3.5 h-3.5 text-[#0a2958]" />
@@ -1937,10 +1949,13 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
                   </div>
                 ) : (
                   <p className="text-[11px] text-slate-500">
-                    Puede adjuntar una imagen o PDF de la carta, o tomar la foto directamente desde su dispositivo.
+                    Debe adjuntar una imagen o PDF de la carta, o tomar la foto directamente desde su dispositivo.
                   </p>
                 )}
               </div>
+              {errores.fotoCarta && (
+                <p className="text-[11px] text-[#E60000] font-semibold">{errores.fotoCarta}</p>
+              )}
             </div>
 
             {/* Notificado (destinatario fijo para revisión y respuesta) */}

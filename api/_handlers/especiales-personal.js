@@ -476,6 +476,16 @@ export default async function handler(req, res) {
         }
       }
 
+      const tieneCartaAdjunta =
+        String(body?.fotoCartaBase64 || '').trim().length > 0 ||
+        String(itemsInput[0]?.fotoCarta || '').trim().length > 0;
+      if (!tieneCartaAdjunta) {
+        return res.status(400).json({
+          success: false,
+          error: 'Debe adjuntar la foto o PDF de la carta para registrar en Especiales Personal.',
+        });
+      }
+
       let existentes = getEspecialesPersonalStorage();
       let supportsEspecialesPersonal = false;
       let supportsEmailNotification = false;

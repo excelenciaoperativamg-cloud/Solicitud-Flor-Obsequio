@@ -35,6 +35,7 @@ app.all('/api/drive-test', (req, res) => driveTestHandler(req, res));
 app.all('/api/maestro', (req, res) => maestroHandler(req, res));
 app.all('/api/solicitudes', (req, res) => solicitudesHandler(req, res));
 app.all('/api/solicitudes-int-ext', (req, res) => solicitudesIntExtHandler(req, res));
+app.all('/api/solicitudes-int-ext/carta/:file', (req, res) => solicitudesIntExtHandler(req, res));
 app.all('/api/especiales-personal', (req, res) => especialesPersonalHandler(req, res));
 app.all('/api/especiales-personal/carta/:file', (req, res) => especialesPersonalHandler(req, res));
 app.all('/api/solicitud-comunidad', (req, res) => solicitudComunidadHandler(req, res));

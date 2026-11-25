@@ -45,6 +45,7 @@ export interface SolicitudIntExt {
   fechaEntrega: string;
   horaEntrega?: string;
   observacion: string;
+  fotoCarta?: string;
   notificado?: string;
   estado?: string;
   syncedToDrive?: boolean;
@@ -159,11 +160,11 @@ export interface ResumenCuposSede {
 
 export type FormularioPermisoKey =
   | 'formulario'
-  | 'int-ext'
   | 'especiales-personal'
-  | 'solicitud-comunidad'
+  | 'int-ext'
   | 'ingresos-seleccion'
   | 'obsequio-visitantes'
+  | 'solicitud-comunidad'
   | 'solicitudes';
 
 export interface PermisoFormulario {

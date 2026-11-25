@@ -180,9 +180,9 @@ export default function App() {
     if (puedeVerPersonal) return 'formulario';
     if (puedeVerEp) return 'especiales-personal';
     if (puedeVerIntExt) return 'int-ext';
-    if (puedeVerComunidad) return 'solicitud-comunidad';
     if (puedeVerIngresos) return 'ingresos-seleccion';
     if (puedeVerVisitantes) return 'obsequio-visitantes';
+    if (puedeVerComunidad) return 'solicitud-comunidad';
     if (puedeVerResumen) return 'solicitudes';
     return 'formulario';
   }, [
