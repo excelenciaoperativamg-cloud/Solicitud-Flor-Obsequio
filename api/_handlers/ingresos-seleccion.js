@@ -7,27 +7,56 @@ import {
 
 const SEDES_VALIDAS = new Set(['MG', 'HA', 'SC']);
 const PRODUCTOS_POR_SEDE = {
-  MG: new Set(['Rosa (Color)', 'Rosa (Roja)', 'Bouquet']),
+  MG: new Set(['Rosa', 'Rosa (Color)', 'Rosa (Roja)', 'Bouquet']),
   HA: new Set(['Alstroemeria']),
   SC: new Set(['Clavel']),
 };
 const MOTIVO_FIJO_IS = 'Ingresos';
 
+function inferirSedePorProducto(producto) {
+  const p = String(producto || '').trim().toLowerCase();
+  if (p === 'alstroemeria') return 'HA';
+  if (p === 'clavel') return 'SC';
+  if (p.includes('rosa') || p === 'bouquet') return 'MG';
+  return '';
+}
+
+function normalizarHoraEntrega(raw) {
+  const val = String(raw || '').trim();
+  if (!val) return '';
+  const m = val.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if (m) {
+    const hh = Number(m[1]);
+    const mm = Number(m[2]);
+    if (hh >= 0 && hh <= 23 && mm >= 0 && mm <= 59) {
+      return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+    }
+  }
+  const dt = new Date(val);
+  if (!Number.isNaN(dt.getTime())) {
+    return `${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`;
+  }
+  return val;
+}
+
 function normalizarIngresoSeleccion(s) {
   const cantidadNum = Number(s?.cantidad);
   const semanaStr = String(s?.semana || '').match(/(\d+)/)?.[1] || String(s?.semana || '').trim();
   const notificadoVal = String(s?.notificado || s?.estado || 'Registrada').trim();
+  const prod = String(s?.producto || '').trim();
+  const sede = String(s?.sede || inferirSedePorProducto(prod)).trim().toUpperCase();
   return {
     id: String(s?.id || '').trim(),
     fechaSolicitud: String(s?.fechaSolicitud || s?.fecha || '').trim(),
     codigo: String(s?.codigo || '').trim(),
     nombre: String(s?.nombre || '').trim(),
-    sede: String(s?.sede || '').trim(),
-    producto: String(s?.producto || '').trim(),
+    sede,
+    producto: prod,
     cantidad: cantidadNum && !Number.isNaN(cantidadNum) && cantidadNum > 0 ? cantidadNum : 1,
     motivo: String(s?.motivo || MOTIVO_FIJO_IS).trim() || MOTIVO_FIJO_IS,
     semana: semanaStr,
     fechaEntrega: String(s?.fechaEntrega || '').trim(),
+    horaEntrega: normalizarHoraEntrega(s?.horaEntrega),
     observacion: String(s?.observacion || '').trim(),
     notificado: notificadoVal,
     estado: notificadoVal,
@@ -180,7 +209,14 @@ export default async function handler(req, res) {
       if (itemsInput.length === 0) {
         return res.status(400).json({
           success: false,
-          error: 'Debe seleccionar al menos un producto para registrar en Ingresos Selección.',
+          error: 'Debe seleccionar un producto para registrar en Ingresos Personal.',
+        });
+      }
+
+      if (itemsInput.length > 1) {
+        return res.status(400).json({
+          success: false,
+          error: 'En este formulario solo se permite seleccionar un producto por solicitud.',
         });
       }
 
@@ -206,19 +242,24 @@ export default async function handler(req, res) {
       }
 
       for (const item of itemsInput) {
-        const sedeItem = String(item?.sede || '').trim().toUpperCase();
         const prodItem = String(item?.producto || '').trim();
+        const sedeItem = String(item?.sede || inferirSedePorProducto(prodItem))
+          .trim()
+          .toUpperCase();
+        const horaEntItem = normalizarHoraEntrega(item?.horaEntrega);
         if (
           !item ||
           !item.codigo ||
           !item.nombre ||
           !SEDES_VALIDAS.has(sedeItem) ||
           !prodItem ||
-          !item.fechaEntrega
+          !item.fechaEntrega ||
+          !horaEntItem
         ) {
           return res.status(400).json({
             success: false,
-            error: 'Faltan campos obligatorios para registrar en Ingresos Selección.',
+            error:
+              'Faltan campos obligatorios (incluyendo producto, fecha y hora de entrega) para registrar en Ingresos Personal.',
           });
         }
         const permitidos = PRODUCTOS_POR_SEDE[sedeItem];
@@ -263,9 +304,7 @@ export default async function handler(req, res) {
       }
 
       const targetSheetOk =
-        supportsIngresosSeleccion &&
-        (sheetName.toLowerCase() === 'ingresos selección' ||
-          sheetName.toLowerCase() === 'ingresos seleccion');
+        supportsIngresosSeleccion && sheetName.toLowerCase() === 'ingresos personal';
 
       const existentesAcumulados = [...existentes];
       const creadas = [];
@@ -276,20 +315,25 @@ export default async function handler(req, res) {
         const idFinal = generarIdIngresoSeleccionUnico(existentesAcumulados, item.id);
         const notificadoFinal =
           rawCorreo || String(item.notificado || item.estado || 'Registrada').trim() || 'Registrada';
+        const prodFinal = String(item.producto).trim();
+        const sedeFinal = String(item.sede || inferirSedePorProducto(prodFinal))
+          .trim()
+          .toUpperCase();
 
         const payload = {
           action: 'registrar_ingresos_seleccion',
-          hoja: 'Ingresos Selección',
+          hoja: 'Ingresos Personal',
           id: idFinal,
           fechaSolicitud: String(item.fechaSolicitud || '').trim(),
           codigo: String(item.codigo).trim(),
           nombre: String(item.nombre).trim(),
-          sede: String(item.sede).trim().toUpperCase(),
-          producto: String(item.producto).trim(),
+          sede: sedeFinal,
+          producto: prodFinal,
           cantidad: cantidadNum,
           motivo: MOTIVO_FIJO_IS,
           semana: String(item.semana || '').match(/(\d+)/)?.[1] || String(item.semana || '').trim(),
           fechaEntrega: String(item.fechaEntrega).trim(),
+          horaEntrega: normalizarHoraEntrega(item.horaEntrega),
           observacion: String(item.observacion || '').trim(),
           notificado: notificadoFinal,
           estado: notificadoFinal,
@@ -366,7 +410,7 @@ export default async function handler(req, res) {
             sent: false,
             to: rawCorreo,
             error:
-              'La versión activa de Google Apps Script aún no incluye la hoja "Ingresos Selección". Actualice el código desde Administración → Google Drive e implemente una Nueva versión.',
+              'La versión activa de Google Apps Script aún no incluye la hoja "Ingresos Personal". Actualice el código desde Administración → Google Drive e implemente una Nueva versión.',
             needsAppsScriptUpdate: true,
           };
         } else {
@@ -403,9 +447,7 @@ export default async function handler(req, res) {
           Array.isArray(data?.solicitudesIngresosSeleccion)
         ) {
           const sheetName = String(data?.ingresosSeleccionSheetName || '').trim();
-          const sheetOk =
-            sheetName.toLowerCase() === 'ingresos selección' ||
-            sheetName.toLowerCase() === 'ingresos seleccion';
+          const sheetOk = sheetName.toLowerCase() === 'ingresos personal';
           const deHoja = (data.solicitudesIngresosSeleccion || []).map((r) =>
             normalizarIngresoSeleccion({ ...r, syncedToDrive: true })
           );
@@ -440,7 +482,7 @@ export default async function handler(req, res) {
   } catch (err) {
     return res.status(500).json({
       success: false,
-      error: err.message || 'Error en Ingresos Selección',
+      error: err.message || 'Error en Ingresos Personal',
     });
   }
 }

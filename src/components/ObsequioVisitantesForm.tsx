@@ -2,7 +2,6 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   Gift,
   UserCheck,
-  MapPin,
   Sparkles,
   Calendar,
   MessageSquare,
@@ -19,6 +18,8 @@ import {
   X,
   ChevronDown,
   Mail,
+  Plus,
+  Building2,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import * as XLSX from 'xlsx';
@@ -56,29 +57,18 @@ interface ObsequioVisitantesFormProps {
   onCerrarSesion?: () => void;
 }
 
-const SEDES_OV = ['MG', 'HA', 'SC'] as const;
-const ROSA_VARIANTES_OV = ['Rosa (Color)', 'Rosa (Roja)', 'Bouquet'] as const;
-const PRODUCTOS_OV = [
-  'Rosa (Color)',
-  'Rosa (Roja)',
-  'Bouquet',
-  'Alstroemeria',
-  'Clavel',
-] as const;
+const EMPRESAS_BASE_OV = ['GHT'] as const;
+const STORAGE_EMPRESAS_OV_KEY = 'sfo_empresas_obsequio_visitantes_custom';
+const PRODUCTOS_OV = ['Rosa', 'Alstroemeria', 'Clavel'] as const;
 const MOTIVO_FIJO_OV = 'Visitante';
 const EMAIL_ITEM_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-function getProductosPermitidosPorSede(sede: string): string[] {
-  switch (sede) {
-    case 'MG':
-      return [...ROSA_VARIANTES_OV];
-    case 'HA':
-      return ['Alstroemeria'];
-    case 'SC':
-      return ['Clavel'];
-    default:
-      return [];
-  }
+function inferirSedePorProducto(producto: string): string {
+  const p = String(producto || '').trim().toLowerCase();
+  if (p === 'alstroemeria') return 'HA';
+  if (p === 'clavel') return 'SC';
+  if (p.includes('rosa') || p === 'bouquet') return 'MG';
+  return '';
 }
 
 function parsearListaCorreos(raw: string): {
@@ -138,9 +128,18 @@ export const ObsequioVisitantesForm: React.FC<ObsequioVisitantesFormProps> = ({
   );
 
   const [nombreVisitante, setNombreVisitante] = useState('');
-  const [sede, setSede] = useState('');
+  const [empresasPersonalizadas, setEmpresasPersonalizadas] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_EMPRESAS_OV_KEY);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [empresaSeleccionada, setEmpresaSeleccionada] = useState<string>('GHT');
+  const [mostrandoInputEmpresa, setMostrandoInputEmpresa] = useState(false);
+  const [nuevaEmpresaInput, setNuevaEmpresaInput] = useState('');
   const [productosCantidades, setProductosCantidades] = useState<Record<string, string>>({});
-  const [rosaAbierto, setRosaAbierto] = useState(false);
 
   const [fechaEntrega, setFechaEntrega] = useState(getTodayString());
   const [observacion, setObservacion] = useState('');
@@ -160,6 +159,12 @@ export const ObsequioVisitantesForm: React.FC<ObsequioVisitantesFormProps> = ({
   const [dropdownProductoAbierto, setDropdownProductoAbierto] = useState(false);
   const dropdownProductoRef = useRef<HTMLDivElement | null>(null);
   const [recargandoTabla, setRecargandoTabla] = useState(false);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_EMPRESAS_OV_KEY, JSON.stringify(empresasPersonalizadas));
+    } catch {}
+  }, [empresasPersonalizadas]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -202,84 +207,57 @@ export const ObsequioVisitantesForm: React.FC<ObsequioVisitantesFormProps> = ({
     }, 0);
   }, [productosSeleccionadosOrdenados, productosCantidades]);
 
-  const rosaColorActivo = Object.prototype.hasOwnProperty.call(productosCantidades, 'Rosa (Color)');
-  const rosaRojaActivo = Object.prototype.hasOwnProperty.call(productosCantidades, 'Rosa (Roja)');
-  const bouquetActivo = Object.prototype.hasOwnProperty.call(productosCantidades, 'Bouquet');
-  const rosaTieneSeleccion = rosaColorActivo || rosaRojaActivo || bouquetActivo;
-  const rosaExpandido = rosaAbierto || rosaTieneSeleccion;
+  const opcionesEmpresaVisibles = useMemo(() => {
+    const mapa = new Map<string, string>();
+    const agregar = (val?: string) => {
+      const limpio = String(val || '').trim();
+      if (!limpio) return;
+      const clave = limpio.toLowerCase();
+      if (!mapa.has(clave)) mapa.set(clave, limpio);
+    };
+    EMPRESAS_BASE_OV.forEach(agregar);
+    empresasPersonalizadas.forEach(agregar);
+    obsequioVisitantes.forEach((s) => agregar(s.empresa));
+    return Array.from(mapa.values());
+  }, [empresasPersonalizadas, obsequioVisitantes]);
 
-  const handleSeleccionarSede = (nuevaSede: string) => {
-    if (sede === nuevaSede) return;
-    setSede(nuevaSede);
-    const permitidos = new Set(getProductosPermitidosPorSede(nuevaSede));
-    setProductosCantidades((prev) => {
-      const next: Record<string, string> = {};
-      for (const [prod, cant] of Object.entries(prev)) {
-        if (permitidos.has(prod)) {
-          next[prod] = cant;
-        }
-      }
-      return next;
-    });
-    setRosaAbierto(nuevaSede === 'MG');
+  const empresaFinal =
+    mostrandoInputEmpresa && nuevaEmpresaInput.trim()
+      ? nuevaEmpresaInput.trim()
+      : empresaSeleccionada.trim();
+
+  const handleAgregarEmpresaPersonalizada = () => {
+    const limpio = nuevaEmpresaInput.trim();
+    if (!limpio) return;
+    if (!opcionesEmpresaVisibles.some((emp) => emp.toLowerCase() === limpio.toLowerCase())) {
+      setEmpresasPersonalizadas((prev) => [...prev, limpio]);
+    }
+    setEmpresaSeleccionada(limpio);
+    setNuevaEmpresaInput('');
+    setMostrandoInputEmpresa(false);
     setErrores((prev) => {
       const next = { ...prev };
-      delete next.sede;
-      delete next.producto;
-      delete next.cantidad;
-      for (const key of Object.keys(next)) {
-        if (key.startsWith('cant_') && !permitidos.has(key.slice(5))) {
-          delete next[key];
-        }
-      }
+      delete next.empresa;
       return next;
     });
-  };
-
-  const toggleRosaPrincipal = () => {
-    if (rosaExpandido) {
-      setRosaAbierto(false);
-      setProductosCantidades((prev) => {
-        const next = { ...prev };
-        delete next['Rosa (Color)'];
-        delete next['Rosa (Roja)'];
-        delete next['Bouquet'];
-        return next;
-      });
-      setErrores((prev) => {
-        const next = { ...prev };
-        delete next.producto;
-        delete next.cantidad;
-        delete next['cant_Rosa (Color)'];
-        delete next['cant_Rosa (Roja)'];
-        delete next['cant_Bouquet'];
-        return next;
-      });
-    } else {
-      setRosaAbierto(true);
-      setErrores((prev) => {
-        const next = { ...prev };
-        delete next.producto;
-        return next;
-      });
-    }
   };
 
   const toggleProducto = (prod: string) => {
     setProductosCantidades((prev) => {
-      const next = { ...prev };
-      if (Object.prototype.hasOwnProperty.call(next, prod)) {
-        delete next[prod];
-      } else {
-        next[prod] = '1';
+      if (Object.prototype.hasOwnProperty.call(prev, prod)) {
+        return {};
       }
-      return next;
+      return { [prod]: '1' };
     });
     setErrores((prev) => {
       const next = { ...prev };
       delete next.producto;
       delete next.cantidad;
-      delete next[`cant_${prod}`];
+      for (const key of Object.keys(next)) {
+        if (key.startsWith('cant_')) {
+          delete next[key];
+        }
+      }
       return next;
     });
   };
@@ -304,33 +282,21 @@ export const ObsequioVisitantesForm: React.FC<ObsequioVisitantesFormProps> = ({
       errs.nombreVisitante = 'Digite el nombre del visitante.';
     }
 
-    if (!sede) {
-      errs.sede = 'Seleccione la sede (MG, HA o SC).';
+    if (!empresaFinal) {
+      errs.empresa = 'Seleccione o agregue la empresa del visitante.';
     }
 
-    const permitidosSede = new Set(getProductosPermitidosPorSede(sede));
-    const seleccionadosValidos = productosSeleccionadosOrdenados.filter((p) =>
-      permitidosSede.has(p)
-    );
-
-    if (!sede) {
-      errs.producto = 'Seleccione primero una sede (MG, HA o SC) para elegir el producto.';
-    } else if (seleccionadosValidos.length === 0) {
-      if (sede === 'MG') {
-        errs.producto =
-          'Seleccione al menos un producto de Rosa (Rosa (Color), Rosa (Roja) y/o Bouquet).';
-      } else if (sede === 'HA') {
-        errs.producto = 'Seleccione Alstroemeria e ingrese la cantidad.';
-      } else {
-        errs.producto = 'Seleccione Clavel e ingrese la cantidad.';
-      }
+    if (productosSeleccionadosOrdenados.length === 0) {
+      errs.producto =
+        'Seleccione un producto (Rosa, Alstroemeria o Clavel) e ingrese la cantidad.';
+    } else if (productosSeleccionadosOrdenados.length > 1) {
+      errs.producto = 'Solo se permite seleccionar un producto por solicitud.';
     } else {
-      for (const prod of seleccionadosValidos) {
-        const cantNum = Number(productosCantidades[prod]);
-        if (!productosCantidades[prod] || Number.isNaN(cantNum) || cantNum < 1) {
-          errs[`cant_${prod}`] = `Ingrese una cantidad válida (mínimo 1) para ${prod}.`;
-          errs.cantidad = 'Revise las cantidades ingresadas por producto.';
-        }
+      const prod = productosSeleccionadosOrdenados[0];
+      const cantNum = Number(productosCantidades[prod]);
+      if (!productosCantidades[prod] || Number.isNaN(cantNum) || cantNum < 1) {
+        errs[`cant_${prod}`] = `Ingrese una cantidad válida (mínimo 1) para ${prod}.`;
+        errs.cantidad = 'Revise la cantidad ingresada para el producto.';
       }
     }
 
@@ -358,9 +324,10 @@ export const ObsequioVisitantesForm: React.FC<ObsequioVisitantesFormProps> = ({
 
   const limpiarFormulario = () => {
     setNombreVisitante('');
-    setSede('');
+    setEmpresaSeleccionada('GHT');
+    setMostrandoInputEmpresa(false);
+    setNuevaEmpresaInput('');
     setProductosCantidades({});
-    setRosaAbierto(false);
     setFechaEntrega(getTodayString());
     setObservacion('');
     setCorreoNotificacion('');
@@ -371,6 +338,14 @@ export const ObsequioVisitantesForm: React.FC<ObsequioVisitantesFormProps> = ({
     e.preventDefault();
     if (!validarFormulario()) return;
 
+    if (
+      mostrandoInputEmpresa &&
+      nuevaEmpresaInput.trim() &&
+      !opcionesEmpresaVisibles.some((emp) => emp.toLowerCase() === empresaFinal.toLowerCase())
+    ) {
+      setEmpresasPersonalizadas((prev) => [...prev, empresaFinal]);
+    }
+
     setIsSubmitting(true);
     setErrores({});
 
@@ -380,17 +355,19 @@ export const ObsequioVisitantesForm: React.FC<ObsequioVisitantesFormProps> = ({
       const year = new Date().getFullYear();
       const semanaStr = String(semanaCalculada);
 
-      const listaSolicitudes: ObsequioVisitante[] = productosSeleccionadosOrdenados.map(
-        (prod, idx) => ({
+      const listaSolicitudes: ObsequioVisitante[] = productosSeleccionadosOrdenados
+        .slice(0, 1)
+        .map((prod, idx) => ({
           id: `OV-${year}-${String(siguienteNumeroId + idx).padStart(3, '0')}`,
           fechaSolicitud,
           codigo: sesion.codigo.trim(),
           nombre: sesion.nombre.trim(),
-          sede,
+          sede: inferirSedePorProducto(prod),
           producto: prod,
           cantidad: Math.max(1, Math.floor(Number(productosCantidades[prod]) || 1)),
           motivo: MOTIVO_FIJO_OV,
           nombreVisitante: nombreVisitante.trim(),
+          empresa: empresaFinal,
           semana: semanaStr,
           fechaEntrega,
           observacion: observacion.trim(),
@@ -493,6 +470,7 @@ export const ObsequioVisitantesForm: React.FC<ObsequioVisitantesFormProps> = ({
         s.codigo.toLowerCase().includes(q) ||
         s.nombre.toLowerCase().includes(q) ||
         (s.nombreVisitante || '').toLowerCase().includes(q) ||
+        (s.empresa || '').toLowerCase().includes(q) ||
         s.sede.toLowerCase().includes(q) ||
         s.producto.toLowerCase().includes(q) ||
         (s.motivo || '').toLowerCase().includes(q) ||
@@ -527,6 +505,7 @@ export const ObsequioVisitantesForm: React.FC<ObsequioVisitantesFormProps> = ({
       Cantidad: s.cantidad,
       Motivo: s.motivo || MOTIVO_FIJO_OV,
       'Nombre Visitante': s.nombreVisitante,
+      Empresa: s.empresa || '',
       Semana: s.semana,
       'Fecha Entrega': s.fechaEntrega,
       Observación: s.observacion || '',
@@ -673,8 +652,18 @@ export const ObsequioVisitantesForm: React.FC<ObsequioVisitantesFormProps> = ({
                 </span>
               </div>
               <div className="flex justify-between">
+                <span className="text-slate-500">Empresa:</span>
+                <span className="font-bold text-[#0a2958] text-right">
+                  {primeraExitosa.empresa || '—'}
+                </span>
+              </div>
+              <div className="flex justify-between">
                 <span className="text-slate-500">Sede:</span>
-                <span className="font-bold text-[#0a2958]">{primeraExitosa.sede}</span>
+                <span className="font-bold text-[#0a2958]">
+                  {Array.from(
+                    new Set(solicitudesExitosas.map((s) => s.sede).filter(Boolean))
+                  ).join(', ') || primeraExitosa.sede}
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Motivo:</span>
@@ -707,6 +696,7 @@ export const ObsequioVisitantesForm: React.FC<ObsequioVisitantesFormProps> = ({
                         <tr>
                           <th className="py-1.5 px-2.5">Id</th>
                           <th className="py-1.5 px-2.5">Producto</th>
+                          <th className="py-1.5 px-2.5">Sede</th>
                           <th className="py-1.5 px-2.5 text-right">Cantidad</th>
                         </tr>
                       </thead>
@@ -719,6 +709,9 @@ export const ObsequioVisitantesForm: React.FC<ObsequioVisitantesFormProps> = ({
                             <td className="py-1.5 px-2.5 font-semibold text-slate-800">
                               {item.producto}
                             </td>
+                            <td className="py-1.5 px-2.5 font-bold text-[#0a2958]">
+                              {item.sede}
+                            </td>
                             <td className="py-1.5 px-2.5 text-right font-mono tabular-nums font-bold text-[#0a2958]">
                               {item.cantidad}
                             </td>
@@ -727,7 +720,7 @@ export const ObsequioVisitantesForm: React.FC<ObsequioVisitantesFormProps> = ({
                       </tbody>
                       <tfoot className="bg-slate-50 border-t border-slate-200 font-extrabold text-[#0a2958]">
                         <tr>
-                          <td colSpan={2} className="py-1.5 px-2.5">
+                          <td colSpan={3} className="py-1.5 px-2.5">
                             Total ramos ({solicitudesExitosas.length} registros)
                           </td>
                           <td className="py-1.5 px-2.5 text-right font-mono tabular-nums">
@@ -800,7 +793,7 @@ export const ObsequioVisitantesForm: React.FC<ObsequioVisitantesFormProps> = ({
                 OBSEQUIO VISITANTES
               </h2>
               <p className="text-xs text-slate-500 font-medium">
-                Registro de flor para obsequio a visitantes por sede (MG, HA, SC)
+                Registro de flor para obsequio a visitantes
               </p>
             </div>
           </div>
@@ -891,7 +884,7 @@ export const ObsequioVisitantesForm: React.FC<ObsequioVisitantesFormProps> = ({
                 />
               </div>
 
-              <div className="sm:col-span-2">
+              <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1.5">
                   Nombre Visitante <span className="text-[#E60000]">*</span>
                 </label>
@@ -915,290 +908,207 @@ export const ObsequioVisitantesForm: React.FC<ObsequioVisitantesFormProps> = ({
                   </p>
                 )}
               </div>
+
+              <div>
+                <label
+                  htmlFor="select-empresa-ov"
+                  className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5"
+                >
+                  <Building2 className="w-3.5 h-3.5 text-[#0a2958]" />
+                  <span>
+                    Empresa <span className="text-[#E60000]">*</span>
+                  </span>
+                </label>
+                <div className="flex items-center gap-2">
+                  <div className="relative flex-1 min-w-0">
+                    <select
+                      id="select-empresa-ov"
+                      value={mostrandoInputEmpresa ? '__AGREGAR__' : empresaSeleccionada}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === '__AGREGAR__') {
+                          setMostrandoInputEmpresa(true);
+                        } else {
+                          setEmpresaSeleccionada(val);
+                          setMostrandoInputEmpresa(false);
+                        }
+                        setErrores((prev) => {
+                          const next = { ...prev };
+                          delete next.empresa;
+                          return next;
+                        });
+                      }}
+                      className={`w-full appearance-none pl-3.5 pr-9 py-2.5 text-sm rounded-xl border font-bold bg-white outline-hidden cursor-pointer truncate ${
+                        errores.empresa
+                          ? 'border-[#E60000] bg-red-50/40 text-slate-900'
+                          : 'border-slate-200 focus:border-[#0a2958] text-[#0a2958]'
+                      }`}
+                    >
+                      {opcionesEmpresaVisibles.map((emp) => (
+                        <option key={emp} value={emp}>
+                          {emp}
+                        </option>
+                      ))}
+                      <option value="__AGREGAR__">+ Agregar otra empresa…</option>
+                    </select>
+                    <ChevronDown className="w-4 h-4 text-slate-500 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMostrandoInputEmpresa((prev) => !prev);
+                      setErrores((prev) => {
+                        const next = { ...prev };
+                        delete next.empresa;
+                        return next;
+                      });
+                    }}
+                    title="Agregar otra empresa"
+                    aria-label="Agregar otra empresa"
+                    className={`p-2.5 rounded-xl border transition cursor-pointer shrink-0 ${
+                      mostrandoInputEmpresa
+                        ? 'bg-[#E60000]/10 text-[#E60000] border-[#E60000]/40'
+                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:border-[#0a2958] hover:text-[#0a2958]'
+                    }`}
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {mostrandoInputEmpresa && (
+                  <div className="flex items-center gap-2 mt-2">
+                    <input
+                      type="text"
+                      value={nuevaEmpresaInput}
+                      onChange={(e) => {
+                        setNuevaEmpresaInput(e.target.value);
+                        setErrores((prev) => {
+                          const next = { ...prev };
+                          delete next.empresa;
+                          return next;
+                        });
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAgregarEmpresaPersonalizada();
+                        }
+                      }}
+                      placeholder="Escriba el nombre de la empresa…"
+                      className="flex-1 min-w-0 px-3 py-2 text-xs rounded-xl border border-slate-300 focus:border-[#0a2958] outline-hidden font-medium"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAgregarEmpresaPersonalizada}
+                      className="px-3.5 py-2 rounded-xl bg-[#0a2958] text-white text-xs font-bold hover:bg-[#0d346e] cursor-pointer shrink-0"
+                    >
+                      Agregar
+                    </button>
+                  </div>
+                )}
+
+                {errores.empresa && (
+                  <p className="text-[11px] text-[#E60000] font-semibold mt-1">
+                    {errores.empresa}
+                  </p>
+                )}
+              </div>
             </div>
           </section>
 
-          {/* SECCIÓN 2: SEDE, PRODUCTO Y CANTIDAD */}
+          {/* SECCIÓN 2: PRODUCTO Y CANTIDAD */}
           <section className="space-y-4">
             <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
               <Sparkles className="w-4 h-4 text-[#0a2958]" />
               <h3 className="text-xs font-extrabold uppercase tracking-wider text-[#0a2958]">
-                2. Sede, Producto y Cantidad
+                2. Producto y Cantidad
               </h3>
             </div>
 
-            {/* Sede */}
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-2">
-                Sede <span className="text-[#E60000]">*</span>{' '}
-                <span className="text-[11px] font-normal text-slate-400">
-                  (Seleccione la sede para habilitar los productos correspondientes)
-                </span>
-              </label>
-              <div className="grid grid-cols-3 gap-2.5">
-                {SEDES_OV.map((sedeOpt) => {
-                  const activa = sede === sedeOpt;
-                  const resumenProd =
-                    sedeOpt === 'MG'
-                      ? 'Rosa (Color, Roja, Bouquet)'
-                      : sedeOpt === 'HA'
-                      ? 'Alstroemeria'
-                      : 'Clavel';
-                  return (
-                    <button
-                      key={sedeOpt}
-                      type="button"
-                      onClick={() => handleSeleccionarSede(sedeOpt)}
-                      className={`p-3 rounded-xl border text-left transition cursor-pointer flex items-center justify-between gap-2 ${
-                        activa
-                          ? 'border-[#0a2958] bg-[#0a2958] text-white shadow-xs'
-                          : 'border-slate-200 bg-white text-slate-700 hover:border-[#0a2958]/40 hover:bg-slate-50'
-                      }`}
-                    >
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <MapPin
-                            className={`w-3.5 h-3.5 shrink-0 ${
-                              activa ? 'text-[#fca5a5]' : 'text-[#0a2958]'
-                            }`}
-                          />
-                          <span className="text-xs font-extrabold">{sedeOpt}</span>
-                        </div>
-                        <p
-                          className={`text-[10px] mt-0.5 truncate ${
-                            activa ? 'text-slate-200' : 'text-slate-400'
-                          }`}
-                        >
-                          {resumenProd}
-                        </p>
-                      </div>
-                      <span
-                        className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
-                          activa
-                            ? 'bg-[#E60000] border-[#E60000] text-white'
-                            : 'border-slate-300 bg-white'
-                        }`}
-                      >
-                        {activa && <Check className="w-2.5 h-2.5 stroke-[3]" />}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-              {errores.sede && (
-                <p className="text-[11px] text-[#E60000] font-semibold mt-1">{errores.sede}</p>
-              )}
-            </div>
-
-            {/* Productos filtrados por Sede */}
             <div>
               <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
                 <label className="block text-xs font-bold text-slate-700">
                   Producto y Cantidad <span className="text-[#E60000]">*</span>{' '}
                   <span className="text-[11px] font-normal text-slate-400">
-                    (Puede seleccionar uno o varios productos de la sede; cada uno se guarda por separado)
+                    (Seleccione un solo producto e ingrese la cantidad)
                   </span>
                 </label>
                 {productosSeleccionadosOrdenados.length > 0 && (
                   <span className="text-[11px] font-extrabold text-[#0a2958] bg-[#0a2958]/10 px-2.5 py-0.5 rounded-full">
-                    {productosSeleccionadosOrdenados.length}{' '}
-                    {productosSeleccionadosOrdenados.length === 1
-                      ? 'producto seleccionado'
-                      : 'productos seleccionados'}{' '}
-                    · {totalRamosSeleccionados} ramos
+                    {productosSeleccionadosOrdenados[0]} · {totalRamosSeleccionados}{' '}
+                    {totalRamosSeleccionados === 1 ? 'ramo' : 'ramos'}
                   </span>
                 )}
               </div>
 
-              {!sede ? (
-                <div className="p-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 text-xs text-slate-500 font-medium text-center">
-                  Seleccione primero una <strong>Sede (MG, HA o SC)</strong> para ver los productos disponibles.
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {/* Sede MG: Rosa (Rosa Color, Rosa Roja, Bouquet) */}
-                  {sede === 'MG' && (
+              {/* Rosa, Alstroemeria y Clavel */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {PRODUCTOS_OV.map((prod) => {
+                  const seleccionado = Object.prototype.hasOwnProperty.call(
+                    productosCantidades,
+                    prod
+                  );
+                  const cantValor = productosCantidades[prod] ?? '';
+                  const errorCant = errores[`cant_${prod}`];
+
+                  return (
                     <div
-                      className={`rounded-xl border transition ${
-                        rosaExpandido
-                          ? 'border-[#0a2958] bg-[#0a2958]/[0.03] shadow-2xs'
+                      key={prod}
+                      className={`rounded-xl border transition flex flex-col justify-between ${
+                        seleccionado
+                          ? 'border-[#0a2958] bg-[#0a2958]/5 shadow-2xs'
                           : 'border-slate-200 bg-white hover:border-[#0a2958]/40'
                       }`}
                     >
                       <button
                         type="button"
-                        onClick={toggleRosaPrincipal}
-                        className="w-full px-3.5 py-2.5 text-xs font-extrabold text-[#0a2958] flex items-center justify-between cursor-pointer"
+                        onClick={() => toggleProducto(prod)}
+                        className="w-full px-3.5 py-2.5 text-xs font-bold flex items-center justify-between gap-2 text-[#0a2958] cursor-pointer"
                       >
-                        <div className="flex items-center gap-2">
-                          <span>Rosa</span>
-                          {rosaTieneSeleccion && (
-                            <span className="text-[10px] font-bold bg-[#0a2958] text-white px-2 py-0.5 rounded-full">
-                              {[
-                                rosaColorActivo ? 'Color' : '',
-                                rosaRojaActivo ? 'Roja' : '',
-                                bouquetActivo ? 'Bouquet' : '',
-                              ]
-                                .filter(Boolean)
-                                .join(' + ')}
-                            </span>
-                          )}
-                        </div>
+                        <span>{prod}</span>
                         <span
-                          className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${
-                            rosaExpandido
+                          className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
+                            seleccionado
                               ? 'bg-[#0a2958] border-[#0a2958] text-white'
                               : 'border-slate-300 bg-white'
                           }`}
                         >
-                          {rosaExpandido && <Check className="w-3 h-3 stroke-[3]" />}
+                          {seleccionado && <Check className="w-3 h-3 stroke-[3]" />}
                         </span>
                       </button>
 
-                      {rosaExpandido && (
-                        <div className="px-3.5 pb-3 pt-2 border-t border-slate-200/80 grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                          {ROSA_VARIANTES_OV.map((variante) => {
-                            const seleccionado = Object.prototype.hasOwnProperty.call(
-                              productosCantidades,
-                              variante
-                            );
-                            const cantValor = productosCantidades[variante] ?? '';
-                            const errorCant = errores[`cant_${variante}`];
-
-                            return (
-                              <div
-                                key={variante}
-                                className={`rounded-lg border p-2.5 transition ${
-                                  seleccionado
-                                    ? 'border-[#0a2958] bg-white shadow-2xs'
-                                    : 'border-slate-200 bg-slate-50/70 hover:border-[#0a2958]/40'
-                                }`}
-                              >
-                                <button
-                                  type="button"
-                                  onClick={() => toggleProducto(variante)}
-                                  className="w-full text-xs font-bold flex items-center justify-between gap-2 text-[#0a2958] cursor-pointer"
-                                >
-                                  <span>{variante}</span>
-                                  <span
-                                    className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${
-                                      seleccionado
-                                        ? 'bg-[#0a2958] border-[#0a2958] text-white'
-                                        : 'border-slate-300 bg-white'
-                                    }`}
-                                  >
-                                    {seleccionado && <Check className="w-3 h-3 stroke-[3]" />}
-                                  </span>
-                                </button>
-
-                                {seleccionado && (
-                                  <div className="mt-2 pt-2 border-t border-slate-100">
-                                    <label className="block text-[10px] font-bold text-slate-600 mb-1">
-                                      Cantidad <span className="text-[#E60000]">*</span>
-                                    </label>
-                                    <input
-                                      type="number"
-                                      min={1}
-                                      step={1}
-                                      inputMode="numeric"
-                                      value={cantValor}
-                                      onChange={(e) =>
-                                        cambiarCantidadProducto(variante, e.target.value)
-                                      }
-                                      placeholder="Ej. 5"
-                                      className={`w-full px-2.5 py-1.5 rounded-lg border text-xs font-mono font-bold text-[#0a2958] bg-white focus:outline-none focus:ring-2 ${
-                                        errorCant
-                                          ? 'border-[#E60000] focus:ring-red-100'
-                                          : 'border-slate-200 focus:border-[#0a2958] focus:ring-[#0a2958]/10'
-                                      }`}
-                                    />
-                                    {errorCant && (
-                                      <p className="text-[10px] text-[#E60000] font-semibold mt-1">
-                                        {errorCant}
-                                      </p>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
+                      {seleccionado && (
+                        <div className="px-3.5 pb-3 pt-2 border-t border-slate-200/70">
+                          <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                            Cantidad <span className="text-[#E60000]">*</span>
+                          </label>
+                          <input
+                            type="number"
+                            min={1}
+                            step={1}
+                            inputMode="numeric"
+                            value={cantValor}
+                            onChange={(e) =>
+                              cambiarCantidadProducto(prod, e.target.value)
+                            }
+                            placeholder="Ej. 5"
+                            className={`w-full px-3 py-2 rounded-lg border text-xs font-mono font-bold text-[#0a2958] bg-white focus:outline-none focus:ring-2 ${
+                              errorCant
+                                ? 'border-[#E60000] focus:ring-red-100'
+                                : 'border-slate-200 focus:border-[#0a2958] focus:ring-[#0a2958]/10'
+                            }`}
+                          />
+                          {errorCant && (
+                            <p className="text-[10px] text-[#E60000] font-semibold mt-1">
+                              {errorCant}
+                            </p>
+                          )}
                         </div>
                       )}
                     </div>
-                  )}
-
-                  {/* Sede HA: Alstroemeria | Sede SC: Clavel */}
-                  {(sede === 'HA' || sede === 'SC') && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {getProductosPermitidosPorSede(sede).map((prod) => {
-                        const seleccionado = Object.prototype.hasOwnProperty.call(
-                          productosCantidades,
-                          prod
-                        );
-                        const cantValor = productosCantidades[prod] ?? '';
-                        const errorCant = errores[`cant_${prod}`];
-
-                        return (
-                          <div
-                            key={prod}
-                            className={`rounded-xl border transition flex flex-col justify-between ${
-                              seleccionado
-                                ? 'border-[#0a2958] bg-[#0a2958]/5 shadow-2xs'
-                                : 'border-slate-200 bg-white hover:border-[#0a2958]/40'
-                            }`}
-                          >
-                            <button
-                              type="button"
-                              onClick={() => toggleProducto(prod)}
-                              className="w-full px-3.5 py-2.5 text-xs font-bold flex items-center justify-between gap-2 text-[#0a2958] cursor-pointer"
-                            >
-                              <span>{prod}</span>
-                              <span
-                                className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${
-                                  seleccionado
-                                    ? 'bg-[#0a2958] border-[#0a2958] text-white'
-                                    : 'border-slate-300 bg-white'
-                                }`}
-                              >
-                                {seleccionado && <Check className="w-3 h-3 stroke-[3]" />}
-                              </span>
-                            </button>
-
-                            {seleccionado && (
-                              <div className="px-3.5 pb-3 pt-2 border-t border-slate-200/70">
-                                <label className="block text-[11px] font-bold text-slate-600 mb-1">
-                                  Cantidad <span className="text-[#E60000]">*</span>
-                                </label>
-                                <input
-                                  type="number"
-                                  min={1}
-                                  step={1}
-                                  inputMode="numeric"
-                                  value={cantValor}
-                                  onChange={(e) =>
-                                    cambiarCantidadProducto(prod, e.target.value)
-                                  }
-                                  placeholder="Ej. 5"
-                                  className={`w-full px-3 py-2 rounded-lg border text-xs font-mono font-bold text-[#0a2958] bg-white focus:outline-none focus:ring-2 ${
-                                    errorCant
-                                      ? 'border-[#E60000] focus:ring-red-100'
-                                      : 'border-slate-200 focus:border-[#0a2958] focus:ring-[#0a2958]/10'
-                                  }`}
-                                />
-                                {errorCant && (
-                                  <p className="text-[10px] text-[#E60000] font-semibold mt-1">
-                                    {errorCant}
-                                  </p>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
+                  );
+                })}
+              </div>
 
               {errores.producto && (
                 <p className="text-[11px] text-[#E60000] font-semibold mt-1.5">
@@ -1213,12 +1123,12 @@ export const ObsequioVisitantesForm: React.FC<ObsequioVisitantesFormProps> = ({
             </div>
           </section>
 
-          {/* SECCIÓN 3: ENTREGA, OBSERVACIÓN Y NOTIFICACIÓN */}
+          {/* SECCIÓN 3: ENTREGA, NOTIFICACIÓN Y OBSERVACIÓN */}
           <section className="space-y-4">
             <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
               <Calendar className="w-4 h-4 text-[#0a2958]" />
               <h3 className="text-xs font-extrabold uppercase tracking-wider text-[#0a2958]">
-                3. Entrega, Observación y Notificación
+                3. Entrega, Notificación y Observación
               </h3>
             </div>
 
@@ -1269,22 +1179,6 @@ export const ObsequioVisitantesForm: React.FC<ObsequioVisitantesFormProps> = ({
               </div>
             </div>
 
-            {/* Observación */}
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
-                <MessageSquare className="w-3.5 h-3.5 text-[#0a2958]" />
-                <span>Observación</span>
-                <span className="text-[11px] font-normal text-slate-400">(opcional)</span>
-              </label>
-              <textarea
-                rows={3}
-                value={observacion}
-                onChange={(e) => setObservacion(e.target.value)}
-                placeholder="Escriba aquí observaciones o detalles adicionales para la entrega al visitante..."
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:border-[#0a2958] focus:ring-2 focus:ring-[#0a2958]/10 resize-y"
-              />
-            </div>
-
             {/* Notificado */}
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
@@ -1315,6 +1209,22 @@ export const ObsequioVisitantesForm: React.FC<ObsequioVisitantesFormProps> = ({
                   {errores.correoNotificacion}
                 </p>
               )}
+            </div>
+
+            {/* Observación */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
+                <MessageSquare className="w-3.5 h-3.5 text-[#0a2958]" />
+                <span>Observación</span>
+                <span className="text-[11px] font-normal text-slate-400">(opcional)</span>
+              </label>
+              <textarea
+                rows={3}
+                value={observacion}
+                onChange={(e) => setObservacion(e.target.value)}
+                placeholder="Escriba aquí observaciones o detalles adicionales para la entrega al visitante..."
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:border-[#0a2958] focus:ring-2 focus:ring-[#0a2958]/10 resize-y"
+              />
             </div>
           </section>
         </div>
@@ -1394,7 +1304,7 @@ export const ObsequioVisitantesForm: React.FC<ObsequioVisitantesFormProps> = ({
                 type="text"
                 value={busquedaTabla}
                 onChange={(e) => setBusquedaTabla(e.target.value)}
-                placeholder="Buscar Id, código, nombre, visitante…"
+                placeholder="Buscar Id, código, nombre, visitante, empresa…"
                 className="w-full pl-8 pr-3 py-1.5 rounded-xl border border-slate-200 text-xs focus:outline-none focus:border-[#0a2958]"
               />
             </div>
@@ -1479,6 +1389,7 @@ export const ObsequioVisitantesForm: React.FC<ObsequioVisitantesFormProps> = ({
                 <th className="py-3 px-3.5 whitespace-nowrap">Código</th>
                 <th className="py-3 px-3.5">Nombre</th>
                 <th className="py-3 px-3.5">Nombre Visitante</th>
+                <th className="py-3 px-3.5">Empresa</th>
                 <th className="py-3 px-3.5">Sede</th>
                 <th className="py-3 px-3.5">Producto</th>
                 <th className="py-3 px-3.5 text-right">Cant.</th>
@@ -1492,7 +1403,7 @@ export const ObsequioVisitantesForm: React.FC<ObsequioVisitantesFormProps> = ({
             <tbody className="divide-y divide-slate-100">
               {solicitudesFiltradas.length === 0 ? (
                 <tr>
-                  <td colSpan={13} className="py-10 text-center text-slate-400 text-xs">
+                  <td colSpan={14} className="py-10 text-center text-slate-400 text-xs">
                     No hay registros en Obsequio Visitantes que coincidan con los filtros.
                   </td>
                 </tr>
@@ -1513,6 +1424,9 @@ export const ObsequioVisitantesForm: React.FC<ObsequioVisitantesFormProps> = ({
                     </td>
                     <td className="py-2.5 px-3.5 font-bold text-[#0a2958] max-w-[160px] truncate" title={s.nombreVisitante}>
                       {s.nombreVisitante}
+                    </td>
+                    <td className="py-2.5 px-3.5 font-semibold text-slate-700 max-w-[140px] truncate" title={s.empresa || ''}>
+                      {s.empresa || '—'}
                     </td>
                     <td className="py-2.5 px-3.5 font-bold text-[#0a2958] whitespace-nowrap">
                       {s.sede}

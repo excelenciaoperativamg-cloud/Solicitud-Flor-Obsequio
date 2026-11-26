@@ -7,11 +7,19 @@ import {
 
 const SEDES_VALIDAS = new Set(['MG', 'HA', 'SC']);
 const PRODUCTOS_POR_SEDE = {
-  MG: new Set(['Rosa (Color)', 'Rosa (Roja)', 'Bouquet']),
+  MG: new Set(['Rosa', 'Rosa (Color)', 'Rosa (Roja)', 'Bouquet']),
   HA: new Set(['Alstroemeria']),
   SC: new Set(['Clavel']),
 };
 const MOTIVO_FIJO_OV = 'Visitante';
+
+function inferirSedePorProducto(producto) {
+  const p = String(producto || '').trim().toLowerCase();
+  if (p === 'alstroemeria') return 'HA';
+  if (p === 'clavel') return 'SC';
+  if (p.includes('rosa') || p === 'bouquet') return 'MG';
+  return '';
+}
 
 function getTodayStr() {
   const now = new Date();
@@ -46,6 +54,7 @@ function normalizarObsequioVisitante(s) {
     cantidad: cantidadNum && !Number.isNaN(cantidadNum) && cantidadNum > 0 ? cantidadNum : 1,
     motivo: String(s?.motivo || MOTIVO_FIJO_OV).trim() || MOTIVO_FIJO_OV,
     nombreVisitante: String(s?.nombreVisitante || '').trim(),
+    empresa: String(s?.empresa || '').trim(),
     semana: semanaStr,
     fechaEntrega: String(s?.fechaEntrega || '').trim(),
     observacion: String(s?.observacion || '').trim(),
@@ -200,7 +209,14 @@ export default async function handler(req, res) {
       if (itemsInput.length === 0) {
         return res.status(400).json({
           success: false,
-          error: 'Debe seleccionar al menos un producto para registrar en Obsequio Visitantes.',
+          error: 'Debe seleccionar un producto para registrar en Obsequio Visitantes.',
+        });
+      }
+
+      if (itemsInput.length > 1) {
+        return res.status(400).json({
+          success: false,
+          error: 'En este formulario solo se permite seleccionar un producto por solicitud.',
         });
       }
 
@@ -226,9 +242,12 @@ export default async function handler(req, res) {
       }
 
       for (const item of itemsInput) {
-        const sedeItem = String(item?.sede || '').trim().toUpperCase();
         const prodItem = String(item?.producto || '').trim();
+        const sedeItem = String(item?.sede || inferirSedePorProducto(prodItem))
+          .trim()
+          .toUpperCase();
         const visitanteItem = String(item?.nombreVisitante || '').trim();
+        const empresaItem = String(item?.empresa || '').trim();
         const fechaSolItem = String(item?.fechaSolicitud || '').trim() || getTodayStr();
         const fechaEntItem = String(item?.fechaEntrega || '').trim();
         if (
@@ -238,6 +257,7 @@ export default async function handler(req, res) {
           !SEDES_VALIDAS.has(sedeItem) ||
           !prodItem ||
           !visitanteItem ||
+          !empresaItem ||
           !fechaEntItem
         ) {
           return res.status(400).json({
@@ -316,11 +336,12 @@ export default async function handler(req, res) {
           fechaSolicitud: String(item.fechaSolicitud || '').trim(),
           codigo: String(item.codigo).trim(),
           nombre: String(item.nombre).trim(),
-          sede: String(item.sede).trim().toUpperCase(),
+          sede: String(item.sede || inferirSedePorProducto(item.producto)).trim().toUpperCase(),
           producto: String(item.producto).trim(),
           cantidad: cantidadNum,
           motivo: MOTIVO_FIJO_OV,
           nombreVisitante: String(item.nombreVisitante).trim(),
+          empresa: String(item.empresa).trim(),
           semana: String(item.semana || '').match(/(\d+)/)?.[1] || String(item.semana || '').trim(),
           fechaEntrega: String(item.fechaEntrega).trim(),
           observacion: String(item.observacion || '').trim(),

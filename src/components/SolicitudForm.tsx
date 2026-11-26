@@ -462,7 +462,7 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
             <div className="pb-2 border-b border-slate-100">
               <div className="flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-[#0a2958]" />
-                <h3 className="text-sm font-extrabold text-[#0a2958] uppercase tracking-wider">2. Tipo de Flor / Producto</h3>
+                <h3 className="text-sm font-extrabold text-[#0a2958] uppercase tracking-wider">2. PRODUCTO</h3>
               </div>
               <p className="text-xs text-slate-600 mt-1">Seleccione el producto de su interés.</p>
             </div>

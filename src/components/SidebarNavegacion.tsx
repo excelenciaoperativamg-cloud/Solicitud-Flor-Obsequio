@@ -17,6 +17,7 @@ import {
   UserPlus,
   Gift,
   ShieldCheck,
+  Layers,
 } from 'lucide-react';
 import { TrabajadorMaestro, PermisosFormulariosMap } from '../types';
 import { DriveConfig } from '../services/apiClient';
@@ -31,6 +32,7 @@ import {
   puedeVerSolicitudComunidad,
   puedeVerIngresosSeleccion,
   puedeVerObsequioVisitantes,
+  puedeVerConsolidado,
 } from '../utils/roles';
 
 export type TabNavegacion =
@@ -41,6 +43,7 @@ export type TabNavegacion =
   | 'ingresos-seleccion'
   | 'obsequio-visitantes'
   | 'solicitudes'
+  | 'consolidado'
   | 'maestro'
   | 'permisos';
 
@@ -50,6 +53,7 @@ interface SidebarNavegacionProps {
   sesion: TrabajadorMaestro;
   onCerrarSesion: () => void;
   totalSolicitudes: number;
+  totalConsolidado?: number;
   permisosFormularios?: PermisosFormulariosMap;
   driveConfig: DriveConfig;
   userGoogleConnected: boolean;
@@ -74,6 +78,7 @@ export const SidebarNavegacion: React.FC<SidebarNavegacionProps> = ({
   sesion,
   onCerrarSesion,
   totalSolicitudes,
+  totalConsolidado = 0,
   permisosFormularios,
   driveConfig,
   userGoogleConnected,
@@ -99,6 +104,7 @@ export const SidebarNavegacion: React.FC<SidebarNavegacionProps> = ({
   const verComunidad = puedeVerSolicitudComunidad(sesion, permisosFormularios);
   const verIngresosSeleccion = puedeVerIngresosSeleccion(sesion, permisosFormularios);
   const verObsequioVisitantes = puedeVerObsequioVisitantes(sesion, permisosFormularios);
+  const verConsolidado = puedeVerConsolidado(sesion, permisosFormularios);
   const isDriveActive = !!(driveConfig.webhookUrl || userGoogleConnected);
 
   const personalActivo = activeTab === 'formulario' || activeTab === 'solicitudes';
@@ -107,6 +113,7 @@ export const SidebarNavegacion: React.FC<SidebarNavegacionProps> = ({
   const comunidadActivo = activeTab === 'solicitud-comunidad';
   const ingresosActivo = activeTab === 'ingresos-seleccion';
   const visitantesActivo = activeTab === 'obsequio-visitantes';
+  const consolidadoActivo = activeTab === 'consolidado';
   const maestroActivo = activeTab === 'maestro';
   const permisosActivo = activeTab === 'permisos';
 
@@ -438,7 +445,7 @@ export const SidebarNavegacion: React.FC<SidebarNavegacionProps> = ({
               </div>
             )}
 
-            {/* Ingresos Selección */}
+            {/* Ingresos Personal */}
             {verIngresosSeleccion && (
               <div
                 className={`rounded-xl transition-colors ${
@@ -460,7 +467,7 @@ export const SidebarNavegacion: React.FC<SidebarNavegacionProps> = ({
                     }
                   }}
                   aria-expanded={!colapsado ? submenuIngresosAbierto : undefined}
-                  title="Ingresos Selección"
+                  title="Ingresos Personal"
                   className={`w-full flex items-center ${
                     colapsado ? 'justify-center px-2 py-2.5' : 'justify-between px-3 py-2.5'
                   } text-left rounded-xl cursor-pointer transition-colors focus-visible:outline-2 focus-visible:outline-white`}
@@ -469,7 +476,7 @@ export const SidebarNavegacion: React.FC<SidebarNavegacionProps> = ({
                     <UserPlus className="w-4 h-4 shrink-0 text-white" />
                     {!colapsado && (
                       <span className="text-xs font-extrabold truncate whitespace-nowrap">
-                        Ingresos Selección
+                        Ingresos Personal
                       </span>
                     )}
                   </span>
@@ -498,7 +505,7 @@ export const SidebarNavegacion: React.FC<SidebarNavegacionProps> = ({
                           activeTab === 'ingresos-seleccion' ? 'text-[#E60000]' : 'opacity-85'
                         }`}
                       />
-                      <span className="truncate">Formulario Ingresos Selección</span>
+                      <span className="truncate">Formulario Ingresos Personal</span>
                     </button>
                   </div>
                 )}
@@ -637,6 +644,39 @@ export const SidebarNavegacion: React.FC<SidebarNavegacionProps> = ({
                   </div>
                 )}
               </div>
+            )}
+
+            {/* Consolidado de los 5 formularios */}
+            {verConsolidado && (
+              <button
+                type="button"
+                onClick={() => manejarSeleccion('consolidado')}
+                aria-current={consolidadoActivo ? 'page' : undefined}
+                title="Consolidado"
+                className={`w-full flex items-center ${
+                  colapsado ? 'justify-center px-2 py-2.5' : 'justify-between gap-2 px-3 py-2.5'
+                } rounded-xl text-xs font-extrabold transition-colors cursor-pointer whitespace-nowrap ${
+                  consolidadoActivo
+                    ? 'bg-[#E60000] text-white shadow-sm'
+                    : 'bg-white/[0.04] hover:bg-white/[0.08] text-slate-100'
+                }`}
+              >
+                <span className="flex items-center gap-2.5 min-w-0">
+                  <Layers className="w-4 h-4 shrink-0 text-white" />
+                  {!colapsado && <span className="truncate">Consolidado</span>}
+                </span>
+                {!colapsado && totalConsolidado > 0 && (
+                  <span
+                    className={`font-mono tabular-nums text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${
+                      consolidadoActivo
+                        ? 'bg-white/20 text-white'
+                        : 'bg-black/20 text-slate-200'
+                    }`}
+                  >
+                    {totalConsolidado}
+                  </span>
+                )}
+              </button>
             )}
           </div>
 

@@ -483,7 +483,7 @@ export const fetchIngresosSeleccionApi = async (): Promise<{
 }> => {
   try {
     const res = await fetch('/api/ingresos-seleccion');
-    if (!res.ok) throw new Error('Error al consultar Ingresos Selección');
+    if (!res.ok) throw new Error('Error al consultar Ingresos Personal');
     const data = await res.json();
     return {
       solicitudes: data.solicitudes || [],
@@ -494,7 +494,7 @@ export const fetchIngresosSeleccionApi = async (): Promise<{
       needsAppsScriptUpdate: !!data.needsAppsScriptUpdate,
     };
   } catch (error) {
-    console.warn('Error consultando Ingresos Selección:', error);
+    console.warn('Error consultando Ingresos Personal:', error);
     return {
       solicitudes: [],
       sheetsSupported: false,
@@ -529,7 +529,7 @@ export const createIngresosSeleccionApi = async (
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || 'Error al guardar en Ingresos Selección');
+    throw new Error(err.error || 'Error al guardar en Ingresos Personal');
   }
   const data = await res.json();
   const solicitudes: IngresoSeleccion[] = Array.isArray(data.solicitudes)

@@ -12,6 +12,7 @@ import { EspecialesPersonalForm } from './components/EspecialesPersonalForm';
 import { SolicitudComunidadForm } from './components/SolicitudComunidadForm';
 import { IngresosSeleccionForm } from './components/IngresosSeleccionForm';
 import { ObsequioVisitantesForm } from './components/ObsequioVisitantesForm';
+import { ConsolidadoModule } from './components/ConsolidadoModule';
 import { SolicitudesTable } from './components/SolicitudesTable';
 import { MaestroTrabajadores } from './components/MaestroTrabajadores';
 import { PermisosFormulariosPanel } from './components/PermisosFormulariosPanel';
@@ -81,6 +82,7 @@ import {
   puedeVerSolicitudComunidad,
   puedeVerIngresosSeleccion,
   puedeVerObsequioVisitantes,
+  puedeVerConsolidado,
   setPermisosFormulariosCache,
 } from './utils/roles';
 
@@ -175,6 +177,7 @@ export default function App() {
   const puedeVerComunidad = puedeVerSolicitudComunidad(sesion, permisosFormularios);
   const puedeVerIngresos = puedeVerIngresosSeleccion(sesion, permisosFormularios);
   const puedeVerVisitantes = puedeVerObsequioVisitantes(sesion, permisosFormularios);
+  const puedeVerConsolidadoTab = puedeVerConsolidado(sesion, permisosFormularios);
 
   const obtenerPrimeraTabPermitida = React.useCallback((): TabNavegacion => {
     if (puedeVerPersonal) return 'formulario';
@@ -183,6 +186,7 @@ export default function App() {
     if (puedeVerIngresos) return 'ingresos-seleccion';
     if (puedeVerVisitantes) return 'obsequio-visitantes';
     if (puedeVerComunidad) return 'solicitud-comunidad';
+    if (puedeVerConsolidadoTab) return 'consolidado';
     if (puedeVerResumen) return 'solicitudes';
     return 'formulario';
   }, [
@@ -192,6 +196,7 @@ export default function App() {
     puedeVerComunidad,
     puedeVerIngresos,
     puedeVerVisitantes,
+    puedeVerConsolidadoTab,
     puedeVerResumen,
   ]);
 
@@ -224,6 +229,7 @@ export default function App() {
       (activeTab === 'solicitud-comunidad' && puedeVerComunidad) ||
       (activeTab === 'ingresos-seleccion' && puedeVerIngresos) ||
       (activeTab === 'obsequio-visitantes' && puedeVerVisitantes) ||
+      (activeTab === 'consolidado' && puedeVerConsolidadoTab) ||
       (activeTab === 'solicitudes' && puedeVerResumen) ||
       (activeTab === 'maestro' && puedeVerMaestro) ||
       (activeTab === 'permisos' && esAdminSistema);
@@ -245,6 +251,7 @@ export default function App() {
     puedeVerComunidad,
     puedeVerIngresos,
     puedeVerVisitantes,
+    puedeVerConsolidadoTab,
     activeTab,
     obtenerPrimeraTabPermitida,
   ]);
@@ -775,29 +782,29 @@ export default function App() {
         setIsSheetsSupported(!res.pendingAppsScriptUpdate);
         mostrarToast(
           total > 1
-            ? `${total} registros guardados en respaldo local (actualice Apps Script para Ingresos Selección)`
-            : 'Guardado en respaldo local (actualice Apps Script para Ingresos Selección)'
+            ? `${total} registros guardados en respaldo local (actualice Apps Script para Ingresos Personal)`
+            : 'Guardado en respaldo local (actualice Apps Script para Ingresos Personal)'
         );
       } else if (res.emailNotification?.requested && res.emailNotification.sent) {
         setIsSheetsSupported(true);
         mostrarToast(
           total > 1
-            ? `${total} registros guardados en Ingresos Selección y notificación enviada a ${res.emailNotification.to}`
-            : `Solicitud guardada en Ingresos Selección y notificación enviada a ${res.emailNotification.to}`
+            ? `${total} registros guardados en Ingresos Personal y notificación enviada a ${res.emailNotification.to}`
+            : `Solicitud guardada en Ingresos Personal y notificación enviada a ${res.emailNotification.to}`
         );
       } else if (res.emailNotification?.requested && !res.emailNotification.sent) {
         setIsSheetsSupported(true);
         mostrarToast(
           total > 1
-            ? `${total} registros guardados en Ingresos Selección (notificación por correo pendiente)`
-            : 'Solicitud guardada en Ingresos Selección (notificación por correo pendiente)'
+            ? `${total} registros guardados en Ingresos Personal (notificación por correo pendiente)`
+            : 'Solicitud guardada en Ingresos Personal (notificación por correo pendiente)'
         );
       } else {
         setIsSheetsSupported(true);
         mostrarToast(
           total > 1
-            ? `${total} registros guardados en la hoja Ingresos Selección`
-            : 'Solicitud registrada en la hoja Ingresos Selección'
+            ? `${total} registros guardados en la hoja Ingresos Personal`
+            : 'Solicitud registrada en la hoja Ingresos Personal'
         );
       }
 
@@ -813,7 +820,7 @@ export default function App() {
     } catch (err: any) {
       return {
         success: false,
-        error: err.message || 'Error al guardar en Ingresos Selección',
+        error: err.message || 'Error al guardar en Ingresos Personal',
       };
     }
   };
@@ -909,6 +916,17 @@ export default function App() {
     setOvEmailSupported(!!res.supportsEmailNotification);
     setOvSheetActual(res.obsequioVisitantesSheetName || '');
     setOvNeedsAppsScriptUpdate(!!res.needsAppsScriptUpdate);
+  };
+
+  const handleRecargarConsolidado = async () => {
+    await Promise.allSettled([
+      handleRecargarEspecialPersonal(),
+      handleRecargarIntExt(),
+      handleRecargarIngresosSeleccion(),
+      handleRecargarObsequioVisitantes(),
+      handleRecargarSolicitudComunidad(),
+    ]);
+    mostrarToast('Consolidado actualizado con los registros más recientes');
   };
 
   const handleGuardarPermisos = async (
@@ -1099,6 +1117,10 @@ export default function App() {
       setActiveTab(obtenerPrimeraTabPermitida());
       return;
     }
+    if (tab === 'consolidado' && !puedeVerConsolidadoTab) {
+      setActiveTab(obtenerPrimeraTabPermitida());
+      return;
+    }
     if (tab === 'solicitudes' && !puedeVerResumen) {
       setActiveTab(obtenerPrimeraTabPermitida());
       return;
@@ -1144,6 +1166,13 @@ export default function App() {
           sesion={sesion}
           onCerrarSesion={handleCerrarSesion}
           totalSolicitudes={solicitudes.length}
+          totalConsolidado={
+            solicitudesEspecialesPersonal.length +
+            solicitudesIntExt.length +
+            ingresosSeleccion.length +
+            obsequioVisitantes.length +
+            solicitudesComunidad.length
+          }
           permisosFormularios={permisosFormularios}
           driveConfig={driveConfig}
           userGoogleConnected={!!user}
@@ -1270,6 +1299,17 @@ export default function App() {
                   onGuardarObsequioVisitante={handleGuardarObsequioVisitante}
                   onRecargarObsequioVisitantes={handleRecargarObsequioVisitantes}
                   onCerrarSesion={handleCerrarSesion}
+                />
+              )}
+
+              {puedeVerConsolidadoTab && activeTab === 'consolidado' && (
+                <ConsolidadoModule
+                  solicitudesEspecialesPersonal={solicitudesEspecialesPersonal}
+                  solicitudesIntExt={solicitudesIntExt}
+                  ingresosSeleccion={ingresosSeleccion}
+                  obsequioVisitantes={obsequioVisitantes}
+                  solicitudesComunidad={solicitudesComunidad}
+                  onRecargarConsolidado={handleRecargarConsolidado}
                 />
               )}
 

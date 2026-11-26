@@ -520,8 +520,20 @@ function leerSolicitudesComunidad(ss) {
   return out;
 }
 
+function obtenerHojaIngresosPersonal(ss, crear) {
+  var sheet = buscarHojaPorNombre(ss, ["Ingresos Personal"]);
+  if (sheet) return sheet;
+  var legacy = buscarHojaPorNombre(ss, ["Ingresos Selección", "Ingresos Seleccion"]);
+  if (legacy) {
+    try { legacy.setName("Ingresos Personal"); } catch (e) {}
+    return legacy;
+  }
+  if (crear) return ss.insertSheet("Ingresos Personal");
+  return null;
+}
+
 function leerIngresosSeleccion(ss) {
-  var sheet = buscarHojaPorNombre(ss, ["Ingresos Selección", "Ingresos Seleccion"]);
+  var sheet = obtenerHojaIngresosPersonal(ss, false);
   if (!sheet) return [];
   var values = sheet.getDataRange().getValues();
   if (!values || values.length < 2) return [];
@@ -543,6 +555,10 @@ function leerIngresosSeleccion(ss) {
     if (fechaEntrega instanceof Date) {
       fechaEntrega = Utilities.formatDate(fechaEntrega, Session.getScriptTimeZone(), "yyyy-MM-dd");
     }
+    var horaEntrega = cel(["HORA ENTREGA", "HORA DE ENTREGA", "HORA"], ["HORA"]);
+    if (horaEntrega instanceof Date) {
+      horaEntrega = Utilities.formatDate(horaEntrega, Session.getScriptTimeZone(), "HH:mm");
+    }
     var cantidadRaw = cel(["CANTIDAD"], ["CANTIDAD"]);
     var cantidadNum = Number(cantidadRaw);
     if (!cantidadNum || isNaN(cantidadNum)) cantidadNum = 1;
@@ -558,6 +574,7 @@ function leerIngresosSeleccion(ss) {
       motivo: String(cel(["MOTIVO"], ["MOTIVO"]) || "Ingresos"),
       semana: String(cel(["SEMANA"], ["SEMANA"]) || ""),
       fechaEntrega: String(fechaEntrega || ""),
+      horaEntrega: String(horaEntrega || ""),
       observacion: String(cel(["OBSERVACIÓN", "OBSERVACION", "OBSERVACIONES"], ["OBSERVACI"]) || ""),
       notificado: notificadoVal,
       estado: notificadoVal,
@@ -604,6 +621,7 @@ function leerObsequioVisitantes(ss) {
       cantidad: cantidadNum,
       motivo: String(cel(["MOTIVO"], ["MOTIVO"]) || "Visitante"),
       nombreVisitante: String(cel(["NOMBRE VISITANTE", "VISITANTE"], ["NOMBRE VISITANTE", "VISITANTE"]) || ""),
+      empresa: String(cel(["EMPRESA", "EMPRESA VISITANTE"], ["EMPRESA"]) || ""),
       semana: String(cel(["SEMANA"], ["SEMANA"]) || ""),
       fechaEntrega: String(fechaEntrega || ""),
       observacion: String(cel(["OBSERVACIÓN", "OBSERVACION", "OBSERVACIONES"], ["OBSERVACI"]) || ""),
@@ -1510,11 +1528,11 @@ function enviarCorreoNotificacionIngresosSeleccion(ss, correoDestino, items) {
       "</div>"
     : "<div style=\\"display:inline-block;background-color:#ffffff;color:#0a2958;font-weight:800;font-size:13px;padding:6px 10px;border-radius:6px;border-bottom:3px solid #E60000;letter-spacing:0.5px;\\">MG</div>";
 
-  var asunto = "Flor de Obsequio - Ingresos Selección: " + idsTexto + " (Sede " + String(primera.sede || "") + ")";
+  var asunto = "Flor de Obsequio - Ingresos Personal: " + idsTexto + " (Sede " + String(primera.sede || "") + ")";
 
   var textBody =
     "MG CONSULTORES S.A.S. - FLOR DE OBSEQUIO\\n" +
-    "NUEVA SOLICITUD: INGRESOS SELECCIÓN\\n" +
+    "NUEVA SOLICITUD: INGRESOS PERSONAL\\n" +
     "==================================================\\n" +
     "Id(s): " + idsTexto + "\\n" +
     "Fecha de Solicitud: " + String(primera.fechaSolicitud || "") + "\\n" +
@@ -1523,6 +1541,7 @@ function enviarCorreoNotificacionIngresosSeleccion(ss, correoDestino, items) {
     "Motivo: " + motivoTexto + "\\n" +
     "Semana: " + semanaTexto + "\\n" +
     "Fecha de Entrega: " + String(primera.fechaEntrega || "") + "\\n" +
+    "Hora de Entrega: " + String(primera.horaEntrega || "—") + "\\n" +
     "Notificado a: " + notificadoTexto + "\\n" +
     "Observación: " + (obsTexto || "Sin observaciones adicionales.") + "\\n\\n" +
     "PRODUCTOS SOLICITADOS (" + lista.length + " registro(s) | Total: " + totalRamos + " ramos):\\n" +
@@ -1543,7 +1562,7 @@ function enviarCorreoNotificacionIngresosSeleccion(ss, correoDestino, items) {
                 "<tr>" +
                   "<td style=\\"vertical-align:top;\\">" +
                     "<div style=\\"font-size:11px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;color:#fca5a5;margin-bottom:6px;\\">MG CONSULTORES S.A.S. &bull; FLOR DE OBSEQUIO</div>" +
-                    "<div style=\\"font-size:21px;font-weight:800;line-height:1.25;color:#ffffff;\\">Nueva Solicitud: Ingresos Selección</div>" +
+                    "<div style=\\"font-size:21px;font-weight:800;line-height:1.25;color:#ffffff;\\">Nueva Solicitud: Ingresos Personal</div>" +
                     "<div style=\\"font-size:13px;color:#cbd5e1;margin-top:4px;\\">Notificación corporativa automática de registro y entrega</div>" +
                   "</td>" +
                   "<td align=\\"right\\" style=\\"vertical-align:top;padding-left:12px;\\">" +
@@ -1582,6 +1601,10 @@ function enviarCorreoNotificacionIngresosSeleccion(ss, correoDestino, items) {
                 "<tr>" +
                   "<td style=\\"padding:7px 0;color:#64748b;border-bottom:1px solid #f1f5f9;\\">Fecha de Entrega</td>" +
                   "<td style=\\"padding:7px 0;font-weight:700;color:#0a2958;border-bottom:1px solid #f1f5f9;text-align:right;\\">" + escapeHtml(primera.fechaEntrega || "—") + "</td>" +
+                "</tr>" +
+                "<tr>" +
+                  "<td style=\\"padding:7px 0;color:#64748b;border-bottom:1px solid #f1f5f9;\\">Hora de Entrega</td>" +
+                  "<td style=\\"padding:7px 0;font-weight:700;color:#0a2958;border-bottom:1px solid #f1f5f9;text-align:right;\\">" + escapeHtml(primera.horaEntrega || "—") + "</td>" +
                 "</tr>" +
                 "<tr>" +
                   "<td style=\\"padding:7px 0;color:#64748b;border-bottom:1px solid #f1f5f9;\\">Registrado por</td>" +
@@ -1710,6 +1733,7 @@ function enviarCorreoNotificacionObsequioVisitantes(ss, correoDestino, items) {
   var notificadoTexto = String(primera.notificado || emailDisplay).trim();
   var motivoTexto = String(primera.motivo || "Visitante").trim();
   var visitanteTexto = String(primera.nombreVisitante || "").trim();
+  var empresaTexto = String(primera.empresa || "").trim();
 
   var inlineImagesObj = {};
   var tieneLogo = false;
@@ -1737,6 +1761,7 @@ function enviarCorreoNotificacionObsequioVisitantes(ss, correoDestino, items) {
     "Fecha de Solicitud: " + String(primera.fechaSolicitud || "") + "\\n" +
     "Registrado por: " + String(primera.nombre || "") + " (" + String(primera.codigo || "") + ")\\n" +
     "Nombre Visitante: " + visitanteTexto + "\\n" +
+    "Empresa: " + (empresaTexto || "—") + "\\n" +
     "Sede: " + String(primera.sede || "") + "\\n" +
     "Motivo: " + motivoTexto + "\\n" +
     "Semana: " + semanaTexto + "\\n" +
@@ -1808,6 +1833,10 @@ function enviarCorreoNotificacionObsequioVisitantes(ss, correoDestino, items) {
                 "<tr>" +
                   "<td style=\\"padding:7px 0;color:#64748b;border-bottom:1px solid #f1f5f9;\\">Nombre Visitante</td>" +
                   "<td style=\\"padding:7px 0;font-weight:800;color:#0a2958;border-bottom:1px solid #f1f5f9;text-align:right;\\">" + escapeHtml(visitanteTexto || "—") + "</td>" +
+                "</tr>" +
+                "<tr>" +
+                  "<td style=\\"padding:7px 0;color:#64748b;border-bottom:1px solid #f1f5f9;\\">Empresa</td>" +
+                  "<td style=\\"padding:7px 0;font-weight:700;color:#0a2958;border-bottom:1px solid #f1f5f9;text-align:right;\\">" + escapeHtml(empresaTexto || "—") + "</td>" +
                 "</tr>" +
                 "<tr>" +
                   "<td style=\\"padding:7px 0;color:#64748b;border-bottom:1px solid #f1f5f9;\\">Sede</td>" +
@@ -1914,7 +1943,7 @@ function doGet(e) {
     var hojaIntExt = buscarHojaPorNombre(ss, ["Especiales Empresa"]);
     var hojaEp = buscarHojaPorNombre(ss, ["Especiales Personal"]);
     var hojaSc = buscarHojaPorNombre(ss, ["Solicitud Comunidad"]);
-    var hojaIs = buscarHojaPorNombre(ss, ["Ingresos Selección", "Ingresos Seleccion"]);
+    var hojaIs = obtenerHojaIngresosPersonal(ss, false);
     var hojaOv = buscarHojaPorNombre(ss, ["Obsequio Visitantes", "Obsequio Visitante"]);
     return responder({
       status: "success",
@@ -1940,7 +1969,7 @@ function doGet(e) {
       intExtSheetName: hojaIntExt ? hojaIntExt.getName() : "Especiales Empresa",
       especialesPersonalSheetName: hojaEp ? hojaEp.getName() : "Especiales Personal",
       solicitudComunidadSheetName: hojaSc ? hojaSc.getName() : "Solicitud Comunidad",
-      ingresosSeleccionSheetName: hojaIs ? hojaIs.getName() : "Ingresos Selección",
+      ingresosSeleccionSheetName: hojaIs ? hojaIs.getName() : "Ingresos Personal",
       obsequioVisitantesSheetName: hojaOv ? hojaOv.getName() : "Obsequio Visitantes"
     });
   } catch (err) {
@@ -2255,19 +2284,45 @@ function escribirSolicitudComunidad(sheet, data) {
 }
 
 /**
- * Escribe una fila en la hoja Ingresos Selección:
- * Id | Fecha Solicitud | Código | Nombre | Sede | Producto | Cantidad | Motivo | Semana | Fecha Entrega | Observación | Notificado
+ * Escribe una fila en la hoja Ingresos Personal:
+ * Id | Fecha Solicitud | Código | Nombre | Sede | Producto | Cantidad | Motivo | Semana | Fecha Entrega | Hora Entrega | Observación | Notificado
  */
 function escribirIngresoSeleccion(sheet, data) {
   var headers = sheet.getLastRow() > 0 ? sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0] : [];
   var headersDefault = [
     "Id", "Fecha Solicitud", "Código", "Nombre", "Sede",
-    "Producto", "Cantidad", "Motivo", "Semana", "Fecha Entrega", "Observación", "Notificado"
+    "Producto", "Cantidad", "Motivo", "Semana", "Fecha Entrega", "Hora Entrega", "Observación", "Notificado"
   ];
   if (!headers.length || !headers[0]) {
     headers = headersDefault;
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
     sheet.getRange(1, 1, 1, headers.length).setFontWeight("bold").setBackground("#0a2958").setFontColor("#ffffff");
+  } else {
+    var tieneColHora = false;
+    var idxFechaEntregaCol = -1;
+    for (var hc = 0; hc < headers.length; hc++) {
+      var hUpper = String(headers[hc] || "").toUpperCase();
+      if (hUpper.indexOf("HORA") !== -1) tieneColHora = true;
+      if (hUpper.indexOf("ENTREGA") !== -1 && hUpper.indexOf("HORA") === -1) idxFechaEntregaCol = hc;
+    }
+    if (!tieneColHora) {
+      if (idxFechaEntregaCol >= 0) {
+        sheet.insertColumnAfter(idxFechaEntregaCol + 1);
+        sheet.getRange(1, idxFechaEntregaCol + 2)
+          .setValue("Hora Entrega")
+          .setFontWeight("bold")
+          .setBackground("#0a2958")
+          .setFontColor("#ffffff");
+        headers.splice(idxFechaEntregaCol + 1, 0, "Hora Entrega");
+      } else {
+        sheet.getRange(1, headers.length + 1)
+          .setValue("Hora Entrega")
+          .setFontWeight("bold")
+          .setBackground("#0a2958")
+          .setFontColor("#ffffff");
+        headers.push("Hora Entrega");
+      }
+    }
   }
 
   var cantidadNum = Number(data.cantidad);
@@ -2276,7 +2331,8 @@ function escribirIngresoSeleccion(sheet, data) {
   function valorParaHeader(headerRaw) {
     var h = String(headerRaw || "").toUpperCase().replace(/\\s+/g, " ").trim();
     if (h === "ID" || h === "ID.") return data.id || ("IS-" + new Date().getTime());
-    if (h.indexOf("ENTREGA") !== -1) return data.fechaEntrega || "";
+    if (h.indexOf("HORA") !== -1) return data.horaEntrega || "";
+    if (h === "FECHA ENTREGA" || (h.indexOf("ENTREGA") !== -1 && h.indexOf("HORA") === -1)) return data.fechaEntrega || "";
     if (h.indexOf("SOLICITUD") !== -1 || h === "FECHA") return data.fechaSolicitud || "";
     if (h.indexOf("CÓDIGO") !== -1 || h.indexOf("CODIGO") !== -1) return data.codigo || "";
     if (h.indexOf("NOMBRE") !== -1) return data.nombre || "";
@@ -2299,18 +2355,44 @@ function escribirIngresoSeleccion(sheet, data) {
 
 /**
  * Escribe una fila en la hoja Obsequio Visitantes:
- * Id | Fecha Solicitud | Código | Nombre | Sede | Producto | Cantidad | Motivo | Nombre Visitante | Semana | Fecha Entrega | Observación | Notificado
+ * Id | Fecha Solicitud | Código | Nombre | Sede | Producto | Cantidad | Motivo | Nombre Visitante | Empresa | Semana | Fecha Entrega | Observación | Notificado
  */
 function escribirObsequioVisitante(sheet, data) {
   var headers = sheet.getLastRow() > 0 ? sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0] : [];
   var headersDefault = [
     "Id", "Fecha Solicitud", "Código", "Nombre", "Sede",
-    "Producto", "Cantidad", "Motivo", "Nombre Visitante", "Semana", "Fecha Entrega", "Observación", "Notificado"
+    "Producto", "Cantidad", "Motivo", "Nombre Visitante", "Empresa", "Semana", "Fecha Entrega", "Observación", "Notificado"
   ];
   if (!headers.length || !headers[0]) {
     headers = headersDefault;
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
     sheet.getRange(1, 1, 1, headers.length).setFontWeight("bold").setBackground("#0a2958").setFontColor("#ffffff");
+  } else {
+    var tieneColEmpresa = false;
+    var idxVisitanteCol = -1;
+    for (var hc = 0; hc < headers.length; hc++) {
+      var hUpper = String(headers[hc] || "").toUpperCase();
+      if (hUpper.indexOf("EMPRESA") !== -1) tieneColEmpresa = true;
+      if (hUpper.indexOf("VISITANTE") !== -1) idxVisitanteCol = hc;
+    }
+    if (!tieneColEmpresa) {
+      if (idxVisitanteCol >= 0) {
+        sheet.insertColumnAfter(idxVisitanteCol + 1);
+        sheet.getRange(1, idxVisitanteCol + 2)
+          .setValue("Empresa")
+          .setFontWeight("bold")
+          .setBackground("#0a2958")
+          .setFontColor("#ffffff");
+        headers.splice(idxVisitanteCol + 1, 0, "Empresa");
+      } else {
+        sheet.getRange(1, headers.length + 1)
+          .setValue("Empresa")
+          .setFontWeight("bold")
+          .setBackground("#0a2958")
+          .setFontColor("#ffffff");
+        headers.push("Empresa");
+      }
+    }
   }
 
   var cantidadNum = Number(data.cantidad);
@@ -2322,6 +2404,7 @@ function escribirObsequioVisitante(sheet, data) {
     if (h.indexOf("ENTREGA") !== -1) return data.fechaEntrega || "";
     if (h.indexOf("SOLICITUD") !== -1 || h === "FECHA") return data.fechaSolicitud || "";
     if (h.indexOf("CÓDIGO") !== -1 || h.indexOf("CODIGO") !== -1) return data.codigo || "";
+    if (h.indexOf("EMPRESA") !== -1) return data.empresa || "";
     if (h.indexOf("VISITANTE") !== -1) return data.nombreVisitante || "";
     if (h.indexOf("NOMBRE") !== -1) return data.nombre || "";
     if (h.indexOf("SEDE") !== -1) return data.sede || "";
@@ -2401,10 +2484,11 @@ function guardarPermisosFormularios(ss, permisosObj, actualizadoPor) {
     "formulario": "Solicitud Personal",
     "especiales-personal": "Especiales Personal",
     "int-ext": "Especiales Empresa",
-    "ingresos-seleccion": "Ingresos Selección",
+    "ingresos-seleccion": "Ingresos Personal",
     "obsequio-visitantes": "Obsequio Visitantes",
     "solicitud-comunidad": "Solicitud Comunidad",
-    "solicitudes": "Resumen Solicitud"
+    "solicitudes": "Resumen Solicitud",
+    "consolidado": "Consolidado"
   };
   var keys = [
     "formulario",
@@ -2413,7 +2497,8 @@ function guardarPermisosFormularios(ss, permisosObj, actualizadoPor) {
     "ingresos-seleccion",
     "obsequio-visitantes",
     "solicitud-comunidad",
-    "solicitudes"
+    "solicitudes",
+    "consolidado"
   ];
 
   sheet.clearContents();
@@ -2455,7 +2540,7 @@ function doPost(e) {
       var hojaIntExtPing = buscarHojaPorNombre(ss, ["Especiales Empresa"]);
       var hojaEpPing = buscarHojaPorNombre(ss, ["Especiales Personal"]);
       var hojaScPing = buscarHojaPorNombre(ss, ["Solicitud Comunidad"]);
-      var hojaIsPing = buscarHojaPorNombre(ss, ["Ingresos Selección", "Ingresos Seleccion"]);
+      var hojaIsPing = obtenerHojaIngresosPersonal(ss, false);
       var hojaOvPing = buscarHojaPorNombre(ss, ["Obsequio Visitantes", "Obsequio Visitante"]);
       return responder({
         status: "success",
@@ -2481,7 +2566,7 @@ function doPost(e) {
         intExtSheetName: hojaIntExtPing ? hojaIntExtPing.getName() : "Especiales Empresa",
         especialesPersonalSheetName: hojaEpPing ? hojaEpPing.getName() : "Especiales Personal",
         solicitudComunidadSheetName: hojaScPing ? hojaScPing.getName() : "Solicitud Comunidad",
-        ingresosSeleccionSheetName: hojaIsPing ? hojaIsPing.getName() : "Ingresos Selección",
+        ingresosSeleccionSheetName: hojaIsPing ? hojaIsPing.getName() : "Ingresos Personal",
         obsequioVisitantesSheetName: hojaOvPing ? hojaOvPing.getName() : "Obsequio Visitantes"
       });
     }
@@ -2618,8 +2703,8 @@ function doPost(e) {
       });
     }
 
-    if (data.action === "registrar_ingresos_seleccion" || data.hoja === "Ingresos Selección" || data.hoja === "Ingresos Seleccion") {
-      var sheetIs = buscarHojaPorNombre(ss, ["Ingresos Selección", "Ingresos Seleccion"]) || ss.insertSheet("Ingresos Selección");
+    if (data.action === "registrar_ingresos_seleccion" || data.hoja === "Ingresos Personal" || data.hoja === "Ingresos Selección" || data.hoja === "Ingresos Seleccion") {
+      var sheetIs = obtenerHojaIngresosPersonal(ss, true);
       escribirIngresoSeleccion(sheetIs, data);
       return responder({
         status: "success",

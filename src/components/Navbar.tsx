@@ -43,13 +43,18 @@ const CONTEXTO_POR_TAB: Record<TabNavegacion, { seccion: string; modulo: string;
   },
   'ingresos-seleccion': {
     seccion: 'Gestión de Solicitudes',
-    modulo: 'Ingresos Selección',
-    pagina: 'Formulario Ingresos Selección',
+    modulo: 'Ingresos Personal',
+    pagina: 'Formulario Ingresos Personal',
   },
   'obsequio-visitantes': {
     seccion: 'Gestión de Solicitudes',
     modulo: 'Obsequio Visitantes',
     pagina: 'Formulario Obsequio Visitantes',
+  },
+  consolidado: {
+    seccion: 'Gestión de Solicitudes',
+    modulo: 'Consolidado',
+    pagina: 'Consolidado de Solicitudes',
   },
   maestro: {
     seccion: 'Administración',

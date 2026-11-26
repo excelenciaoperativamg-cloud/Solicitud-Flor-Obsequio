@@ -42,9 +42,9 @@ export const FORMULARIOS_PERMISOS_META: FormularioMeta[] = [
   },
   {
     key: 'ingresos-seleccion',
-    nombre: 'Ingresos Selección',
-    modulo: 'Ingresos Selección',
-    descripcion: 'Solicitudes de flor para procesos de ingresos y selección.',
+    nombre: 'Ingresos Personal',
+    modulo: 'Ingresos Personal',
+    descripcion: 'Solicitudes de flor para procesos de ingresos de personal.',
   },
   {
     key: 'obsequio-visitantes',
@@ -63,6 +63,13 @@ export const FORMULARIOS_PERMISOS_META: FormularioMeta[] = [
     nombre: 'Resumen Solicitud',
     modulo: 'Solicitud Personal',
     descripcion: 'Tabla consolidada con el resumen de solicitudes personales registradas.',
+  },
+  {
+    key: 'consolidado',
+    nombre: 'Consolidado',
+    modulo: 'Consolidado',
+    descripcion:
+      'Módulo consolidado de Especiales Personal, Especiales Empresa, Ingresos Personal, Obsequio Visitantes y Solicitud Comunidad.',
   },
 ];
 
@@ -113,6 +120,18 @@ export const DEFAULT_PERMISOS_FORMULARIOS: PermisosFormulariosMap = {
     todos: false,
     cargos: [],
     palabrasClaveCargo: ['AUXILIAR GESTIÓN HUMANA', 'AUXILIAR TÉCNICO POSCOSECHA'],
+    codigos: [],
+    codigosExcluidos: [],
+  },
+  consolidado: {
+    todos: false,
+    cargos: [],
+    palabrasClaveCargo: [
+      'AUXILIAR GESTIÓN HUMANA',
+      'ANALISTA GESTIÓN HUMANA',
+      'AUXILIAR TÉCNICO POSCOSECHA',
+      'DIRECTOR',
+    ],
     codigos: [],
     codigosExcluidos: [],
   },
@@ -395,4 +414,11 @@ export function puedeVerObsequioVisitantes(
   permisosMap?: PermisosFormulariosMap | null
 ): boolean {
   return evaluarPermisoFormulario(trabajador, 'obsequio-visitantes', permisosMap);
+}
+
+export function puedeVerConsolidado(
+  trabajador?: TrabajadorMaestro | null,
+  permisosMap?: PermisosFormulariosMap | null
+): boolean {
+  return evaluarPermisoFormulario(trabajador, 'consolidado', permisosMap);
 }

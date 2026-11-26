@@ -105,6 +105,7 @@ export interface IngresoSeleccion {
   motivo: string;
   semana?: string;
   fechaEntrega: string;
+  horaEntrega?: string;
   observacion: string;
   notificado?: string;
   estado?: string;
@@ -122,6 +123,7 @@ export interface ObsequioVisitante {
   cantidad: number;
   motivo: string;
   nombreVisitante: string;
+  empresa?: string;
   semana?: string;
   fechaEntrega: string;
   observacion: string;
@@ -165,7 +167,8 @@ export type FormularioPermisoKey =
   | 'ingresos-seleccion'
   | 'obsequio-visitantes'
   | 'solicitud-comunidad'
-  | 'solicitudes';
+  | 'solicitudes'
+  | 'consolidado';
 
 export interface PermisoFormulario {
   todos: boolean;

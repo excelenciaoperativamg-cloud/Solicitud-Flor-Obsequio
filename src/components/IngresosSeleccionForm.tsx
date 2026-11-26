@@ -1,9 +1,9 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   UserPlus,
-  MapPin,
   Sparkles,
   Calendar,
+  Clock,
   MessageSquare,
   Send,
   CheckCircle2,
@@ -49,29 +49,16 @@ interface IngresosSeleccionFormProps {
   onCerrarSesion?: () => void;
 }
 
-const SEDES_IS = ['MG', 'HA', 'SC'] as const;
-const ROSA_VARIANTES_IS = ['Rosa (Color)', 'Rosa (Roja)', 'Bouquet'] as const;
-const PRODUCTOS_IS = [
-  'Rosa (Color)',
-  'Rosa (Roja)',
-  'Bouquet',
-  'Alstroemeria',
-  'Clavel',
-] as const;
+const PRODUCTOS_IS = ['Rosa', 'Alstroemeria', 'Clavel'] as const;
 const MOTIVO_FIJO_IS = 'Ingresos';
 const EMAIL_ITEM_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-function getProductosPermitidosPorSede(sede: string): string[] {
-  switch (sede) {
-    case 'MG':
-      return [...ROSA_VARIANTES_IS];
-    case 'HA':
-      return ['Alstroemeria'];
-    case 'SC':
-      return ['Clavel'];
-    default:
-      return [];
-  }
+function inferirSedePorProducto(producto: string): string {
+  const p = String(producto || '').trim().toLowerCase();
+  if (p === 'alstroemeria') return 'HA';
+  if (p === 'clavel') return 'SC';
+  if (p.includes('rosa') || p === 'bouquet') return 'MG';
+  return '';
 }
 
 function parsearListaCorreos(raw: string): {
@@ -126,11 +113,10 @@ export const IngresosSeleccionForm: React.FC<IngresosSeleccionFormProps> = ({
 }) => {
   const fechaSolicitud = getTodayString();
 
-  const [sede, setSede] = useState('');
   const [productosCantidades, setProductosCantidades] = useState<Record<string, string>>({});
-  const [rosaAbierto, setRosaAbierto] = useState(false);
 
   const [fechaEntrega, setFechaEntrega] = useState(getTodayString());
+  const [horaEntrega, setHoraEntrega] = useState('');
   const [observacion, setObservacion] = useState('');
   const [correoNotificacion, setCorreoNotificacion] = useState('');
 
@@ -190,84 +176,22 @@ export const IngresosSeleccionForm: React.FC<IngresosSeleccionFormProps> = ({
     }, 0);
   }, [productosSeleccionadosOrdenados, productosCantidades]);
 
-  const rosaColorActivo = Object.prototype.hasOwnProperty.call(productosCantidades, 'Rosa (Color)');
-  const rosaRojaActivo = Object.prototype.hasOwnProperty.call(productosCantidades, 'Rosa (Roja)');
-  const bouquetActivo = Object.prototype.hasOwnProperty.call(productosCantidades, 'Bouquet');
-  const rosaTieneSeleccion = rosaColorActivo || rosaRojaActivo || bouquetActivo;
-  const rosaExpandido = rosaAbierto || rosaTieneSeleccion;
-
-  const handleSeleccionarSede = (nuevaSede: string) => {
-    if (sede === nuevaSede) return;
-    setSede(nuevaSede);
-    const permitidos = new Set(getProductosPermitidosPorSede(nuevaSede));
+  const toggleProducto = (prod: string) => {
     setProductosCantidades((prev) => {
-      const next: Record<string, string> = {};
-      for (const [prod, cant] of Object.entries(prev)) {
-        if (permitidos.has(prod)) {
-          next[prod] = cant;
-        }
+      if (Object.prototype.hasOwnProperty.call(prev, prod)) {
+        return {};
       }
-      return next;
+      return { [prod]: '1' };
     });
-    setRosaAbierto(nuevaSede === 'MG');
     setErrores((prev) => {
       const next = { ...prev };
-      delete next.sede;
       delete next.producto;
       delete next.cantidad;
       for (const key of Object.keys(next)) {
-        if (key.startsWith('cant_') && !permitidos.has(key.slice(5))) {
+        if (key.startsWith('cant_')) {
           delete next[key];
         }
       }
-      return next;
-    });
-  };
-
-  const toggleRosaPrincipal = () => {
-    if (rosaExpandido) {
-      setRosaAbierto(false);
-      setProductosCantidades((prev) => {
-        const next = { ...prev };
-        delete next['Rosa (Color)'];
-        delete next['Rosa (Roja)'];
-        delete next['Bouquet'];
-        return next;
-      });
-      setErrores((prev) => {
-        const next = { ...prev };
-        delete next.producto;
-        delete next.cantidad;
-        delete next['cant_Rosa (Color)'];
-        delete next['cant_Rosa (Roja)'];
-        delete next['cant_Bouquet'];
-        return next;
-      });
-    } else {
-      setRosaAbierto(true);
-      setErrores((prev) => {
-        const next = { ...prev };
-        delete next.producto;
-        return next;
-      });
-    }
-  };
-
-  const toggleProducto = (prod: string) => {
-    setProductosCantidades((prev) => {
-      const next = { ...prev };
-      if (Object.prototype.hasOwnProperty.call(next, prod)) {
-        delete next[prod];
-      } else {
-        next[prod] = '1';
-      }
-      return next;
-    });
-    setErrores((prev) => {
-      const next = { ...prev };
-      delete next.producto;
-      delete next.cantidad;
-      delete next[`cant_${prod}`];
       return next;
     });
   };
@@ -288,38 +212,26 @@ export const IngresosSeleccionForm: React.FC<IngresosSeleccionFormProps> = ({
   const validarFormulario = (): boolean => {
     const errs: Record<string, string> = {};
 
-    if (!sede) {
-      errs.sede = 'Seleccione la sede (MG, HA o SC).';
-    }
-
-    const permitidosSede = new Set(getProductosPermitidosPorSede(sede));
-    const seleccionadosValidos = productosSeleccionadosOrdenados.filter((p) =>
-      permitidosSede.has(p)
-    );
-
-    if (!sede) {
-      errs.producto = 'Seleccione primero una sede (MG, HA o SC) para elegir el producto.';
-    } else if (seleccionadosValidos.length === 0) {
-      if (sede === 'MG') {
-        errs.producto =
-          'Seleccione al menos un producto de Rosa (Rosa (Color), Rosa (Roja) y/o Bouquet).';
-      } else if (sede === 'HA') {
-        errs.producto = 'Seleccione Alstroemeria e ingrese la cantidad.';
-      } else {
-        errs.producto = 'Seleccione Clavel e ingrese la cantidad.';
-      }
+    if (productosSeleccionadosOrdenados.length === 0) {
+      errs.producto =
+        'Seleccione un producto (Rosa, Alstroemeria o Clavel) e ingrese la cantidad.';
+    } else if (productosSeleccionadosOrdenados.length > 1) {
+      errs.producto = 'Solo se permite seleccionar un producto por solicitud.';
     } else {
-      for (const prod of seleccionadosValidos) {
-        const cantNum = Number(productosCantidades[prod]);
-        if (!productosCantidades[prod] || Number.isNaN(cantNum) || cantNum < 1) {
-          errs[`cant_${prod}`] = `Ingrese una cantidad válida (mínimo 1) para ${prod}.`;
-          errs.cantidad = 'Revise las cantidades ingresadas por producto.';
-        }
+      const prod = productosSeleccionadosOrdenados[0];
+      const cantNum = Number(productosCantidades[prod]);
+      if (!productosCantidades[prod] || Number.isNaN(cantNum) || cantNum < 1) {
+        errs[`cant_${prod}`] = `Ingrese una cantidad válida (mínimo 1) para ${prod}.`;
+        errs.cantidad = 'Revise la cantidad ingresada para el producto.';
       }
     }
 
     if (!fechaEntrega) {
       errs.fechaEntrega = 'Seleccione la fecha de entrega.';
+    }
+
+    if (!horaEntrega) {
+      errs.horaEntrega = 'Seleccione la hora de entrega.';
     }
 
     const parsedCorreos = parsearListaCorreos(correoNotificacion);
@@ -337,10 +249,9 @@ export const IngresosSeleccionForm: React.FC<IngresosSeleccionFormProps> = ({
   };
 
   const limpiarFormulario = () => {
-    setSede('');
     setProductosCantidades({});
-    setRosaAbierto(false);
     setFechaEntrega(getTodayString());
+    setHoraEntrega('');
     setObservacion('');
     setCorreoNotificacion('');
     setErrores({});
@@ -359,24 +270,25 @@ export const IngresosSeleccionForm: React.FC<IngresosSeleccionFormProps> = ({
       const year = new Date().getFullYear();
       const semanaStr = String(semanaCalculada);
 
-      const listaSolicitudes: IngresoSeleccion[] = productosSeleccionadosOrdenados.map(
-        (prod, idx) => ({
+      const listaSolicitudes: IngresoSeleccion[] = productosSeleccionadosOrdenados
+        .slice(0, 1)
+        .map((prod, idx) => ({
           id: `IS-${year}-${String(siguienteNumeroId + idx).padStart(3, '0')}`,
           fechaSolicitud,
           codigo: sesion.codigo.trim(),
           nombre: sesion.nombre.trim(),
-          sede,
+          sede: inferirSedePorProducto(prod),
           producto: prod,
           cantidad: Math.max(1, Math.floor(Number(productosCantidades[prod]) || 1)),
           motivo: MOTIVO_FIJO_IS,
           semana: semanaStr,
           fechaEntrega,
+          horaEntrega,
           observacion: observacion.trim(),
           notificado: correoLimpio || 'Registrada',
           estado: correoLimpio || 'Registrada',
           creadoEn: Date.now() + idx,
-        })
-      );
+        }));
 
       const res = await onGuardarIngresoSeleccion(listaSolicitudes, correoLimpio);
 
@@ -403,7 +315,7 @@ export const IngresosSeleccionForm: React.FC<IngresosSeleccionFormProps> = ({
         } catch {}
       } else {
         setErrores({
-          general: res.error || 'No se pudo guardar en la hoja Ingresos Selección.',
+          general: res.error || 'No se pudo guardar en la hoja Ingresos Personal.',
         });
       }
     } finally {
@@ -505,13 +417,14 @@ export const IngresosSeleccionForm: React.FC<IngresosSeleccionFormProps> = ({
       Motivo: s.motivo || MOTIVO_FIJO_IS,
       Semana: s.semana,
       'Fecha Entrega': s.fechaEntrega,
+      'Hora Entrega': s.horaEntrega || '',
       Observación: s.observacion || '',
       Notificado: s.notificado || 'Registrada',
     }));
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Ingresos Selección');
-    XLSX.writeFile(wb, `Ingresos_Seleccion_${getTodayString()}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, ws, 'Ingresos Personal');
+    XLSX.writeFile(wb, `Ingresos_Personal_${getTodayString()}.xlsx`);
   };
 
   const primeraExitosa = solicitudesExitosas[0];
@@ -537,7 +450,7 @@ export const IngresosSeleccionForm: React.FC<IngresosSeleccionFormProps> = ({
                 {solicitudesExitosas.length > 1
                   ? `Se registraron ${solicitudesExitosas.length} productos por separado en `
                   : 'La solicitud fue registrada en '}
-                <strong>Ingresos Selección</strong>.
+                <strong>Ingresos Personal</strong>.
               </p>
             </div>
 
@@ -546,7 +459,7 @@ export const IngresosSeleccionForm: React.FC<IngresosSeleccionFormProps> = ({
                 <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600 mt-0.5" />
                 <span>
                   Guardado en respaldo local. Para escribir en la hoja{' '}
-                  <strong>Ingresos Selección</strong>, el administrador debe actualizar el Apps Script e implementar una <strong>Nueva versión</strong>.
+                  <strong>Ingresos Personal</strong>, el administrador debe actualizar el Apps Script e implementar una <strong>Nueva versión</strong>.
                 </span>
               </div>
             )}
@@ -722,6 +635,12 @@ export const IngresosSeleccionForm: React.FC<IngresosSeleccionFormProps> = ({
                   {formatDateSpanish(primeraExitosa.fechaEntrega)}
                 </span>
               </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Hora Entrega:</span>
+                <span className="font-mono font-bold text-[#0a2958]">
+                  {primeraExitosa.horaEntrega || '—'}
+                </span>
+              </div>
               {primeraExitosa.observacion && (
                 <div className="pt-1 border-t border-slate-200">
                   <span className="text-slate-500 block">Observación:</span>
@@ -767,10 +686,10 @@ export const IngresosSeleccionForm: React.FC<IngresosSeleccionFormProps> = ({
             </div>
             <div>
               <h2 className="text-lg font-extrabold text-[#0a2958] tracking-tight">
-                INGRESOS SELECCIÓN
+                INGRESOS PERSONAL
               </h2>
               <p className="text-xs text-slate-500 font-medium">
-                Registro de flor para ingresos por sede (MG, HA, SC)
+                Registro de flor para ingresos de personal
               </p>
             </div>
           </div>
@@ -802,16 +721,15 @@ export const IngresosSeleccionForm: React.FC<IngresosSeleccionFormProps> = ({
             <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600 mt-0.5" />
             <div className="space-y-0.5">
               <p className="font-extrabold">
-                Sincronización con la hoja "Ingresos Selección" pendiente de actualizar en Drive
+                Sincronización con la hoja "Ingresos Personal" pendiente de actualizar en Drive
               </p>
               <p className="text-amber-800 leading-relaxed">
                 {ingresosSeleccionSheetActual &&
-                ingresosSeleccionSheetActual.toLowerCase() !== 'ingresos selección' &&
-                ingresosSeleccionSheetActual.toLowerCase() !== 'ingresos seleccion'
+                ingresosSeleccionSheetActual.toLowerCase() !== 'ingresos personal'
                   ? `El script activo devolvió la hoja "${ingresosSeleccionSheetActual}". `
                   : ''}
                 {!emailSupported ? 'El envío de notificaciones por correo tampoco está activo en la versión desplegada. ' : ''}
-                Para registrar directamente en la pestaña <strong>Ingresos Selección</strong>, actualice el código en{' '}
+                Para registrar directamente en la pestaña <strong>Ingresos Personal</strong>, actualice el código en{' '}
                 <strong>Administración → Google Drive</strong> e implemente una{' '}
                 <strong>Nueva versión</strong>.
               </p>
@@ -863,287 +781,99 @@ export const IngresosSeleccionForm: React.FC<IngresosSeleccionFormProps> = ({
             </div>
           </section>
 
-          {/* SECCIÓN 2: SEDE, PRODUCTO Y CANTIDAD */}
+          {/* SECCIÓN 2: PRODUCTO Y CANTIDAD */}
           <section className="space-y-4">
             <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
               <Sparkles className="w-4 h-4 text-[#0a2958]" />
               <h3 className="text-xs font-extrabold uppercase tracking-wider text-[#0a2958]">
-                2. Sede, Producto y Cantidad
+                2. Producto y Cantidad
               </h3>
             </div>
 
-            {/* Sede */}
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-2">
-                Sede <span className="text-[#E60000]">*</span>{' '}
-                <span className="text-[11px] font-normal text-slate-400">
-                  (Seleccione la sede para habilitar los productos correspondientes)
-                </span>
-              </label>
-              <div className="grid grid-cols-3 gap-2.5">
-                {SEDES_IS.map((sedeOpt) => {
-                  const activa = sede === sedeOpt;
-                  const resumenProd =
-                    sedeOpt === 'MG'
-                      ? 'Rosa (Color, Roja, Bouquet)'
-                      : sedeOpt === 'HA'
-                      ? 'Alstroemeria'
-                      : 'Clavel';
-                  return (
-                    <button
-                      key={sedeOpt}
-                      type="button"
-                      onClick={() => handleSeleccionarSede(sedeOpt)}
-                      className={`p-3 rounded-xl border text-left transition cursor-pointer flex items-center justify-between gap-2 ${
-                        activa
-                          ? 'border-[#0a2958] bg-[#0a2958] text-white shadow-xs'
-                          : 'border-slate-200 bg-white text-slate-700 hover:border-[#0a2958]/40 hover:bg-slate-50'
-                      }`}
-                    >
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <MapPin
-                            className={`w-3.5 h-3.5 shrink-0 ${
-                              activa ? 'text-[#fca5a5]' : 'text-[#0a2958]'
-                            }`}
-                          />
-                          <span className="text-xs font-extrabold">{sedeOpt}</span>
-                        </div>
-                        <p
-                          className={`text-[10px] mt-0.5 truncate ${
-                            activa ? 'text-slate-200' : 'text-slate-400'
-                          }`}
-                        >
-                          {resumenProd}
-                        </p>
-                      </div>
-                      <span
-                        className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
-                          activa
-                            ? 'bg-[#E60000] border-[#E60000] text-white'
-                            : 'border-slate-300 bg-white'
-                        }`}
-                      >
-                        {activa && <Check className="w-2.5 h-2.5 stroke-[3]" />}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-              {errores.sede && (
-                <p className="text-[11px] text-[#E60000] font-semibold mt-1">{errores.sede}</p>
-              )}
-            </div>
-
-            {/* Productos filtrados por Sede */}
             <div>
               <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
                 <label className="block text-xs font-bold text-slate-700">
                   Producto y Cantidad <span className="text-[#E60000]">*</span>{' '}
                   <span className="text-[11px] font-normal text-slate-400">
-                    (Puede seleccionar uno o varios productos de la sede; cada uno se guarda por separado)
+                    (Seleccione un solo producto e ingrese la cantidad)
                   </span>
                 </label>
                 {productosSeleccionadosOrdenados.length > 0 && (
                   <span className="text-[11px] font-extrabold text-[#0a2958] bg-[#0a2958]/10 px-2.5 py-0.5 rounded-full">
-                    {productosSeleccionadosOrdenados.length}{' '}
-                    {productosSeleccionadosOrdenados.length === 1
-                      ? 'producto seleccionado'
-                      : 'productos seleccionados'}{' '}
-                    · {totalRamosSeleccionados} ramos
+                    {productosSeleccionadosOrdenados[0]} · {totalRamosSeleccionados}{' '}
+                    {totalRamosSeleccionados === 1 ? 'ramo' : 'ramos'}
                   </span>
                 )}
               </div>
 
-              {!sede ? (
-                <div className="p-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 text-xs text-slate-500 font-medium text-center">
-                  Seleccione primero una <strong>Sede (MG, HA o SC)</strong> para ver los productos disponibles.
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {/* Sede MG: Rosa (Rosa Color, Rosa Roja, Bouquet) */}
-                  {sede === 'MG' && (
+              {/* Rosa, Alstroemeria y Clavel */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {PRODUCTOS_IS.map((prod) => {
+                  const seleccionado = Object.prototype.hasOwnProperty.call(
+                    productosCantidades,
+                    prod
+                  );
+                  const cantValor = productosCantidades[prod] ?? '';
+                  const errorCant = errores[`cant_${prod}`];
+
+                  return (
                     <div
-                      className={`rounded-xl border transition ${
-                        rosaExpandido
-                          ? 'border-[#0a2958] bg-[#0a2958]/[0.03] shadow-2xs'
+                      key={prod}
+                      className={`rounded-xl border transition flex flex-col justify-between ${
+                        seleccionado
+                          ? 'border-[#0a2958] bg-[#0a2958]/5 shadow-2xs'
                           : 'border-slate-200 bg-white hover:border-[#0a2958]/40'
                       }`}
                     >
                       <button
                         type="button"
-                        onClick={toggleRosaPrincipal}
-                        className="w-full px-3.5 py-2.5 text-xs font-extrabold text-[#0a2958] flex items-center justify-between cursor-pointer"
+                        onClick={() => toggleProducto(prod)}
+                        className="w-full px-3.5 py-2.5 text-xs font-bold flex items-center justify-between gap-2 text-[#0a2958] cursor-pointer"
                       >
-                        <div className="flex items-center gap-2">
-                          <span>Rosa</span>
-                          {rosaTieneSeleccion && (
-                            <span className="text-[10px] font-bold bg-[#0a2958] text-white px-2 py-0.5 rounded-full">
-                              {[
-                                rosaColorActivo ? 'Color' : '',
-                                rosaRojaActivo ? 'Roja' : '',
-                                bouquetActivo ? 'Bouquet' : '',
-                              ]
-                                .filter(Boolean)
-                                .join(' + ')}
-                            </span>
-                          )}
-                        </div>
+                        <span>{prod}</span>
                         <span
-                          className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${
-                            rosaExpandido
+                          className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
+                            seleccionado
                               ? 'bg-[#0a2958] border-[#0a2958] text-white'
                               : 'border-slate-300 bg-white'
                           }`}
                         >
-                          {rosaExpandido && <Check className="w-3 h-3 stroke-[3]" />}
+                          {seleccionado && <Check className="w-3 h-3 stroke-[3]" />}
                         </span>
                       </button>
 
-                      {rosaExpandido && (
-                        <div className="px-3.5 pb-3 pt-2 border-t border-slate-200/80 grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                          {ROSA_VARIANTES_IS.map((variante) => {
-                            const seleccionado = Object.prototype.hasOwnProperty.call(
-                              productosCantidades,
-                              variante
-                            );
-                            const cantValor = productosCantidades[variante] ?? '';
-                            const errorCant = errores[`cant_${variante}`];
-
-                            return (
-                              <div
-                                key={variante}
-                                className={`rounded-lg border p-2.5 transition ${
-                                  seleccionado
-                                    ? 'border-[#0a2958] bg-white shadow-2xs'
-                                    : 'border-slate-200 bg-slate-50/70 hover:border-[#0a2958]/40'
-                                }`}
-                              >
-                                <button
-                                  type="button"
-                                  onClick={() => toggleProducto(variante)}
-                                  className="w-full text-xs font-bold flex items-center justify-between gap-2 text-[#0a2958] cursor-pointer"
-                                >
-                                  <span>{variante}</span>
-                                  <span
-                                    className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${
-                                      seleccionado
-                                        ? 'bg-[#0a2958] border-[#0a2958] text-white'
-                                        : 'border-slate-300 bg-white'
-                                    }`}
-                                  >
-                                    {seleccionado && <Check className="w-3 h-3 stroke-[3]" />}
-                                  </span>
-                                </button>
-
-                                {seleccionado && (
-                                  <div className="mt-2 pt-2 border-t border-slate-100">
-                                    <label className="block text-[10px] font-bold text-slate-600 mb-1">
-                                      Cantidad <span className="text-[#E60000]">*</span>
-                                    </label>
-                                    <input
-                                      type="number"
-                                      min={1}
-                                      step={1}
-                                      inputMode="numeric"
-                                      value={cantValor}
-                                      onChange={(e) =>
-                                        cambiarCantidadProducto(variante, e.target.value)
-                                      }
-                                      placeholder="Ej. 10"
-                                      className={`w-full px-2.5 py-1.5 rounded-lg border text-xs font-mono font-bold text-[#0a2958] bg-white focus:outline-none focus:ring-2 ${
-                                        errorCant
-                                          ? 'border-[#E60000] focus:ring-red-100'
-                                          : 'border-slate-200 focus:border-[#0a2958] focus:ring-[#0a2958]/10'
-                                      }`}
-                                    />
-                                    {errorCant && (
-                                      <p className="text-[10px] text-[#E60000] font-semibold mt-1">
-                                        {errorCant}
-                                      </p>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
+                      {seleccionado && (
+                        <div className="px-3.5 pb-3 pt-2 border-t border-slate-200/70">
+                          <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                            Cantidad <span className="text-[#E60000]">*</span>
+                          </label>
+                          <input
+                            type="number"
+                            min={1}
+                            step={1}
+                            inputMode="numeric"
+                            value={cantValor}
+                            onChange={(e) =>
+                              cambiarCantidadProducto(prod, e.target.value)
+                            }
+                            placeholder="Ej. 10"
+                            className={`w-full px-3 py-2 rounded-lg border text-xs font-mono font-bold text-[#0a2958] bg-white focus:outline-none focus:ring-2 ${
+                              errorCant
+                                ? 'border-[#E60000] focus:ring-red-100'
+                                : 'border-slate-200 focus:border-[#0a2958] focus:ring-[#0a2958]/10'
+                            }`}
+                          />
+                          {errorCant && (
+                            <p className="text-[10px] text-[#E60000] font-semibold mt-1">
+                              {errorCant}
+                            </p>
+                          )}
                         </div>
                       )}
                     </div>
-                  )}
-
-                  {/* Sede HA: Alstroemeria | Sede SC: Clavel */}
-                  {(sede === 'HA' || sede === 'SC') && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {getProductosPermitidosPorSede(sede).map((prod) => {
-                        const seleccionado = Object.prototype.hasOwnProperty.call(
-                          productosCantidades,
-                          prod
-                        );
-                        const cantValor = productosCantidades[prod] ?? '';
-                        const errorCant = errores[`cant_${prod}`];
-
-                        return (
-                          <div
-                            key={prod}
-                            className={`rounded-xl border transition flex flex-col justify-between ${
-                              seleccionado
-                                ? 'border-[#0a2958] bg-[#0a2958]/5 shadow-2xs'
-                                : 'border-slate-200 bg-white hover:border-[#0a2958]/40'
-                            }`}
-                          >
-                            <button
-                              type="button"
-                              onClick={() => toggleProducto(prod)}
-                              className="w-full px-3.5 py-2.5 text-xs font-bold flex items-center justify-between gap-2 text-[#0a2958] cursor-pointer"
-                            >
-                              <span>{prod}</span>
-                              <span
-                                className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${
-                                  seleccionado
-                                    ? 'bg-[#0a2958] border-[#0a2958] text-white'
-                                    : 'border-slate-300 bg-white'
-                                }`}
-                              >
-                                {seleccionado && <Check className="w-3 h-3 stroke-[3]" />}
-                              </span>
-                            </button>
-
-                            {seleccionado && (
-                              <div className="px-3.5 pb-3 pt-2 border-t border-slate-200/70">
-                                <label className="block text-[11px] font-bold text-slate-600 mb-1">
-                                  Cantidad <span className="text-[#E60000]">*</span>
-                                </label>
-                                <input
-                                  type="number"
-                                  min={1}
-                                  step={1}
-                                  inputMode="numeric"
-                                  value={cantValor}
-                                  onChange={(e) =>
-                                    cambiarCantidadProducto(prod, e.target.value)
-                                  }
-                                  placeholder="Ej. 10"
-                                  className={`w-full px-3 py-2 rounded-lg border text-xs font-mono font-bold text-[#0a2958] bg-white focus:outline-none focus:ring-2 ${
-                                    errorCant
-                                      ? 'border-[#E60000] focus:ring-red-100'
-                                      : 'border-slate-200 focus:border-[#0a2958] focus:ring-[#0a2958]/10'
-                                  }`}
-                                />
-                                {errorCant && (
-                                  <p className="text-[10px] text-[#E60000] font-semibold mt-1">
-                                    {errorCant}
-                                  </p>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
+                  );
+                })}
+              </div>
 
               {errores.producto && (
                 <p className="text-[11px] text-[#E60000] font-semibold mt-1.5">
@@ -1167,7 +897,7 @@ export const IngresosSeleccionForm: React.FC<IngresosSeleccionFormProps> = ({
               </h3>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               {/* Fecha Entrega */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1.5">
@@ -1189,6 +919,34 @@ export const IngresosSeleccionForm: React.FC<IngresosSeleccionFormProps> = ({
                 {errores.fechaEntrega && (
                   <p className="text-[11px] text-[#E60000] font-semibold mt-1">
                     {errores.fechaEntrega}
+                  </p>
+                )}
+              </div>
+
+              {/* Hora Entrega */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 text-[#0a2958]" />
+                  <span>
+                    Hora Entrega <span className="text-[#E60000]">*</span>
+                  </span>
+                </label>
+                <input
+                  type="time"
+                  value={horaEntrega}
+                  onChange={(e) => {
+                    setHoraEntrega(e.target.value);
+                    setErrores((prev) => ({ ...prev, horaEntrega: '' }));
+                  }}
+                  className={`w-full px-3.5 py-2.5 rounded-xl border text-sm font-medium focus:outline-none focus:ring-2 ${
+                    errores.horaEntrega
+                      ? 'border-[#E60000] focus:ring-red-100'
+                      : 'border-slate-200 focus:border-[#0a2958] focus:ring-[#0a2958]/10'
+                  }`}
+                />
+                {errores.horaEntrega && (
+                  <p className="text-[11px] text-[#E60000] font-semibold mt-1">
+                    {errores.horaEntrega}
                   </p>
                 )}
               </div>
@@ -1271,7 +1029,7 @@ export const IngresosSeleccionForm: React.FC<IngresosSeleccionFormProps> = ({
           >
             <Send className="w-4 h-4" />
             <span>
-              {isSubmitting ? 'Registrando…' : 'Registrar Ingresos Selección'}
+              {isSubmitting ? 'Registrando…' : 'Registrar Ingresos Personal'}
             </span>
           </button>
         </div>
@@ -1283,7 +1041,7 @@ export const IngresosSeleccionForm: React.FC<IngresosSeleccionFormProps> = ({
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h3 className="text-sm font-extrabold text-[#0a2958]">
-                Registros en Ingresos Selección ({ingresosSeleccion.length})
+                Registros en Ingresos Personal ({ingresosSeleccion.length})
               </h3>
               <p className="text-xs text-slate-500">
                 Mostrando {solicitudesFiltradas.length} registro(s) ·{' '}
@@ -1424,6 +1182,7 @@ export const IngresosSeleccionForm: React.FC<IngresosSeleccionFormProps> = ({
                 <th className="py-3 px-3.5">Motivo</th>
                 <th className="py-3 px-3.5 whitespace-nowrap">Semana</th>
                 <th className="py-3 px-3.5 whitespace-nowrap">Fecha Ent.</th>
+                <th className="py-3 px-3.5 whitespace-nowrap">Hora Ent.</th>
                 <th className="py-3 px-3.5">Observación</th>
                 <th className="py-3 px-3.5">Notificado</th>
               </tr>
@@ -1431,8 +1190,8 @@ export const IngresosSeleccionForm: React.FC<IngresosSeleccionFormProps> = ({
             <tbody className="divide-y divide-slate-100">
               {solicitudesFiltradas.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="py-10 text-center text-slate-400 text-xs">
-                    No hay registros en Ingresos Selección que coincidan con los filtros.
+                  <td colSpan={13} className="py-10 text-center text-slate-400 text-xs">
+                    No hay registros en Ingresos Personal que coincidan con los filtros.
                   </td>
                 </tr>
               ) : (
@@ -1469,6 +1228,9 @@ export const IngresosSeleccionForm: React.FC<IngresosSeleccionFormProps> = ({
                     </td>
                     <td className="py-2.5 px-3.5 whitespace-nowrap text-slate-700 font-medium">
                       {s.fechaEntrega}
+                    </td>
+                    <td className="py-2.5 px-3.5 whitespace-nowrap font-mono text-slate-700 font-medium">
+                      {s.horaEntrega || '—'}
                     </td>
                     <td className="py-2.5 px-3.5 text-slate-600 max-w-[180px] truncate" title={s.observacion}>
                       {s.observacion || '—'}

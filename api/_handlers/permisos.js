@@ -56,6 +56,18 @@ export const DEFAULT_PERMISOS_FORMULARIOS = {
     codigos: [],
     codigosExcluidos: [],
   },
+  consolidado: {
+    todos: false,
+    cargos: [],
+    palabrasClaveCargo: [
+      'AUXILIAR GESTIÓN HUMANA',
+      'ANALISTA GESTIÓN HUMANA',
+      'AUXILIAR TÉCNICO POSCOSECHA',
+      'DIRECTOR',
+    ],
+    codigos: [],
+    codigosExcluidos: [],
+  },
 };
 
 const FORM_KEYS = Object.keys(DEFAULT_PERMISOS_FORMULARIOS);
