@@ -325,6 +325,7 @@ function leerSolicitudes(ss) {
     var prodLow = producto.toLowerCase();
     if (prodLow.indexOf("clavel") !== -1) florPrincipal = "Clavel";
     else if (prodLow.indexOf("alstroemeria") !== -1) florPrincipal = "Alstroemeria";
+    else if (prodLow.indexOf("gypso") !== -1) florPrincipal = "Gypso";
     out.push({
       id: id,
       fecha: String(fecha || ""),
@@ -395,14 +396,22 @@ function leerSolicitudesIntExt(ss) {
     var cantidadNum = Number(cantidadRaw);
     if (!cantidadNum || isNaN(cantidadNum)) cantidadNum = 1;
     var notificadoVal = String(cel(["NOTIFICADO", "ESTADO"]) || "Registrada");
+    var prodVal = String(cel(["PRODUCTO"]) || "").trim();
+    var sedeVal = String(cel(["SEDE"]) || "").trim();
+    if (!sedeVal && prodVal) {
+      var prodLow = prodVal.toLowerCase();
+      if (prodLow.indexOf("alstroemeria") !== -1) sedeVal = "HA";
+      else if (prodLow.indexOf("clavel") !== -1) sedeVal = "SC";
+      else if (prodLow.indexOf("rosa") !== -1 || prodLow.indexOf("bouquet") !== -1 || prodLow.indexOf("gypso") !== -1) sedeVal = "MG";
+    }
     out.push({
       id: id,
       fechaSolicitud: String(fechaSolicitud || ""),
       codigo: String(cel(["CÓDIGO", "CODIGO"]) || ""),
       nombre: String(cel(["NOMBRE"]) || ""),
-      sede: String(cel(["SEDE"]) || ""),
+      sede: sedeVal,
       area: String(cel(["ÁREA", "AREA"]) || ""),
-      producto: String(cel(["PRODUCTO"]) || ""),
+      producto: prodVal,
       cantidad: cantidadNum,
       motivo: String(cel(["MOTIVO"]) || ""),
       semana: String(cel(["SEMANA"]) || ""),
@@ -454,6 +463,7 @@ function leerEspecialesPersonal(ss) {
       nombre: String(cel(["NOMBRE"], ["NOMBRE"]) || ""),
       sede: String(cel(["SEDE"], ["SEDE"]) || ""),
       producto: String(cel(["PRODUCTO"], ["PRODUCTO"]) || ""),
+      color: String(cel(["COLOR"], ["COLOR"]) || "").trim(),
       cantidad: cantidadNum,
       motivo: String(cel(["MOTIVO"], ["MOTIVO"]) || ""),
       semana: String(cel(["SEMANA"], ["SEMANA"]) || ""),
@@ -764,6 +774,13 @@ function enviarCorreoNotificacionIntExt(ss, correoDestino, items, fotoBase64, fo
   }
 
   var idsTexto = ids.join(", ");
+  var sedeTexto = String(primera.sede || "").trim();
+  if (!sedeTexto) {
+    var pMailLow = String(primera.producto || "").toLowerCase();
+    if (pMailLow.indexOf("alstroemeria") !== -1) sedeTexto = "HA";
+    else if (pMailLow.indexOf("clavel") !== -1) sedeTexto = "SC";
+    else if (pMailLow.indexOf("rosa") !== -1 || pMailLow.indexOf("bouquet") !== -1 || pMailLow.indexOf("gypso") !== -1) sedeTexto = "MG";
+  }
   var semanaTexto = primera.semana ? ("Semana " + primera.semana) : "—";
   var obsTexto = String(primera.observacion || "").trim();
   var notificadoTexto = String(primera.notificado || primera.estado || emailDisplay).trim();
@@ -806,6 +823,7 @@ function enviarCorreoNotificacionIntExt(ss, correoDestino, items, fotoBase64, fo
     "Id(s): " + idsTexto + "\\n" +
     "Fecha de Solicitud: " + String(primera.fechaSolicitud || "") + "\\n" +
     "Registrado por: " + String(primera.nombre || "") + " (" + String(primera.codigo || "") + ")\\n" +
+    (sedeTexto ? ("Sede: " + sedeTexto + "\\n") : "") +
     "Motivo: " + String(primera.motivo || "") + "\\n" +
     "Semana: " + semanaTexto + "\\n" +
     "Fecha de Entrega: " + String(primera.fechaEntrega || "") + "\\n" +
@@ -879,6 +897,12 @@ function enviarCorreoNotificacionIntExt(ss, correoDestino, items, fotoBase64, fo
                   "<td style=\\"padding:7px 0;color:#64748b;border-bottom:1px solid #f1f5f9;\\">Solicitado / Registrado por</td>" +
                   "<td style=\\"padding:7px 0;font-weight:700;color:#0f172a;border-bottom:1px solid #f1f5f9;text-align:right;\\">" + escapeHtml(primera.nombre || "") + " (" + escapeHtml(primera.codigo || "") + ")</td>" +
                 "</tr>" +
+                (sedeTexto
+                  ? ("<tr>" +
+                      "<td style=\\"padding:7px 0;color:#64748b;border-bottom:1px solid #f1f5f9;\\">Sede</td>" +
+                      "<td style=\\"padding:7px 0;font-weight:700;color:#0a2958;border-bottom:1px solid #f1f5f9;text-align:right;\\">" + escapeHtml(sedeTexto) + "</td>" +
+                    "</tr>")
+                  : "") +
                 "<tr>" +
                   "<td style=\\"padding:7px 0;color:#64748b;border-bottom:1px solid #f1f5f9;\\">Motivo</td>" +
                   "<td style=\\"padding:7px 0;font-weight:700;color:#0a2958;border-bottom:1px solid #f1f5f9;text-align:right;\\">" + escapeHtml(primera.motivo || "—") + "</td>" +
@@ -1005,11 +1029,12 @@ function enviarCorreoNotificacionEspecialPersonal(ss, correoDestino, items, foto
   var estadoTexto = String(primera.estado || "Pendiente Aprobación").trim();
   var correoConfTexto = String(primera.correoConfirmacion || correoConfirmacionParam || "").trim();
   var notificadoTexto = String(primera.notificado || emailDisplay).trim();
+  var colorTexto = String(primera.color || "").trim();
   var fotoUrl = String(primera.fotoCarta || "").trim();
   var fotoEsUrlWeb = fotoUrl.indexOf("http") === 0;
   var fotoHtml = fotoEsUrlWeb
     ? "<a href=\\"" + escapeHtml(fotoUrl) + "\\" style=\\"color:#0a2958;font-weight:700;text-decoration:underline;\\">Ver carta &#8599;</a>"
-    : (fotoUrl ? "<span style=\\"color:#047857;font-weight:700;\\">Adjunta en el sistema / correo</span>" : "<span style=\\"color:#64748b;\\">No adjuntada</span>");
+    : (fotoUrl ? "<span style=\\"color:#047857;font-weight:700;\\">Adjunta en el sistema / correo</span>" : "");
 
   var inlineImagesObj = {};
   var tieneLogo = false;
@@ -1047,11 +1072,12 @@ function enviarCorreoNotificacionEspecialPersonal(ss, correoDestino, items, foto
     "Cédula: " + String(primera.cedula || "") + "\\n" +
     "Sede: " + String(primera.sede || "") + "\\n" +
     "Motivo: " + String(primera.motivo || "") + "\\n" +
+    (colorTexto ? ("Color: " + colorTexto + "\\n") : "") +
     "Semana: " + semanaTexto + "\\n" +
     "Fecha de Entrega: " + String(primera.fechaEntrega || "") + "\\n" +
     "Correo de confirmación: " + correoConfTexto + "\\n" +
     "Estado: " + estadoTexto + "\\n" +
-    "Foto Carta: " + (fotoUrl || "No adjuntada") + "\\n" +
+    (fotoUrl ? ("Foto Carta: " + fotoUrl + "\\n") : "") +
     "Notificado a: " + notificadoTexto + "\\n\\n" +
     "PRODUCTOS SOLICITADOS (" + lista.length + " registro(s) | Total: " + totalRamos + " ramos):\\n" +
     filasTexto + "\\n" +
@@ -1128,6 +1154,12 @@ function enviarCorreoNotificacionEspecialPersonal(ss, correoDestino, items, foto
                   "<td style=\\"padding:7px 0;color:#64748b;border-bottom:1px solid #f1f5f9;\\">Motivo</td>" +
                   "<td style=\\"padding:7px 0;font-weight:700;color:#0a2958;border-bottom:1px solid #f1f5f9;text-align:right;\\">" + escapeHtml(primera.motivo || "—") + "</td>" +
                 "</tr>" +
+                (colorTexto ? (
+                  "<tr>" +
+                    "<td style=\\"padding:7px 0;color:#64748b;border-bottom:1px solid #f1f5f9;\\">Color</td>" +
+                    "<td style=\\"padding:7px 0;font-weight:700;color:#0a2958;border-bottom:1px solid #f1f5f9;text-align:right;\\">" + escapeHtml(colorTexto) + "</td>" +
+                  "</tr>"
+                ) : "") +
                 "<tr>" +
                   "<td style=\\"padding:7px 0;color:#64748b;border-bottom:1px solid #f1f5f9;\\">Correo de confirmación</td>" +
                   "<td style=\\"padding:7px 0;font-weight:700;color:#0a2958;border-bottom:1px solid #f1f5f9;text-align:right;word-break:break-word;\\">" + escapeHtml(correoConfTexto) + "</td>" +
@@ -1136,10 +1168,12 @@ function enviarCorreoNotificacionEspecialPersonal(ss, correoDestino, items, foto
                   "<td style=\\"padding:7px 0;color:#64748b;border-bottom:1px solid #f1f5f9;\\">Estado</td>" +
                   "<td style=\\"padding:7px 0;font-weight:800;color:#b45309;border-bottom:1px solid #f1f5f9;text-align:right;\\">" + escapeHtml(estadoTexto) + "</td>" +
                 "</tr>" +
-                "<tr>" +
-                  "<td style=\\"padding:7px 0;color:#64748b;border-bottom:1px solid #f1f5f9;\\">Foto Carta</td>" +
-                  "<td style=\\"padding:7px 0;text-align:right;border-bottom:1px solid #f1f5f9;\\">" + fotoHtml + "</td>" +
-                "</tr>" +
+                (fotoHtml ? (
+                  "<tr>" +
+                    "<td style=\\"padding:7px 0;color:#64748b;border-bottom:1px solid #f1f5f9;\\">Foto Carta</td>" +
+                    "<td style=\\"padding:7px 0;text-align:right;border-bottom:1px solid #f1f5f9;\\">" + fotoHtml + "</td>" +
+                  "</tr>"
+                ) : "") +
                 "<tr>" +
                   "<td style=\\"padding:7px 0;color:#64748b;\\">Notificado</td>" +
                   "<td style=\\"padding:7px 0;font-weight:700;color:#047857;text-align:right;word-break:break-word;\\">" + escapeHtml(notificadoTexto) + "</td>" +
@@ -1258,6 +1292,12 @@ function enviarCorreoNotificacionSolicitudComunidad(ss, correoDestino, items, fo
   }
 
   var idsTexto = ids.join(", ");
+  var sedesUnicas = [];
+  for (var si = 0; si < lista.length; si++) {
+    var sd = String(lista[si].sede || "").trim();
+    if (sd && sedesUnicas.indexOf(sd) === -1) sedesUnicas.push(sd);
+  }
+  var sedeTexto = sedesUnicas.length > 0 ? sedesUnicas.join(", ") : String(primera.sede || "—");
   var semanaTexto = primera.semana ? ("Semana " + primera.semana) : "—";
   var correoConfTexto = String(primera.correoConfirmacion || "").trim();
   var estadoTexto = String(primera.estado || "Pendiente Aprobación").trim();
@@ -1303,8 +1343,7 @@ function enviarCorreoNotificacionSolicitudComunidad(ss, correoDestino, items, fo
     "Registrado por (Usuario): " + String(primera.usuario || "") + "\\n" +
     "Entidad: " + String(primera.entidad || "") + "\\n" +
     "Motivo: " + String(primera.motivo || "") + "\\n" +
-    "Lugar: " + String(primera.lugar || "") + "\\n" +
-    "Sede: " + String(primera.sede || "") + "\\n" +
+    "Sede: " + sedeTexto + "\\n" +
     "Semana: " + semanaTexto + "\\n" +
     "Fecha de Entrega: " + String(primera.fechaEntrega || "") + "\\n" +
     "Correo de confirmación: " + correoConfTexto + "\\n" +
@@ -1382,12 +1421,8 @@ function enviarCorreoNotificacionSolicitudComunidad(ss, correoDestino, items, fo
                   "<td style=\\"padding:7px 0;font-weight:700;color:#0a2958;border-bottom:1px solid #f1f5f9;text-align:right;\\">" + escapeHtml(primera.motivo || "—") + "</td>" +
                 "</tr>" +
                 "<tr>" +
-                  "<td style=\\"padding:7px 0;color:#64748b;border-bottom:1px solid #f1f5f9;\\">Lugar</td>" +
-                  "<td style=\\"padding:7px 0;font-weight:700;color:#0f172a;border-bottom:1px solid #f1f5f9;text-align:right;\\">" + escapeHtml(primera.lugar || "—") + "</td>" +
-                "</tr>" +
-                "<tr>" +
                   "<td style=\\"padding:7px 0;color:#64748b;border-bottom:1px solid #f1f5f9;\\">Sede</td>" +
-                  "<td style=\\"padding:7px 0;font-weight:700;color:#0f172a;border-bottom:1px solid #f1f5f9;text-align:right;\\">" + escapeHtml(primera.sede || "—") + "</td>" +
+                  "<td style=\\"padding:7px 0;font-weight:700;color:#0f172a;border-bottom:1px solid #f1f5f9;text-align:right;\\">" + escapeHtml(sedeTexto) + "</td>" +
                 "</tr>" +
                 "<tr>" +
                   "<td style=\\"padding:7px 0;color:#64748b;border-bottom:1px solid #f1f5f9;\\">Correo de confirmación</td>" +
@@ -2027,7 +2062,7 @@ function escribirSolicitud(sheet, data) {
 function escribirSolicitudIntExt(sheet, data) {
   var headers = sheet.getLastRow() > 0 ? sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0] : [];
   var headersDefault = [
-    "Id", "Fecha Solicitud", "Código", "Nombre",
+    "Id", "Fecha Solicitud", "Código", "Nombre", "Sede",
     "Producto", "Cantidad", "Motivo", "Semana", "Fecha Entrega", "Hora Entrega", "Observación", "Foto Carta", "Notificado"
   ];
   if (!headers.length || !headers[0]) {
@@ -2035,6 +2070,32 @@ function escribirSolicitudIntExt(sheet, data) {
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
     sheet.getRange(1, 1, 1, headers.length).setFontWeight("bold").setBackground("#0a2958").setFontColor("#ffffff");
   } else {
+    var tieneColSede = false;
+    var idxNombreCol = -1;
+    for (var hs = 0; hs < headers.length; hs++) {
+      var hSedeCheck = String(headers[hs] || "").toUpperCase();
+      if (hSedeCheck.indexOf("SEDE") !== -1) tieneColSede = true;
+      if (hSedeCheck.indexOf("NOMBRE") !== -1 && idxNombreCol < 0) idxNombreCol = hs;
+    }
+    if (!tieneColSede) {
+      if (idxNombreCol >= 0) {
+        sheet.insertColumnAfter(idxNombreCol + 1);
+        sheet.getRange(1, idxNombreCol + 2)
+          .setValue("Sede")
+          .setFontWeight("bold")
+          .setBackground("#0a2958")
+          .setFontColor("#ffffff");
+        headers.splice(idxNombreCol + 1, 0, "Sede");
+      } else {
+        sheet.getRange(1, headers.length + 1)
+          .setValue("Sede")
+          .setFontWeight("bold")
+          .setBackground("#0a2958")
+          .setFontColor("#ffffff");
+        headers.push("Sede");
+      }
+    }
+
     var tieneColCarta = false;
     for (var hc = 0; hc < headers.length; hc++) {
       var hCheck = String(headers[hc] || "").toUpperCase();
@@ -2056,6 +2117,14 @@ function escribirSolicitudIntExt(sheet, data) {
   var cantidadNum = Number(data.cantidad);
   if (!cantidadNum || isNaN(cantidadNum)) cantidadNum = 1;
 
+  var sedeInferida = String(data.sede || "").trim();
+  if (!sedeInferida) {
+    var prodLow = String(data.producto || "").toLowerCase();
+    if (prodLow.indexOf("alstroemeria") !== -1) sedeInferida = "HA";
+    else if (prodLow.indexOf("clavel") !== -1) sedeInferida = "SC";
+    else if (prodLow.indexOf("rosa") !== -1 || prodLow.indexOf("bouquet") !== -1 || prodLow.indexOf("gypso") !== -1) sedeInferida = "MG";
+  }
+
   function valorParaHeader(headerRaw) {
     var h = String(headerRaw || "").toUpperCase().replace(/\\s+/g, " ").trim();
     if (h === "ID" || h === "ID.") return data.id || ("SIE-" + new Date().getTime());
@@ -2064,7 +2133,7 @@ function escribirSolicitudIntExt(sheet, data) {
     if (h.indexOf("SOLICITUD") !== -1 || h === "FECHA") return data.fechaSolicitud || "";
     if (h.indexOf("CÓDIGO") !== -1 || h.indexOf("CODIGO") !== -1) return data.codigo || "";
     if (h.indexOf("NOMBRE") !== -1) return data.nombre || "";
-    if (h.indexOf("SEDE") !== -1) return data.sede || "";
+    if (h.indexOf("SEDE") !== -1) return sedeInferida;
     if (h.indexOf("ÁREA") !== -1 || h.indexOf("AREA") !== -1) return data.area || "";
     if (h.indexOf("PRODUCTO") !== -1) return data.producto || "";
     if (h.indexOf("CANTIDAD") !== -1) return cantidadNum;
@@ -2085,18 +2154,21 @@ function escribirSolicitudIntExt(sheet, data) {
 
 /**
  * Escribe una fila en la hoja Especiales Personal:
- * Id | Fecha Solicitud | Cédula | Nombre | Sede | Producto | Cantidad | Motivo | Semana | Fecha Entrega | Correo de confirmación | Estado | Foto Carta | Notificado
+ * Id | Fecha Solicitud | Cédula | Nombre | Sede | Producto | Color | Cantidad | Motivo | Semana | Fecha Entrega | Correo de confirmación | Estado | Notificado
  */
 function escribirEspecialPersonal(sheet, data) {
   var headers = sheet.getLastRow() > 0 ? sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0] : [];
   var headersDefault = [
     "Id", "Fecha Solicitud", "Cédula", "Nombre", "Sede",
-    "Producto", "Cantidad", "Motivo", "Semana", "Fecha Entrega", "Correo de confirmación", "Estado", "Foto Carta", "Notificado"
+    "Producto", "Color", "Cantidad", "Motivo", "Semana", "Fecha Entrega", "Correo de confirmación", "Estado", "Notificado"
   ];
   if (!headers.length || !headers[0]) {
     headers = headersDefault;
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
     sheet.getRange(1, 1, 1, headers.length).setFontWeight("bold").setBackground("#0a2958").setFontColor("#ffffff");
+  } else if (data.color && indiceColumnaExactoOPista(headers, ["COLOR"], ["COLOR"]) < 0) {
+    headers.push("Color");
+    sheet.getRange(1, headers.length).setValue("Color").setFontWeight("bold").setBackground("#0a2958").setFontColor("#ffffff");
   }
 
   var cantidadNum = Number(data.cantidad);
@@ -2112,6 +2184,7 @@ function escribirEspecialPersonal(sheet, data) {
     if (h.indexOf("NOMBRE") !== -1) return data.nombre || "";
     if (h.indexOf("SEDE") !== -1) return data.sede || "";
     if (h.indexOf("PRODUCTO") !== -1) return data.producto || "";
+    if (h.indexOf("COLOR") !== -1) return data.color || "";
     if (h.indexOf("CANTIDAD") !== -1) return cantidadNum;
     if (h.indexOf("MOTIVO") !== -1) return data.motivo || "";
     if (h.indexOf("SEMANA") !== -1) return data.semana || "";
@@ -2179,6 +2252,7 @@ function enviarCorreoRespuestaEstadoEspecialPersonal(ss, item) {
   var bgBadge = esAprobado ? "#ecfdf5" : "#fef2f2";
   var asunto = "Respuesta Solicitud Especiales Personal " + String(it.id || "") + ": " + estadoTexto;
 
+  var colorResp = String(it.color || "").trim();
   var textBody =
     "MG CONSULTORES S.A.S. - FLOR DE OBSEQUIO\\n" +
     "RESPUESTA A SOLICITUD ESPECIALES PERSONAL\\n" +
@@ -2186,6 +2260,7 @@ function enviarCorreoRespuestaEstadoEspecialPersonal(ss, item) {
     "Id: " + String(it.id || "") + "\\n" +
     "Colaborador: " + String(it.nombre || "") + "\\n" +
     "Producto: " + String(it.producto || "") + " (" + String(it.cantidad || 1) + " ramos)\\n" +
+    (colorResp ? ("Color: " + colorResp + "\\n") : "") +
     "Motivo: " + String(it.motivo || "") + "\\n" +
     "Fecha de Entrega: " + String(it.fechaEntrega || "") + "\\n" +
     "Estado de la Solicitud: " + estadoTexto + "\\n\\n" +
@@ -2208,6 +2283,7 @@ function enviarCorreoRespuestaEstadoEspecialPersonal(ss, item) {
             "<tr><td style=\\"padding:6px 0;color:#64748b;border-bottom:1px solid #f1f5f9;\\">Id</td><td style=\\"padding:6px 0;font-weight:700;text-align:right;border-bottom:1px solid #f1f5f9;\\">" + escapeHtml(it.id || "—") + "</td></tr>" +
             "<tr><td style=\\"padding:6px 0;color:#64748b;border-bottom:1px solid #f1f5f9;\\">Colaborador</td><td style=\\"padding:6px 0;font-weight:700;text-align:right;border-bottom:1px solid #f1f5f9;\\">" + escapeHtml(it.nombre || "—") + "</td></tr>" +
             "<tr><td style=\\"padding:6px 0;color:#64748b;border-bottom:1px solid #f1f5f9;\\">Producto</td><td style=\\"padding:6px 0;font-weight:700;text-align:right;border-bottom:1px solid #f1f5f9;\\">" + escapeHtml(it.producto || "—") + " (" + escapeHtml(it.cantidad || 1) + " ramos)</td></tr>" +
+            (colorResp ? ("<tr><td style=\\"padding:6px 0;color:#64748b;border-bottom:1px solid #f1f5f9;\\">Color</td><td style=\\"padding:6px 0;font-weight:700;text-align:right;border-bottom:1px solid #f1f5f9;\\">" + escapeHtml(colorResp) + "</td></tr>") : "") +
             "<tr><td style=\\"padding:6px 0;color:#64748b;border-bottom:1px solid #f1f5f9;\\">Motivo</td><td style=\\"padding:6px 0;font-weight:700;text-align:right;border-bottom:1px solid #f1f5f9;\\">" + escapeHtml(it.motivo || "—") + "</td></tr>" +
             "<tr><td style=\\"padding:6px 0;color:#64748b;\\">Fecha de Entrega</td><td style=\\"padding:6px 0;font-weight:700;text-align:right;\\">" + escapeHtml(it.fechaEntrega || "—") + "</td></tr>" +
           "</table>" +
@@ -2238,12 +2314,12 @@ function enviarCorreoRespuestaEstadoEspecialPersonal(ss, item) {
 
 /**
  * Escribe una fila en la hoja Solicitud Comunidad:
- * Id | Fecha Solicitud | Usuario | Entidad | Motivo | Lugar | Sede | Producto | Cantidad | Semana | Fecha Entrega | Correo de confirmación | Estado | Foto Carta | Notificado
+ * Id | Fecha Solicitud | Usuario | Entidad | Motivo | Sede | Producto | Cantidad | Semana | Fecha Entrega | Correo de confirmación | Estado | Foto Carta | Notificado
  */
 function escribirSolicitudComunidad(sheet, data) {
   var headers = sheet.getLastRow() > 0 ? sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0] : [];
   var headersDefault = [
-    "Id", "Fecha Solicitud", "Usuario", "Entidad", "Motivo", "Lugar", "Sede",
+    "Id", "Fecha Solicitud", "Usuario", "Entidad", "Motivo", "Sede",
     "Producto", "Cantidad", "Semana", "Fecha Entrega", "Correo de confirmación", "Estado", "Foto Carta", "Notificado"
   ];
   if (!headers.length || !headers[0]) {
@@ -2255,6 +2331,14 @@ function escribirSolicitudComunidad(sheet, data) {
   var cantidadNum = Number(data.cantidad);
   if (!cantidadNum || isNaN(cantidadNum)) cantidadNum = 1;
 
+  var sedeInferida = String(data.sede || "").trim();
+  if (!sedeInferida) {
+    var prodLow = String(data.producto || "").toLowerCase();
+    if (prodLow.indexOf("alstroemeria") !== -1) sedeInferida = "HA";
+    else if (prodLow.indexOf("clavel") !== -1) sedeInferida = "SC";
+    else if (prodLow.indexOf("rosa") !== -1 || prodLow.indexOf("bouquet") !== -1 || prodLow.indexOf("gypso") !== -1) sedeInferida = "MG";
+  }
+
   function valorParaHeader(headerRaw) {
     var h = String(headerRaw || "").toUpperCase().replace(/\\s+/g, " ").trim();
     if (h === "ID" || h === "ID.") return data.id || ("SC-" + new Date().getTime());
@@ -2265,7 +2349,7 @@ function escribirSolicitudComunidad(sheet, data) {
     if (h.indexOf("ENTIDAD") !== -1) return data.entidad || "";
     if (h.indexOf("MOTIVO") !== -1) return data.motivo || "";
     if (h.indexOf("LUGAR") !== -1) return data.lugar || "";
-    if (h.indexOf("SEDE") !== -1) return data.sede || "";
+    if (h.indexOf("SEDE") !== -1) return sedeInferida;
     if (h.indexOf("PRODUCTO") !== -1) return data.producto || "";
     if (h.indexOf("CANTIDAD") !== -1) return cantidadNum;
     if (h.indexOf("SEMANA") !== -1) return data.semana || "";

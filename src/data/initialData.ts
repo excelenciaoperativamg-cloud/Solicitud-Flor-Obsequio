@@ -23,6 +23,7 @@ export const CUPOS_POR_PRODUCTO = {
   bouquetMax: 5, // Bouquet entre las 3 sedes
   clavelMax: 20, // Clavel entre las 3 sedes
   alstroemeriaMax: 30, // Alstroemeria entre las 3 sedes
+  gypsoMax: 20, // Gypso entre las 3 sedes (vinculado a Sede MG)
 } as const;
 
 export const MOTIVOS_SOLICITUD = [

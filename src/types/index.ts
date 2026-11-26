@@ -1,6 +1,6 @@
 export type Sede = 'Sede MG' | 'Sede HA' | 'Sede SC';
 
-export type FlowerType = 'Rosa' | 'Clavel' | 'Alstroemeria';
+export type FlowerType = 'Rosa' | 'Clavel' | 'Alstroemeria' | 'Gypso';
 
 export type ProductType = 'ramo' | 'bouquet';
 
@@ -16,7 +16,7 @@ export interface SolicitudFlor {
   cantidad: number; // 1 o 2 según cargo / autorización
   producto: string; // e.g. "Ramo de Rosa (Rojo) (1 unidad)" o "Bouquet de Rosas (1 unidad)"
   tipoProducto: ProductType; // 'ramo' | 'bouquet'
-  florPrincipal: FlowerType; // 'Rosa' | 'Clavel' | 'Alstroemeria'
+  florPrincipal: FlowerType; // 'Rosa' | 'Clavel' | 'Alstroemeria' | 'Gypso'
   opcionFlor?: string; // 'Rojo' | 'Color' | 'Bouquet' | 'Según color disponible'
   sede: Sede; // 'Sede MG' | 'Sede HA' | 'Sede SC' (proveniente del Maestro)
   motivo: string;
@@ -60,6 +60,7 @@ export interface EspecialPersonal {
   nombre: string;
   sede: string;
   producto: string;
+  color?: string;
   cantidad: number;
   motivo: string;
   semana?: string;
@@ -79,7 +80,7 @@ export interface SolicitudComunidad {
   usuario: string;
   entidad: string;
   motivo: string;
-  lugar: string;
+  lugar?: string;
   sede: string;
   producto: string;
   cantidad: number;

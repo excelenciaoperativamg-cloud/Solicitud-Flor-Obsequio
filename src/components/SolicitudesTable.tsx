@@ -19,13 +19,20 @@ import {
   getWeekLabel,
 } from '../utils/dateUtils';
 
-type CategoriaProducto = 'Rosa (Rojo)' | 'Rosa (Color)' | 'Alstroemeria' | 'Clavel' | 'Bouquet';
+type CategoriaProducto =
+  | 'Rosa (Rojo)'
+  | 'Rosa (Color)'
+  | 'Alstroemeria'
+  | 'Clavel'
+  | 'Gypso'
+  | 'Bouquet';
 
 const CATEGORIAS_PRODUCTO: CategoriaProducto[] = [
   'Rosa (Rojo)',
   'Rosa (Color)',
   'Alstroemeria',
   'Clavel',
+  'Gypso',
   'Bouquet',
 ];
 
@@ -34,6 +41,7 @@ function categorizarProducto(s: SolicitudFlor): CategoriaProducto {
   if (s.tipoProducto === 'bouquet' || prod.includes('bouquet')) return 'Bouquet';
   if (prod.includes('clavel') || s.florPrincipal === 'Clavel') return 'Clavel';
   if (prod.includes('alstroemeria') || s.florPrincipal === 'Alstroemeria') return 'Alstroemeria';
+  if (prod.includes('gypso') || s.florPrincipal === 'Gypso') return 'Gypso';
   if (prod.includes('color') || String(s.opcionFlor || '').toLowerCase().includes('color')) {
     return 'Rosa (Color)';
   }
@@ -116,6 +124,7 @@ export const SolicitudesTable: React.FC<SolicitudesTableProps> = ({
       'Rosa (Color)': { total: 0, porSede: { 'Sede MG': 0, 'Sede HA': 0, 'Sede SC': 0 } },
       Alstroemeria: { total: 0, porSede: { 'Sede MG': 0, 'Sede HA': 0, 'Sede SC': 0 } },
       Clavel: { total: 0, porSede: { 'Sede MG': 0, 'Sede HA': 0, 'Sede SC': 0 } },
+      Gypso: { total: 0, porSede: { 'Sede MG': 0, 'Sede HA': 0, 'Sede SC': 0 } },
       Bouquet: { total: 0, porSede: { 'Sede MG': 0, 'Sede HA': 0, 'Sede SC': 0 } },
     };
 
@@ -387,7 +396,7 @@ export const SolicitudesTable: React.FC<SolicitudesTableProps> = ({
           </div>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
           {CATEGORIAS_PRODUCTO.map((cat) => {
             const info = resumenPorProducto.mapa[cat];
             const isBouquet = cat === 'Bouquet';
@@ -395,6 +404,8 @@ export const SolicitudesTable: React.FC<SolicitudesTableProps> = ({
               cat === 'Bouquet'
                 ? 'de 5 disp.'
                 : cat === 'Clavel'
+                ? 'de 20 disp.'
+                : cat === 'Gypso'
                 ? 'de 20 disp.'
                 : cat === 'Alstroemeria'
                 ? 'de 30 disp.'

@@ -56,7 +56,7 @@ interface SolicitudIntExtFormProps {
   onCerrarSesion?: () => void;
 }
 
-const PRODUCTOS_INT_EXT = ['Rosa', 'Clavel', 'Alstroemeria'] as const;
+const PRODUCTOS_INT_EXT = ['Rosa', 'Clavel', 'Alstroemeria', 'Gypso'] as const;
 const MOTIVOS_BASE_INT_EXT = [
   'Cumpleaños',
   'Grados',
@@ -108,6 +108,14 @@ function obtenerNumSemanaIntExt(s: SolicitudIntExt): number {
   if (m) return Number(m[1]);
   if (s.fechaEntrega) return getISOWeekNumber(s.fechaEntrega);
   return 0;
+}
+
+function inferirSedePorProducto(producto: string): string {
+  const p = String(producto || '').trim().toLowerCase();
+  if (p === 'alstroemeria') return 'HA';
+  if (p === 'clavel') return 'SC';
+  if (p.includes('rosa') || p === 'bouquet' || p.includes('gypso')) return 'MG';
+  return '';
 }
 
 export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
@@ -340,6 +348,7 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
         fechaSolicitud,
         codigo: sesion.codigo.trim(),
         nombre: sesion.nombre.trim(),
+        sede: inferirSedePorProducto(productoUnico),
         producto: productoUnico,
         cantidad: Math.max(1, Math.floor(Number(productosCantidades[productoUnico]) || 1)),
         motivo: motivoFinal,
@@ -438,6 +447,7 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
         !q ||
         s.id.toLowerCase().includes(q) ||
         s.nombre.toLowerCase().includes(q) ||
+        (s.sede || inferirSedePorProducto(s.producto)).toLowerCase().includes(q) ||
         s.codigo.toLowerCase().includes(q) ||
         s.producto.toLowerCase().includes(q) ||
         s.motivo.toLowerCase().includes(q) ||
@@ -468,6 +478,7 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
       'Fecha Solicitud': s.fechaSolicitud,
       Código: s.codigo,
       Nombre: s.nombre,
+      Sede: s.sede || inferirSedePorProducto(s.producto),
       Producto: s.producto,
       Cantidad: s.cantidad,
       Motivo: s.motivo,
@@ -840,7 +851,7 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
                   (Seleccione un producto)
                 </span>
               </label>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-start">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-start">
                 {PRODUCTOS_INT_EXT.map((prod) => {
                   const activo = Object.prototype.hasOwnProperty.call(
                     productosCantidades,
@@ -1230,7 +1241,7 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
                 type="text"
                 value={busquedaTabla}
                 onChange={(e) => setBusquedaTabla(e.target.value)}
-                placeholder="Buscar por ID, nombre, producto, motivo o correo…"
+                placeholder="Buscar por ID, nombre, sede, producto, motivo o correo…"
                 className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg border border-slate-200 focus:border-[#0a2958] outline-hidden font-medium"
               />
             </div>
@@ -1347,6 +1358,7 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
                 <th className="py-2.5 px-3">Fecha Solicitud</th>
                 <th className="py-2.5 px-3">Código</th>
                 <th className="py-2.5 px-3">Nombre</th>
+                <th className="py-2.5 px-3">Sede</th>
                 <th className="py-2.5 px-3">Producto</th>
                 <th className="py-2.5 px-3 text-right">Cantidad</th>
                 <th className="py-2.5 px-3">Motivo</th>
@@ -1360,7 +1372,7 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
             <tbody className="divide-y divide-slate-100">
               {solicitudesFiltradas.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="py-8 text-center text-slate-400">
+                  <td colSpan={13} className="py-8 text-center text-slate-400">
                     {solicitudesIntExt.length === 0
                       ? 'No hay registros en Especiales Empresa todavía.'
                       : 'No hay registros que coincidan con los filtros seleccionados.'}
@@ -1369,12 +1381,14 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
               ) : (
                 solicitudesFiltradas.map((s, idx) => {
                   const notificadoMostrar = s.notificado || s.estado || 'Registrada';
+                  const sedeMostrar = s.sede || inferirSedePorProducto(s.producto) || '—';
                   return (
                     <tr key={`${s.id}-${s.codigo}-${idx}`} className="hover:bg-slate-50/80">
                       <td className="py-2.5 px-3 font-mono font-bold text-[#0a2958] whitespace-nowrap">{s.id}</td>
                       <td className="py-2.5 px-3 whitespace-nowrap">{s.fechaSolicitud}</td>
                       <td className="py-2.5 px-3 font-mono">{s.codigo}</td>
                       <td className="py-2.5 px-3 font-semibold text-slate-800">{s.nombre}</td>
+                      <td className="py-2.5 px-3 font-bold text-[#0a2958] whitespace-nowrap">{sedeMostrar}</td>
                       <td className="py-2.5 px-3 font-semibold">{s.producto}</td>
                       <td className="py-2.5 px-3 text-right font-mono tabular-nums font-bold text-[#0a2958]">{s.cantidad}</td>
                       <td className="py-2.5 px-3">{s.motivo}</td>

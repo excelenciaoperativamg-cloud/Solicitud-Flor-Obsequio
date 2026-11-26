@@ -49,7 +49,7 @@ interface IngresosSeleccionFormProps {
   onCerrarSesion?: () => void;
 }
 
-const PRODUCTOS_IS = ['Rosa', 'Alstroemeria', 'Clavel'] as const;
+const PRODUCTOS_IS = ['Rosa', 'Alstroemeria', 'Clavel', 'Gypso'] as const;
 const MOTIVO_FIJO_IS = 'Ingresos';
 const EMAIL_ITEM_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -57,7 +57,7 @@ function inferirSedePorProducto(producto: string): string {
   const p = String(producto || '').trim().toLowerCase();
   if (p === 'alstroemeria') return 'HA';
   if (p === 'clavel') return 'SC';
-  if (p.includes('rosa') || p === 'bouquet') return 'MG';
+  if (p.includes('rosa') || p === 'bouquet' || p.includes('gypso')) return 'MG';
   return '';
 }
 
@@ -214,7 +214,7 @@ export const IngresosSeleccionForm: React.FC<IngresosSeleccionFormProps> = ({
 
     if (productosSeleccionadosOrdenados.length === 0) {
       errs.producto =
-        'Seleccione un producto (Rosa, Alstroemeria o Clavel) e ingrese la cantidad.';
+        'Seleccione un producto (Rosa, Alstroemeria, Clavel o Gypso) e ingrese la cantidad.';
     } else if (productosSeleccionadosOrdenados.length > 1) {
       errs.producto = 'Solo se permite seleccionar un producto por solicitud.';
     } else {
@@ -806,8 +806,8 @@ export const IngresosSeleccionForm: React.FC<IngresosSeleccionFormProps> = ({
                 )}
               </div>
 
-              {/* Rosa, Alstroemeria y Clavel */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {/* Rosa, Alstroemeria, Clavel y Gypso */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 {PRODUCTOS_IS.map((prod) => {
                   const seleccionado = Object.prototype.hasOwnProperty.call(
                     productosCantidades,

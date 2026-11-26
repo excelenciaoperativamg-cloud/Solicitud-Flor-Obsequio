@@ -19,13 +19,6 @@ import {
   X,
   ChevronDown,
   Mail,
-  Camera,
-  Upload,
-  FileImage,
-  ExternalLink,
-  Eye,
-  Trash2,
-  FileText,
   Clock,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
@@ -95,14 +88,17 @@ interface EspecialesPersonalFormProps {
 }
 
 const ROSA_VARIANTES_EP = ['Rosa (Color)', 'Rosa (Roja)', 'Bouquet'] as const;
-const PRODUCTOS_RESTO_EP = ['Clavel', 'Alstroemeria'] as const;
+const PRODUCTOS_RESTO_EP = ['Clavel', 'Alstroemeria', 'Gypso'] as const;
 const PRODUCTOS_EP = [
   'Rosa (Color)',
   'Rosa (Roja)',
   'Bouquet',
   'Clavel',
   'Alstroemeria',
+  'Gypso',
 ] as const;
+const COLORES_BASE_EP = ['Rosado', 'Blanco', 'Amarillo', 'Naranja'] as const;
+const MAX_SOLICITUDES_POR_ANO_EP = 2;
 const MOTIVOS_BASE_EP = [
   'Matrimonio',
   '15 años',
@@ -110,7 +106,6 @@ const MOTIVOS_BASE_EP = [
   'Celebración Religiosa',
 ] as const;
 const DIAS_ANTICIPACION_OFFSET_EP = 9; // Día 10 contando desde la fecha de solicitud (ej. 23 nov -> 2 dic)
-const MODELO_CARTA_PDF_URL = '/assets/aistudio/Modelo_carta_solicitud_obsequio_de_flor_27dea37f.pdf';
 const CORREO_NOTIFICADO_FIJO_EP = 'angela.garcia@mg-consultores.com';
 const ESTADO_INICIAL_EP = 'Pendiente Aprobación';
 
@@ -177,65 +172,25 @@ function obtenerNumSemanaEP(s: EspecialPersonal): number {
   return 0;
 }
 
-async function comprimirImagenCarta(file: File): Promise<FotoCartaUpload> {
-  if (file.type === 'application/pdf') {
-    const dataUrl = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result || ''));
-      reader.onerror = () => reject(new Error('No se pudo leer el archivo PDF'));
-      reader.readAsDataURL(file);
-    });
-    const base64 = dataUrl.split(',')[1] || '';
-    return {
-      base64,
-      mimeType: 'application/pdf',
-      fileName: file.name || `Carta_${Date.now()}.pdf`,
-      previewUrl: dataUrl,
-      sizeKB: Math.round((base64.length * 3) / 4 / 1024),
-    };
+function obtenerAnoSolicitudEP(s: EspecialPersonal): string {
+  const fSol = String(s.fechaSolicitud || '').trim();
+  if (/^\d{4}/.test(fSol)) return fSol.slice(0, 4);
+  const fEnt = String(s.fechaEntrega || '').trim();
+  if (/^\d{4}/.test(fEnt)) return fEnt.slice(0, 4);
+  if (s.creadoEn && Number.isFinite(s.creadoEn)) {
+    return String(new Date(s.creadoEn).getFullYear());
   }
+  return String(new Date().getFullYear());
+}
 
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const img = new Image();
-      img.onload = () => {
-        const maxDim = 1280;
-        let { width, height } = img;
-        if (width > maxDim || height > maxDim) {
-          if (width >= height) {
-            height = Math.round((height * maxDim) / width);
-            width = maxDim;
-          } else {
-            width = Math.round((width * maxDim) / height);
-            height = maxDim;
-          }
-        }
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          reject(new Error('No se pudo procesar la imagen'));
-          return;
-        }
-        ctx.drawImage(img, 0, 0, width, height);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.78);
-        const base64 = dataUrl.split(',')[1] || '';
-        resolve({
-          base64,
-          mimeType: 'image/jpeg',
-          fileName: (file.name ? file.name.replace(/\.[^.]+$/, '') : `Carta_${Date.now()}`) + '.jpg',
-          previewUrl: dataUrl,
-          sizeKB: Math.round((base64.length * 3) / 4 / 1024),
-        });
-      };
-      img.onerror = () => reject(new Error('El archivo seleccionado no es una imagen válida'));
-      img.src = String(reader.result || '');
-    };
-    reader.onerror = () => reject(new Error('No se pudo leer la imagen seleccionada'));
-    reader.readAsDataURL(file);
-  });
+function claveOcasionSolicitudEP(s: EspecialPersonal): string {
+  const fSol = String(s.fechaSolicitud || '').trim();
+  const fEnt = String(s.fechaEntrega || '').trim();
+  const mot = normalizarTextoComp(s.motivo);
+  const corr = String(s.correoConfirmacion || '').trim().toLowerCase();
+  const col = normalizarTextoComp(s.color);
+  const compuesto = [fSol, fEnt, mot, corr, col].join('|');
+  return compuesto.replace(/\|/g, '') ? compuesto : String(s.id || Math.random());
 }
 
 export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
@@ -269,6 +224,19 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
   const [productosCantidades, setProductosCantidades] = useState<Record<string, string>>({});
   const [rosaAbierto, setRosaAbierto] = useState(false);
 
+  // Color con persistencia para opciones agregadas
+  const [coloresPersonalizados, setColoresPersonalizados] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('sfo_colores_especiales_personal_custom');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [colorSeleccionado, setColorSeleccionado] = useState('');
+  const [mostrandoInputColor, setMostrandoInputColor] = useState(false);
+  const [nuevoColorInput, setNuevoColorInput] = useState('');
+
   // Motivos con persistencia para opciones agregadas
   const [motivosPersonalizados, setMotivosPersonalizados] = useState<string[]>(() => {
     try {
@@ -282,13 +250,11 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
   const [mostrandoInputMotivo, setMostrandoInputMotivo] = useState(false);
   const [nuevoMotivoInput, setNuevoMotivoInput] = useState('');
 
-  // Fecha entrega (mínimo 10 días desde la solicitud), semana calculada, correo confirmación, foto carta
+  // Fecha entrega (mínimo 10 días desde la solicitud), semana calculada, correo confirmación
   const [fechaEntrega, setFechaEntrega] = useState(() =>
     addDaysToDateString(getTodayString(), DIAS_ANTICIPACION_OFFSET_EP)
   );
   const [correoConfirmacion, setCorreoConfirmacion] = useState('');
-  const [fotoCarta, setFotoCarta] = useState<FotoCartaUpload | null>(null);
-  const [errorFoto, setErrorFoto] = useState('');
 
   // Envío y modal confirmación
   const [errores, setErrores] = useState<Record<string, string>>({});
@@ -297,11 +263,7 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
   const [emailResultado, setEmailResultado] = useState<EmailNotificationResult | null>(null);
   const [reintentandoCorreo, setReintentandoCorreo] = useState(false);
   const [avisoPendienteScript, setAvisoPendienteScript] = useState(false);
-  const [avisoDriveFoto, setAvisoDriveFoto] = useState('');
   const [copiadoId, setCopiadoId] = useState(false);
-
-  // Previsualización de carta en modal lightbox
-  const [cartaLightboxUrl, setCartaLightboxUrl] = useState<string | null>(null);
 
   // Filtros tabla historial
   const [busquedaTabla, setBusquedaTabla] = useState('');
@@ -383,6 +345,15 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
   useEffect(() => {
     try {
       localStorage.setItem(
+        'sfo_colores_especiales_personal_custom',
+        JSON.stringify(coloresPersonalizados)
+      );
+    } catch {}
+  }, [coloresPersonalizados]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
         'sfo_motivos_especiales_personal_custom',
         JSON.stringify(motivosPersonalizados)
       );
@@ -444,6 +415,29 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
 
   const tieneSolicitudPendiente = solicitudesPendientesUsuario.length > 0;
 
+  const anoActual = useMemo(() => fechaSolicitud.slice(0, 4), [fechaSolicitud]);
+
+  const solicitudesAnoActualUsuario = useMemo(() => {
+    const claves = new Set<string>();
+    for (const s of solicitudesEspecialesPersonal) {
+      if (esEstadoNoAprobado(s.estado)) continue;
+      if (obtenerAnoSolicitudEP(s) !== anoActual) continue;
+      if (!esSolicitudDelUsuario(s, colaboradorSesion.nombre || sesion.nombre, cedulaEfectiva)) {
+        continue;
+      }
+      claves.add(claveOcasionSolicitudEP(s));
+    }
+    return claves.size;
+  }, [
+    solicitudesEspecialesPersonal,
+    anoActual,
+    colaboradorSesion.nombre,
+    sesion.nombre,
+    cedulaEfectiva,
+  ]);
+
+  const excedioLimiteAnual = solicitudesAnoActualUsuario >= MAX_SOLICITUDES_POR_ANO_EP;
+
   const semanaCalculada = useMemo(() => {
     return fechaEntrega ? getISOWeekNumber(fechaEntrega) : getISOWeekNumber(fechaMinimaEntrega);
   }, [fechaEntrega, fechaMinimaEntrega]);
@@ -471,6 +465,25 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
       return acc + (!Number.isNaN(n) && n > 0 ? Math.floor(n) : 0);
     }, 0);
   }, [productosSeleccionadosOrdenados, productosCantidades]);
+
+  const opcionesColorVisibles = useMemo(() => {
+    const mapa = new Map<string, string>();
+    const agregar = (val?: string) => {
+      const limpio = String(val || '').trim();
+      if (!limpio) return;
+      const clave = limpio.toLowerCase();
+      if (!mapa.has(clave)) mapa.set(clave, limpio);
+    };
+    COLORES_BASE_EP.forEach(agregar);
+    coloresPersonalizados.forEach(agregar);
+    solicitudesEspecialesPersonal.forEach((s) => agregar(s.color));
+    return Array.from(mapa.values());
+  }, [coloresPersonalizados, solicitudesEspecialesPersonal]);
+
+  const colorFinal =
+    mostrandoInputColor && nuevoColorInput.trim()
+      ? nuevoColorInput.trim()
+      : colorSeleccionado.trim();
 
   const opcionesMotivoVisibles = useMemo(() => {
     const set = new Set<string>([...MOTIVOS_BASE_EP, ...motivosPersonalizados]);
@@ -549,6 +562,22 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
     });
   };
 
+  const handleAgregarColorPersonalizado = () => {
+    const limpio = nuevoColorInput.trim();
+    if (!limpio) return;
+    if (!opcionesColorVisibles.some((c) => c.toLowerCase() === limpio.toLowerCase())) {
+      setColoresPersonalizados((prev) => [...prev, limpio]);
+    }
+    setColorSeleccionado(limpio);
+    setNuevoColorInput('');
+    setMostrandoInputColor(false);
+    setErrores((prev) => {
+      const next = { ...prev };
+      delete next.color;
+      return next;
+    });
+  };
+
   const handleAgregarMotivoPersonalizado = () => {
     const limpio = nuevoMotivoInput.trim();
     if (!limpio) return;
@@ -565,26 +594,6 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
     });
   };
 
-  const handleSeleccionArchivoCarta = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    const inputEl = e.target;
-    if (!file) return;
-    setErrorFoto('');
-    try {
-      const procesada = await comprimirImagenCarta(file);
-      setFotoCarta(procesada);
-      setErrores((prev) => {
-        const next = { ...prev };
-        delete next.fotoCarta;
-        return next;
-      });
-    } catch (err: any) {
-      setErrorFoto(err?.message || 'No se pudo procesar el archivo seleccionado.');
-    } finally {
-      inputEl.value = '';
-    }
-  };
-
   const validarFormulario = (): boolean => {
     const errs: Record<string, string> = {};
 
@@ -596,7 +605,7 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
     if (productosSeleccionadosOrdenados.length === 0) {
       errs.producto = rosaAbierto
         ? 'Seleccione Rosa (Color), Rosa (Roja) y/o Bouquet, o elija otro producto.'
-        : 'Seleccione al menos un producto (Rosa, Clavel o Alstroemeria).';
+        : 'Seleccione al menos un producto (Rosa, Clavel, Alstroemeria o Gypso).';
     } else {
       for (const prod of productosSeleccionadosOrdenados) {
         const cantNum = Number(productosCantidades[prod]);
@@ -605,6 +614,10 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
           errs.cantidad = 'Revise las cantidades ingresadas por producto.';
         }
       }
+    }
+
+    if (!colorFinal) {
+      errs.color = 'Especifique el color que requiere.';
     }
 
     if (!motivoFinal) {
@@ -629,10 +642,6 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
         : 'El correo electrónico ingresado no tiene un formato válido.';
     }
 
-    if (!fotoCarta) {
-      errs.fotoCarta = 'Debe adjuntar la foto o PDF de la carta para registrar la solicitud.';
-    }
-
     setErrores(errs);
     return Object.keys(errs).length === 0;
   };
@@ -641,13 +650,14 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
     setCedulaManual('');
     setProductosCantidades({});
     setRosaAbierto(false);
+    setColorSeleccionado('');
+    setMostrandoInputColor(false);
+    setNuevoColorInput('');
     setMotivoSeleccionado('');
     setMostrandoInputMotivo(false);
     setNuevoMotivoInput('');
     setFechaEntrega(fechaMinimaEntrega);
     setCorreoConfirmacion('');
-    setFotoCarta(null);
-    setErrorFoto('');
     setErrores({});
   };
 
@@ -660,12 +670,26 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
       });
       return;
     }
+    if (excedioLimiteAnual) {
+      setErrores({
+        general: `Ha alcanzado el límite máximo de ${MAX_SOLICITUDES_POR_ANO_EP} solicitudes al año (${anoActual}) en Especiales Personal.`,
+      });
+      return;
+    }
     if (!validarFormulario() || !nombreBeneficiario || !sedeBeneficiario) return;
 
     setIsSubmitting(true);
     setErrores({});
 
     try {
+      // Si había un color nuevo escrito sin haber presionado "Agregar", guardarlo
+      if (mostrandoInputColor && nuevoColorInput.trim()) {
+        const cLimpio = nuevoColorInput.trim();
+        if (!opcionesColorVisibles.some((c) => c.toLowerCase() === cLimpio.toLowerCase())) {
+          setColoresPersonalizados((prev) => [...prev, cLimpio]);
+        }
+      }
+
       // Si había un motivo nuevo escrito sin haber presionado "Agregar", guardarlo
       if (mostrandoInputMotivo && nuevoMotivoInput.trim()) {
         const mLimpio = nuevoMotivoInput.trim();
@@ -685,6 +709,7 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
         nombre: nombreBeneficiario,
         sede: sedeBeneficiario,
         producto: prod,
+        color: colorFinal,
         cantidad: Math.max(1, Math.floor(Number(productosCantidades[prod]) || 1)),
         motivo: motivoFinal,
         semana: semanaStr,
@@ -700,13 +725,7 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
       const res = await onGuardarEspecialPersonal(
         listaSolicitudes,
         CORREO_NOTIFICADO_FIJO_EP,
-        fotoCarta
-          ? {
-              base64: fotoCarta.base64,
-              mimeType: fotoCarta.mimeType,
-              fileName: fotoCarta.fileName,
-            }
-          : null
+        null
       );
 
       if (res.success && (res.solicitudes?.length || res.solicitud)) {
@@ -721,7 +740,6 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
         setAvisoPendienteScript(
           !!res.pendingAppsScriptUpdate || !!res.needsAppsScriptUpdate
         );
-        setAvisoDriveFoto(res.fotoCartaDriveError || '');
         limpiarFormulario();
         try {
           confetti({
@@ -800,6 +818,7 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
         s.nombre.toLowerCase().includes(q) ||
         s.sede.toLowerCase().includes(q) ||
         s.producto.toLowerCase().includes(q) ||
+        (s.color || '').toLowerCase().includes(q) ||
         s.motivo.toLowerCase().includes(q) ||
         (s.correoConfirmacion || '').toLowerCase().includes(q) ||
         (s.estado || '').toLowerCase().includes(q) ||
@@ -830,13 +849,13 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
       Nombre: s.nombre,
       Sede: s.sede,
       Producto: s.producto,
+      Color: s.color || '',
       Cantidad: s.cantidad,
       Motivo: s.motivo,
       Semana: s.semana,
       'Fecha Entrega': s.fechaEntrega,
       'Correo de confirmación': s.correoConfirmacion || '',
       Estado: s.estado || ESTADO_INICIAL_EP,
-      'Foto Carta': s.fotoCarta || '',
       Notificado: s.notificado || '',
     }));
     const ws = XLSX.utils.json_to_sheet(rows);
@@ -854,63 +873,6 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
 
   return (
     <div className="max-w-5xl mx-auto py-6 px-4 sm:px-6 space-y-6">
-      {/* Lightbox para visualizar Foto Carta */}
-      {cartaLightboxUrl && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-xs"
-          onClick={() => setCartaLightboxUrl(null)}
-        >
-          <div
-            className="bg-white rounded-2xl max-w-2xl w-full p-4 shadow-2xl border border-slate-200 space-y-3"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-              <span className="text-xs font-extrabold text-[#0a2958] uppercase tracking-wider flex items-center gap-1.5">
-                <FileImage className="w-4 h-4 text-[#E60000]" />
-                Carta de Solicitud
-              </span>
-              <button
-                type="button"
-                onClick={() => setCartaLightboxUrl(null)}
-                className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            {cartaLightboxUrl.startsWith('http') ? (
-              <div className="p-4 text-center space-y-3">
-                <p className="text-xs text-slate-600">
-                  La carta está almacenada de forma segura en Google Drive.
-                </p>
-                <a
-                  href={cartaLightboxUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#0a2958] text-white text-xs font-bold hover:bg-[#0d346e]"
-                >
-                  <ExternalLink className="w-4 h-4 text-[#E60000]" />
-                  <span>Abrir Carta en Google Drive</span>
-                </a>
-              </div>
-            ) : cartaLightboxUrl.toLowerCase().endsWith('.pdf') ? (
-              <iframe
-                src={cartaLightboxUrl}
-                title="Carta de Solicitud"
-                className="w-full h-[65vh] rounded-xl border border-slate-200"
-              />
-            ) : (
-              <div className="max-h-[75vh] overflow-auto flex items-center justify-center bg-slate-50 rounded-xl p-2">
-                <img
-                  src={cartaLightboxUrl}
-                  alt="Carta de Solicitud"
-                  className="max-w-full max-h-[70vh] rounded-lg object-contain"
-                />
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* Modal de Confirmación */}
       {primeraExitosa && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
@@ -934,15 +896,6 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
                 <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600 mt-0.5" />
                 <span>
                   Guardado en respaldo local. Para escribir en la hoja <strong>Especiales Personal</strong>, el administrador debe actualizar el Apps Script e implementar una <strong>Nueva versión</strong>.
-                </span>
-              </div>
-            )}
-
-            {avisoDriveFoto && (
-              <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs text-left flex items-start gap-2">
-                <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600 mt-0.5" />
-                <span>
-                  La foto de la carta quedó en respaldo local (para guardar directamente en Google Drive ejecute <code>autorizarEnvioCorreos</code> en Apps Script).
                 </span>
               </div>
             )}
@@ -1090,6 +1043,10 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
               )}
 
               <div className="flex justify-between">
+                <span className="text-slate-500">Color:</span>
+                <span className="font-bold text-[#0a2958]">{primeraExitosa.color || '—'}</span>
+              </div>
+              <div className="flex justify-between">
                 <span className="text-slate-500">Motivo:</span>
                 <span className="font-bold text-slate-900">{primeraExitosa.motivo}</span>
               </div>
@@ -1105,19 +1062,6 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
                   {formatDateSpanish(primeraExitosa.fechaEntrega)}
                 </span>
               </div>
-              {primeraExitosa.fotoCarta && (
-                <div className="flex justify-between items-center gap-2">
-                  <span className="text-slate-500">Foto Carta:</span>
-                  <button
-                    type="button"
-                    onClick={() => setCartaLightboxUrl(primeraExitosa.fotoCarta!)}
-                    className="inline-flex items-center gap-1 font-bold text-[#0a2958] hover:underline cursor-pointer"
-                  >
-                    <Eye className="w-3.5 h-3.5 text-[#E60000]" />
-                    <span>Ver Carta</span>
-                  </button>
-                </div>
-              )}
               <div className="flex justify-between gap-3">
                 <span className="text-slate-500 shrink-0">Correo de confirmación:</span>
                 <span className="font-semibold text-[#0a2958] break-all text-right">
@@ -1151,7 +1095,6 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
                 onClick={() => {
                   setSolicitudesExitosas([]);
                   setEmailResultado(null);
-                  setAvisoDriveFoto('');
                 }}
                 className="flex-1 py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold flex items-center justify-center gap-2 cursor-pointer"
               >
@@ -1162,7 +1105,6 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
                 onClick={() => {
                   setSolicitudesExitosas([]);
                   setEmailResultado(null);
-                  setAvisoDriveFoto('');
                   onCerrarSesion?.();
                 }}
                 className="flex-1 py-2.5 px-4 rounded-xl bg-[#0a2958] hover:bg-[#0d346e] text-white text-xs font-bold flex items-center justify-center gap-2 cursor-pointer"
@@ -1186,7 +1128,7 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
                 ESPECIALES PERSONAL
               </h2>
               <p className="text-[11px] text-slate-500">
-                Solicitudes especiales por trabajador con carta
+                Solicitudes especiales por trabajador (máximo {MAX_SOLICITUDES_POR_ANO_EP} solicitudes al año)
               </p>
             </div>
           </div>
@@ -1223,7 +1165,7 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
           </div>
         ) : null}
 
-        {!tieneSolicitudPendiente && errores.general && (
+        {!tieneSolicitudPendiente && !excedioLimiteAnual && errores.general && (
           <div className="mx-6 mt-5 p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-3">
             <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
             <span>{errores.general}</span>
@@ -1253,13 +1195,34 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
                 </p>
               </div>
             </div>
+          ) : excedioLimiteAnual ? (
+            <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-xs flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-[#E60000] shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <p className="font-extrabold text-[#E60000]">
+                  Límite anual alcanzado (máximo {MAX_SOLICITUDES_POR_ANO_EP} veces al año)
+                </p>
+                <p className="font-medium text-rose-900">
+                  Ya realizó{' '}
+                  <strong>
+                    {solicitudesAnoActualUsuario} de {MAX_SOLICITUDES_POR_ANO_EP}
+                  </strong>{' '}
+                  solicitudes permitidas en el año <strong>{anoActual}</strong> en Especiales Personal. No es posible registrar más solicitudes este año.
+                </p>
+              </div>
+            </div>
           ) : (
             <>
-              {/* Nota de verificación y autorización */}
-              <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start gap-2.5 font-medium">
-                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                <span>
-                  Al realizar esta solicitud, queda sujeta a verificación, disponibilidad y autorización por parte de la dirección de Poscosecha.
+              {/* Nota de verificación, autorización y límite anual */}
+              <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 font-medium">
+                <div className="flex items-start gap-2.5">
+                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <span>
+                    Al realizar esta solicitud, queda sujeta a verificación, disponibilidad y autorización por parte de la dirección de Poscosecha. Máximo {MAX_SOLICITUDES_POR_ANO_EP} solicitudes al año por persona.
+                  </span>
+                </div>
+                <span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-white border border-amber-300 text-[11px] font-extrabold text-[#0a2958] whitespace-nowrap shrink-0">
+                  Año {anoActual}: {solicitudesAnoActualUsuario} de {MAX_SOLICITUDES_POR_ANO_EP} usadas
                 </span>
               </div>
 
@@ -1411,7 +1374,7 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
                   (Puede seleccionar varios productos; cada uno se guarda por separado)
                 </span>
               </label>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-start">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-start">
                 {/* Tarjeta Rosa con subopciones Rosa (Color), Rosa (Roja) y Bouquet */}
                 <div
                   className={`rounded-xl border p-3 transition ${
@@ -1519,7 +1482,7 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
                   )}
                 </div>
 
-                {/* Clavel, Alstroemeria */}
+                {/* Clavel, Alstroemeria, Gypso */}
                 {PRODUCTOS_RESTO_EP.map((prod) => {
                   const activo = Object.prototype.hasOwnProperty.call(productosCantidades, prod);
                   const cantValor = productosCantidades[prod] ?? '';
@@ -1598,14 +1561,119 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
                 </p>
               )}
             </div>
+
+            {/* Color después de Producto */}
+            <div className="max-w-md pt-1">
+              <label
+                htmlFor="select-color-ep"
+                className="block text-xs font-bold text-slate-700 mb-0.5"
+              >
+                Color <span className="text-[#E60000]">*</span>
+              </label>
+              <p className="text-[11px] text-slate-600 font-medium mb-1.5">
+                Especifique el color que requiere.
+              </p>
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1 min-w-0">
+                  <select
+                    id="select-color-ep"
+                    value={mostrandoInputColor ? '__AGREGAR__' : colorSeleccionado}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === '__AGREGAR__') {
+                        setMostrandoInputColor(true);
+                      } else {
+                        setColorSeleccionado(val);
+                        setMostrandoInputColor(false);
+                      }
+                      setErrores((prev) => {
+                        const next = { ...prev };
+                        delete next.color;
+                        return next;
+                      });
+                    }}
+                    className={`w-full appearance-none pl-3.5 pr-9 py-2.5 text-xs rounded-xl border font-bold bg-white outline-hidden cursor-pointer truncate ${
+                      errores.color
+                        ? 'border-rose-400 bg-rose-50/40 text-slate-900'
+                        : 'border-slate-300 focus:border-[#0a2958] text-slate-800'
+                    }`}
+                  >
+                    <option value="">Seleccione un color…</option>
+                    {opcionesColorVisibles.map((col) => (
+                      <option key={col} value={col}>
+                        {col}
+                      </option>
+                    ))}
+                    <option value="__AGREGAR__">+ Agregar otro…</option>
+                  </select>
+                  <ChevronDown className="w-4 h-4 text-slate-500 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMostrandoInputColor((prev) => !prev);
+                    setErrores((prev) => {
+                      const next = { ...prev };
+                      delete next.color;
+                      return next;
+                    });
+                  }}
+                  title="Agregar otro color"
+                  aria-label="Agregar otro color"
+                  className={`p-2.5 rounded-xl border transition cursor-pointer shrink-0 ${
+                    mostrandoInputColor
+                      ? 'bg-[#E60000]/10 text-[#E60000] border-[#E60000]/40'
+                      : 'bg-slate-50 text-slate-700 border-slate-300 hover:border-[#0a2958] hover:text-[#0a2958]'
+                  }`}
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+              </div>
+
+              {mostrandoInputColor && (
+                <div className="flex gap-2 pt-2">
+                  <input
+                    type="text"
+                    value={nuevoColorInput}
+                    onChange={(e) => {
+                      setNuevoColorInput(e.target.value);
+                      setErrores((prev) => {
+                        const next = { ...prev };
+                        delete next.color;
+                        return next;
+                      });
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAgregarColorPersonalizado();
+                      }
+                    }}
+                    placeholder="Escriba el color requerido…"
+                    className="flex-1 min-w-0 px-3 py-2 text-xs rounded-xl border border-slate-300 focus:border-[#0a2958] outline-hidden font-medium"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAgregarColorPersonalizado}
+                    className="px-3.5 py-2 rounded-xl bg-[#0a2958] text-white text-xs font-bold hover:bg-[#0d346e] cursor-pointer shrink-0"
+                  >
+                    Agregar
+                  </button>
+                </div>
+              )}
+
+              {errores.color && (
+                <p className="text-[11px] text-[#E60000] font-semibold mt-1">{errores.color}</p>
+              )}
+            </div>
           </div>
 
-          {/* 3. MOTIVO, ENTREGA, CARTA Y NOTIFICACIÓN */}
+          {/* 3. MOTIVO, ENTREGA Y NOTIFICACIÓN */}
           <div className="space-y-5">
             <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
               <Calendar className="w-4 h-4 text-[#0a2958]" />
               <h3 className="text-sm font-extrabold text-[#0a2958] uppercase tracking-wider">
-                3. MOTIVO, ENTREGA, CARTA Y NOTIFICACIÓN
+                3. MOTIVO, ENTREGA Y NOTIFICACIÓN
               </h3>
             </div>
 
@@ -1826,136 +1894,6 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
                   Toda solicitud registrada inicia en estado <strong>{ESTADO_INICIAL_EP}</strong>.
                 </p>
               </div>
-            </div>
-
-            {/* Foto Carta + Modelo de carta descargable */}
-            <div className="space-y-2.5">
-              <label className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
-                <FileImage className="w-3.5 h-3.5 text-[#0a2958]" />
-                <span>
-                  Foto Carta <span className="text-[#E60000]">*</span>
-                </span>
-              </label>
-
-              {/* Carta modelo para descargar, llenar, firmar y adjuntar */}
-              <div className="p-3.5 rounded-xl border border-[#0a2958]/20 bg-[#0a2958]/[0.03] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="flex items-start gap-2.5 min-w-0">
-                  <div className="w-9 h-9 rounded-lg bg-[#0a2958] text-white flex items-center justify-center shrink-0">
-                    <FileText className="w-4 h-4" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-xs font-extrabold text-[#0a2958]">
-                      Modelo de carta de solicitud
-                    </p>
-                    <p className="text-[11px] text-slate-600">
-                      Descargue el formato modelo, llénelo, fírmelo y luego adjúntelo o tómele una foto abajo.
-                    </p>
-                  </div>
-                </div>
-                <div className="flex flex-wrap items-center gap-2 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => setCartaLightboxUrl(MODELO_CARTA_PDF_URL)}
-                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-[#0a2958] text-xs font-bold shadow-xs cursor-pointer transition"
-                  >
-                    <Eye className="w-3.5 h-3.5 text-[#E60000]" />
-                    <span>Ver modelo</span>
-                  </button>
-                  <a
-                    href={MODELO_CARTA_PDF_URL}
-                    download="Modelo_carta_solicitud_obsequio_de_flor.pdf"
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#0a2958] hover:bg-[#0d346e] text-white text-xs font-bold shadow-xs transition"
-                  >
-                    <Download className="w-3.5 h-3.5 text-[#E60000]" />
-                    <span>Descargar carta modelo (PDF)</span>
-                  </a>
-                </div>
-              </div>
-
-              <div
-                className={`p-4 rounded-xl border border-dashed space-y-3 ${
-                  errores.fotoCarta
-                    ? 'border-rose-400 bg-rose-50/40'
-                    : 'border-slate-300 bg-slate-50/70'
-                }`}
-              >
-                <div className="flex flex-wrap items-center gap-2.5">
-                  <label className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-800 text-xs font-bold shadow-xs cursor-pointer transition">
-                    <Upload className="w-3.5 h-3.5 text-[#0a2958]" />
-                    <span>Adjuntar archivo</span>
-                    <input
-                      type="file"
-                      accept="image/*,.pdf"
-                      onChange={handleSeleccionArchivoCarta}
-                      className="hidden"
-                    />
-                  </label>
-
-                  <label className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl border border-[#0a2958]/30 bg-[#0a2958]/5 hover:bg-[#0a2958]/10 text-[#0a2958] text-xs font-bold shadow-xs cursor-pointer transition">
-                    <Camera className="w-3.5 h-3.5 text-[#E60000]" />
-                    <span>Tomar foto (móvil)</span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      capture="environment"
-                      onChange={handleSeleccionArchivoCarta}
-                      className="hidden"
-                    />
-                  </label>
-                </div>
-
-                {errorFoto && (
-                  <p className="text-[11px] text-[#E60000] font-semibold">{errorFoto}</p>
-                )}
-
-                {fotoCarta ? (
-                  <div className="flex items-center justify-between gap-3 p-2.5 rounded-xl bg-white border border-slate-200">
-                    <div className="flex items-center gap-3 min-w-0">
-                      {fotoCarta.mimeType === 'application/pdf' ? (
-                        <div className="w-12 h-12 rounded-lg bg-rose-50 border border-rose-200 flex items-center justify-center text-[#E60000] text-[10px] font-extrabold shrink-0">
-                          PDF
-                        </div>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => setCartaLightboxUrl(fotoCarta.previewUrl)}
-                          className="w-12 h-12 rounded-lg overflow-hidden border border-slate-200 shrink-0 cursor-pointer"
-                          title="Ampliar vista"
-                        >
-                          <img
-                            src={fotoCarta.previewUrl}
-                            alt="Vista previa carta"
-                            className="w-full h-full object-cover"
-                          />
-                        </button>
-                      )}
-                      <div className="min-w-0">
-                        <p className="text-xs font-bold text-slate-800 truncate">
-                          {fotoCarta.fileName}
-                        </p>
-                        <p className="text-[11px] text-emerald-700 font-semibold">
-                          Carta lista ({fotoCarta.sizeKB} KB)
-                        </p>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setFotoCarta(null)}
-                      className="p-2 rounded-lg text-slate-400 hover:text-[#E60000] hover:bg-rose-50 cursor-pointer"
-                      title="Quitar archivo"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                ) : (
-                  <p className="text-[11px] text-slate-500">
-                    Debe adjuntar una imagen o PDF de la carta, o tomar la foto directamente desde su dispositivo.
-                  </p>
-                )}
-              </div>
-              {errores.fotoCarta && (
-                <p className="text-[11px] text-[#E60000] font-semibold">{errores.fotoCarta}</p>
-              )}
             </div>
 
             {/* Notificado (destinatario fijo para revisión y respuesta) */}
@@ -2212,13 +2150,13 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
                 <th className="py-2.5 px-3">Nombre</th>
                 <th className="py-2.5 px-3">Sede</th>
                 <th className="py-2.5 px-3">Producto</th>
+                <th className="py-2.5 px-3">Color</th>
                 <th className="py-2.5 px-3 text-right">Cantidad</th>
                 <th className="py-2.5 px-3">Motivo</th>
                 <th className="py-2.5 px-3">Semana</th>
                 <th className="py-2.5 px-3">Fecha Entrega</th>
                 <th className="py-2.5 px-3">Correo de confirmación</th>
                 <th className="py-2.5 px-3">Estado</th>
-                <th className="py-2.5 px-3">Foto Carta</th>
                 <th className="py-2.5 px-3">Notificado</th>
               </tr>
             </thead>
@@ -2247,6 +2185,9 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
                       <td className="py-2.5 px-3 font-semibold text-slate-800">{s.nombre}</td>
                       <td className="py-2.5 px-3 font-bold whitespace-nowrap">{s.sede}</td>
                       <td className="py-2.5 px-3 font-semibold">{s.producto}</td>
+                      <td className="py-2.5 px-3 font-semibold text-[#0a2958] whitespace-nowrap">
+                        {s.color || '—'}
+                      </td>
                       <td className="py-2.5 px-3 text-right font-mono tabular-nums font-bold text-[#0a2958]">
                         {s.cantidad}
                       </td>
@@ -2329,20 +2270,6 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
                           {estadoMostrar}
                         </td>
                       )}
-                      <td className="py-2.5 px-3 whitespace-nowrap">
-                        {s.fotoCarta ? (
-                          <button
-                            type="button"
-                            onClick={() => setCartaLightboxUrl(s.fotoCarta!)}
-                            className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-[#0a2958]/10 hover:bg-[#0a2958]/15 text-[#0a2958] font-bold text-[11px] cursor-pointer"
-                          >
-                            <Eye className="w-3 h-3 text-[#E60000]" />
-                            <span>Ver carta</span>
-                          </button>
-                        ) : (
-                          <span className="text-slate-400">—</span>
-                        )}
-                      </td>
                       <td
                         className="py-2.5 px-3 font-semibold text-emerald-700 max-w-[220px] truncate"
                         title={notificadoMostrar}

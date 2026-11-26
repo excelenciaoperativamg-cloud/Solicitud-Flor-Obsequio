@@ -59,7 +59,7 @@ interface ObsequioVisitantesFormProps {
 
 const EMPRESAS_BASE_OV = ['GHT'] as const;
 const STORAGE_EMPRESAS_OV_KEY = 'sfo_empresas_obsequio_visitantes_custom';
-const PRODUCTOS_OV = ['Rosa', 'Alstroemeria', 'Clavel'] as const;
+const PRODUCTOS_OV = ['Rosa', 'Alstroemeria', 'Clavel', 'Gypso'] as const;
 const MOTIVO_FIJO_OV = 'Visitante';
 const EMAIL_ITEM_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -67,7 +67,7 @@ function inferirSedePorProducto(producto: string): string {
   const p = String(producto || '').trim().toLowerCase();
   if (p === 'alstroemeria') return 'HA';
   if (p === 'clavel') return 'SC';
-  if (p.includes('rosa') || p === 'bouquet') return 'MG';
+  if (p.includes('rosa') || p === 'bouquet' || p.includes('gypso')) return 'MG';
   return '';
 }
 
@@ -288,7 +288,7 @@ export const ObsequioVisitantesForm: React.FC<ObsequioVisitantesFormProps> = ({
 
     if (productosSeleccionadosOrdenados.length === 0) {
       errs.producto =
-        'Seleccione un producto (Rosa, Alstroemeria o Clavel) e ingrese la cantidad.';
+        'Seleccione un producto (Rosa, Alstroemeria, Clavel o Gypso) e ingrese la cantidad.';
     } else if (productosSeleccionadosOrdenados.length > 1) {
       errs.producto = 'Solo se permite seleccionar un producto por solicitud.';
     } else {
@@ -1041,8 +1041,8 @@ export const ObsequioVisitantesForm: React.FC<ObsequioVisitantesFormProps> = ({
                 )}
               </div>
 
-              {/* Rosa, Alstroemeria y Clavel */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {/* Rosa, Alstroemeria, Clavel y Gypso */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 {PRODUCTOS_OV.map((prod) => {
                   const seleccionado = Object.prototype.hasOwnProperty.call(
                     productosCantidades,

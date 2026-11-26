@@ -5,7 +5,7 @@ import {
   callAppsScript,
 } from '../_lib/storage.js';
 
-const PRODUCTOS_PERMITIDOS_INT_EXT = new Set(['Rosa', 'Clavel', 'Alstroemeria']);
+const PRODUCTOS_PERMITIDOS_INT_EXT = new Set(['Rosa', 'Clavel', 'Alstroemeria', 'Gypso']);
 
 function esDiaDeshabilitadoEspecialesEmpresaBogota(now = new Date()) {
   try {
@@ -30,18 +30,28 @@ function normalizarHoraEntrega(raw) {
   return txt;
 }
 
+function inferirSedePorProducto(producto) {
+  const p = String(producto || '').trim().toLowerCase();
+  if (p === 'alstroemeria') return 'HA';
+  if (p === 'clavel') return 'SC';
+  if (p.includes('rosa') || p === 'bouquet' || p.includes('gypso')) return 'MG';
+  return '';
+}
+
 function normalizarIntExt(s) {
   const cantidadNum = Number(s?.cantidad);
   const semanaStr = String(s?.semana || '').match(/(\d+)/)?.[1] || String(s?.semana || '').trim();
   const notificadoVal = String(s?.notificado || s?.estado || 'Registrada').trim();
+  const prod = String(s?.producto || '').trim();
+  const sede = String(s?.sede || inferirSedePorProducto(prod)).trim().toUpperCase();
   return {
     id: String(s?.id || '').trim(),
     fechaSolicitud: String(s?.fechaSolicitud || s?.fecha || '').trim(),
     codigo: String(s?.codigo || '').trim(),
     nombre: String(s?.nombre || '').trim(),
-    sede: String(s?.sede || '').trim(),
+    sede,
     area: String(s?.area || '').trim(),
-    producto: String(s?.producto || '').trim(),
+    producto: prod,
     cantidad: cantidadNum && !Number.isNaN(cantidadNum) && cantidadNum > 0 ? cantidadNum : 1,
     motivo: String(s?.motivo || '').trim(),
     semana: semanaStr,
@@ -258,7 +268,7 @@ export default async function handler(req, res) {
           return res.status(400).json({
             success: false,
             error:
-              'Producto no permitido en Especiales Empresa. Seleccione Rosa, Clavel o Alstroemeria.',
+              'Producto no permitido en Especiales Empresa. Seleccione Rosa, Clavel, Alstroemeria o Gypso.',
           });
         }
       }
@@ -309,6 +319,7 @@ export default async function handler(req, res) {
           fechaSolicitud: String(item.fechaSolicitud || '').trim(),
           codigo: String(item.codigo).trim(),
           nombre: String(item.nombre).trim(),
+          sede: inferirSedePorProducto(item.producto) || String(item.sede || '').trim().toUpperCase(),
           producto: String(item.producto).trim(),
           cantidad: cantidadNum,
           motivo: String(item.motivo).trim(),

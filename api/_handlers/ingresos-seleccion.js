@@ -7,7 +7,7 @@ import {
 
 const SEDES_VALIDAS = new Set(['MG', 'HA', 'SC']);
 const PRODUCTOS_POR_SEDE = {
-  MG: new Set(['Rosa', 'Rosa (Color)', 'Rosa (Roja)', 'Bouquet']),
+  MG: new Set(['Rosa', 'Rosa (Color)', 'Rosa (Roja)', 'Bouquet', 'Gypso']),
   HA: new Set(['Alstroemeria']),
   SC: new Set(['Clavel']),
 };
@@ -17,7 +17,7 @@ function inferirSedePorProducto(producto) {
   const p = String(producto || '').trim().toLowerCase();
   if (p === 'alstroemeria') return 'HA';
   if (p === 'clavel') return 'SC';
-  if (p.includes('rosa') || p === 'bouquet') return 'MG';
+  if (p.includes('rosa') || p === 'bouquet' || p.includes('gypso')) return 'MG';
   return '';
 }
 

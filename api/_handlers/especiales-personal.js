@@ -12,6 +12,8 @@ const CORREO_NOTIFICADO_FIJO_EP = 'angela.garcia@mg-consultores.com';
 const ESTADO_INICIAL_EP = 'Pendiente Aprobación';
 const ESTADOS_PERMITIDOS_EP = ['Pendiente Aprobación', 'Aprobado', 'No Aprobado'];
 
+const MAX_SOLICITUDES_POR_ANO_EP = 2;
+
 function normalizarTextoComp(raw) {
   return String(raw || '')
     .toUpperCase()
@@ -27,6 +29,31 @@ function normalizarDigitosComp(raw) {
 
 function esEstadoPendienteAprobacion(estado) {
   return normalizarTextoComp(estado) === 'PENDIENTE APROBACION';
+}
+
+function esEstadoNoAprobado(estado) {
+  return normalizarTextoComp(estado) === 'NO APROBADO';
+}
+
+function obtenerAnoSolicitudEP(s) {
+  const fSol = String(s?.fechaSolicitud || '').trim();
+  if (/^\d{4}/.test(fSol)) return fSol.slice(0, 4);
+  const fEnt = String(s?.fechaEntrega || '').trim();
+  if (/^\d{4}/.test(fEnt)) return fEnt.slice(0, 4);
+  if (s?.creadoEn && Number.isFinite(Number(s.creadoEn))) {
+    return String(new Date(Number(s.creadoEn)).getFullYear());
+  }
+  return String(new Date().getFullYear());
+}
+
+function claveOcasionSolicitudEP(s) {
+  const fSol = String(s?.fechaSolicitud || '').trim();
+  const fEnt = String(s?.fechaEntrega || '').trim();
+  const mot = normalizarTextoComp(s?.motivo);
+  const corr = String(s?.correoConfirmacion || '').trim().toLowerCase();
+  const col = normalizarTextoComp(s?.color);
+  const compuesto = [fSol, fEnt, mot, corr, col].join('|');
+  return compuesto.replace(/\|/g, '') ? compuesto : String(s?.id || Math.random());
 }
 
 function esSolicitudDelUsuario(solicitud, usuarioNombre, cedula) {
@@ -83,6 +110,7 @@ function normalizarEspecialPersonal(s) {
     nombre: String(s?.nombre || '').trim(),
     sede: String(s?.sede || '').trim(),
     producto: String(s?.producto || '').trim(),
+    color: String(s?.color || '').trim(),
     cantidad: cantidadNum && !Number.isNaN(cantidadNum) && cantidadNum > 0 ? cantidadNum : 1,
     motivo: String(s?.motivo || '').trim(),
     semana: semanaStr,
@@ -457,6 +485,13 @@ export default async function handler(req, res) {
           });
         }
 
+        if (!String(item.color || '').trim()) {
+          return res.status(400).json({
+            success: false,
+            error: 'Especifique el color que requiere.',
+          });
+        }
+
         const fechaSolStr = String(item.fechaSolicitud || '').trim();
         const fechaEntStr = String(item.fechaEntrega || '').trim();
         if (/^\d{4}-\d{2}-\d{2}$/.test(fechaSolStr) && /^\d{4}-\d{2}-\d{2}$/.test(fechaEntStr)) {
@@ -474,16 +509,6 @@ export default async function handler(req, res) {
             });
           }
         }
-      }
-
-      const tieneCartaAdjunta =
-        String(body?.fotoCartaBase64 || '').trim().length > 0 ||
-        String(itemsInput[0]?.fotoCarta || '').trim().length > 0;
-      if (!tieneCartaAdjunta) {
-        return res.status(400).json({
-          success: false,
-          error: 'Debe adjuntar la foto o PDF de la carta para registrar en Especiales Personal.',
-        });
       }
 
       let existentes = getEspecialesPersonalStorage();
@@ -533,6 +558,26 @@ export default async function handler(req, res) {
         return res.status(409).json({
           success: false,
           error: `Ya tiene una solicitud en estado Pendiente Aprobación (${solicitudPendiente.id}). No puede realizar una solicitud adicional hasta que sea aprobada o gestionada.`,
+        });
+      }
+
+      // Limitar la solicitud por persona máximo 2 veces al año
+      const anoObjetivo = obtenerAnoSolicitudEP(primerSolicitante);
+      const ocasionesAno = new Set();
+      for (const r of existentes) {
+        if (esEstadoNoAprobado(r?.estado)) continue;
+        if (obtenerAnoSolicitudEP(r) !== anoObjetivo) continue;
+        const esMismoUsuario =
+          esSolicitudDelUsuario(r, primerSolicitante?.usuario, primerSolicitante?.cedula) ||
+          esSolicitudDelUsuario(r, primerSolicitante?.nombre, primerSolicitante?.cedula);
+        if (esMismoUsuario) {
+          ocasionesAno.add(claveOcasionSolicitudEP(r));
+        }
+      }
+      if (ocasionesAno.size >= MAX_SOLICITUDES_POR_ANO_EP) {
+        return res.status(409).json({
+          success: false,
+          error: `Ha alcanzado el límite máximo de ${MAX_SOLICITUDES_POR_ANO_EP} solicitudes al año (${anoObjetivo}) en Especiales Personal.`,
         });
       }
 
@@ -617,6 +662,7 @@ export default async function handler(req, res) {
           nombre: String(item.nombre).trim(),
           sede: String(item.sede).trim(),
           producto: String(item.producto).trim(),
+          color: String(item.color || '').trim(),
           cantidad: cantidadNum,
           motivo: String(item.motivo).trim(),
           semana: String(item.semana || '').match(/(\d+)/)?.[1] || String(item.semana || '').trim(),

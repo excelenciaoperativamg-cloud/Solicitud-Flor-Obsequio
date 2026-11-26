@@ -60,10 +60,9 @@ export const DEFAULT_PERMISOS_FORMULARIOS = {
     todos: false,
     cargos: [],
     palabrasClaveCargo: [
-      'AUXILIAR GESTIÓN HUMANA',
-      'ANALISTA GESTIÓN HUMANA',
       'AUXILIAR TÉCNICO POSCOSECHA',
-      'DIRECTOR',
+      'JEFE POSCOSECHA',
+      'DIRECTOR POSCOSECHA',
     ],
     codigos: [],
     codigosExcluidos: [],

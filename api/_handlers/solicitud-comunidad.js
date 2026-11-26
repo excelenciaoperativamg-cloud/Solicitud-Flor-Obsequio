@@ -9,12 +9,22 @@ import {
 
 const ESTADO_INICIAL_SC = 'Pendiente Aprobación';
 
+function inferirSedePorProducto(producto) {
+  const p = String(producto || '').trim().toLowerCase();
+  if (p === 'alstroemeria') return 'HA';
+  if (p === 'clavel') return 'SC';
+  if (p.includes('rosa') || p === 'bouquet' || p.includes('gypso')) return 'MG';
+  return '';
+}
+
 function normalizarSolicitudComunidad(s) {
   const cantidadNum = Number(s?.cantidad);
   const semanaStr = String(s?.semana || '').match(/(\d+)/)?.[1] || String(s?.semana || '').trim();
   const correoConfirmacionVal = String(s?.correoConfirmacion || '').trim();
   const notificadoVal = String(s?.notificado || 'Registrada').trim() || 'Registrada';
   const estadoVal = String(s?.estado || ESTADO_INICIAL_SC).trim() || ESTADO_INICIAL_SC;
+  const prod = String(s?.producto || '').trim();
+  const sede = String(s?.sede || inferirSedePorProducto(prod)).trim().toUpperCase();
   return {
     id: String(s?.id || '').trim(),
     fechaSolicitud: String(s?.fechaSolicitud || s?.fecha || '').trim(),
@@ -22,8 +32,8 @@ function normalizarSolicitudComunidad(s) {
     entidad: String(s?.entidad || '').trim(),
     motivo: String(s?.motivo || '').trim(),
     lugar: String(s?.lugar || '').trim(),
-    sede: String(s?.sede || '').trim(),
-    producto: String(s?.producto || '').trim(),
+    sede,
+    producto: prod,
     cantidad: cantidadNum && !Number.isNaN(cantidadNum) && cantidadNum > 0 ? cantidadNum : 1,
     semana: semanaStr,
     fechaEntrega: String(s?.fechaEntrega || '').trim(),
@@ -245,14 +255,20 @@ export default async function handler(req, res) {
           !item.usuario ||
           !item.entidad ||
           !item.motivo ||
-          !item.lugar ||
-          !item.sede ||
           !item.producto ||
           !item.fechaEntrega
         ) {
           return res.status(400).json({
             success: false,
             error: 'Faltan campos obligatorios para registrar en Solicitud Comunidad.',
+          });
+        }
+        const sedeDerivada =
+          inferirSedePorProducto(item.producto) || String(item.sede || '').trim().toUpperCase();
+        if (!sedeDerivada) {
+          return res.status(400).json({
+            success: false,
+            error: 'Producto no válido para asignar sede automáticamente en Solicitud Comunidad.',
           });
         }
       }
@@ -374,6 +390,9 @@ export default async function handler(req, res) {
           rawCorreo || String(item.notificado || 'Registrada').trim() || 'Registrada';
         const estadoFinal = String(item.estado || ESTADO_INICIAL_SC).trim() || ESTADO_INICIAL_SC;
 
+        const sedeFinal =
+          inferirSedePorProducto(item.producto) || String(item.sede || '').trim().toUpperCase();
+
         const payload = {
           action: 'registrar_solicitud_comunidad',
           hoja: 'Solicitud Comunidad',
@@ -382,8 +401,8 @@ export default async function handler(req, res) {
           usuario: String(item.usuario).trim(),
           entidad: String(item.entidad).trim(),
           motivo: String(item.motivo).trim(),
-          lugar: String(item.lugar).trim(),
-          sede: String(item.sede).trim(),
+          lugar: String(item.lugar || '').trim(),
+          sede: sedeFinal,
           producto: String(item.producto).trim(),
           cantidad: cantidadNum,
           semana: String(item.semana || '').match(/(\d+)/)?.[1] || String(item.semana || '').trim(),

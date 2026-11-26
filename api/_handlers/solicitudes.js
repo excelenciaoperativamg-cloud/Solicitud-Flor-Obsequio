@@ -15,6 +15,7 @@ function soloProducto(valor) {
   if (low.includes('bouquet')) return 'Bouquet';
   if (low.includes('clavel')) return 'Clavel';
   if (low.includes('alstroemeria')) return 'Alstroemeria';
+  if (low.includes('gypso')) return 'Gypso';
   if (low.includes('rosa')) {
     if (low.includes('color')) return 'Rosa (Color)';
     return 'Rosa (Rojo)';
@@ -31,6 +32,7 @@ const CUPOS_PRODUCTO = {
   bouquet: 5, // Bouquet total entre las 3 sedes
   clavel: 20, // Clavel total entre las 3 sedes
   alstroemeria: 30, // Alstroemeria total entre las 3 sedes
+  gypso: 20, // Gypso total entre las 3 sedes (Sede MG)
 };
 
 function categoriaCuotaProducto(producto, tipoProducto) {
@@ -38,6 +40,7 @@ function categoriaCuotaProducto(producto, tipoProducto) {
   if (tipoProducto === 'bouquet' || low.includes('bouquet')) return 'bouquet';
   if (low.includes('clavel')) return 'clavel';
   if (low.includes('alstroemeria')) return 'alstroemeria';
+  if (low.includes('gypso')) return 'gypso';
   return 'rosa';
 }
 
@@ -133,7 +136,7 @@ export default async function handler(req, res) {
             String(s.fechaEntrega || '').trim() === fechaEntregaNueva &&
             s.estado !== 'Cancelada'
         );
-        const usados = { rosa: 0, bouquet: 0, clavel: 0, alstroemeria: 0 };
+        const usados = { rosa: 0, bouquet: 0, clavel: 0, alstroemeria: 0, gypso: 0 };
         for (const s of enSemana) {
           const cat = categoriaCuotaProducto(s.producto, s.tipoProducto);
           usados[cat] += Number(s.cantidad) || 1;
@@ -143,7 +146,8 @@ export default async function handler(req, res) {
           usados.rosa >= CUPOS_PRODUCTO.rosa &&
           usados.bouquet >= CUPOS_PRODUCTO.bouquet &&
           usados.clavel >= CUPOS_PRODUCTO.clavel &&
-          usados.alstroemeria >= CUPOS_PRODUCTO.alstroemeria;
+          usados.alstroemeria >= CUPOS_PRODUCTO.alstroemeria &&
+          usados.gypso >= CUPOS_PRODUCTO.gypso;
 
         if (todosAgotados) {
           return res.status(400).json({
@@ -159,6 +163,7 @@ export default async function handler(req, res) {
             bouquet: 'Bouquet',
             clavel: 'Clavel',
             alstroemeria: 'Alstroemeria',
+            gypso: 'Gypso',
           };
           return res.status(400).json({
             success: false,

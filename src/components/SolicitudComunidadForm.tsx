@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   FilePlus2,
   Briefcase,
-  MapPin,
+  Building2,
   Sparkles,
   Calendar,
   Clock,
@@ -61,13 +61,15 @@ interface SolicitudComunidadFormProps {
   onCerrarSesion?: () => void;
 }
 
-const ENTIDADES_SC = ['Comunidad', 'Iglesia', 'Alcaldía', 'Policía', 'GHT'] as const;
-const SEDES_SC = ['MG', 'HA', 'SC'] as const;
+const ENTIDADES_BASE_SC = ['Comunidad', 'Iglesia', 'Alcaldía', 'Policía', 'GHT'] as const;
+const STORAGE_ENTIDADES_SC_KEY = 'sfo_entidades_solicitud_comunidad_custom';
 const ROSA_VARIANTES_SC = ['Rosa (Color)', 'Rosa (Roja)', 'Bouquet'] as const;
+const PRODUCTOS_RESTO_SC = ['Gypso', 'Alstroemeria', 'Clavel'] as const;
 const PRODUCTOS_SC = [
   'Rosa (Color)',
   'Rosa (Roja)',
   'Bouquet',
+  'Gypso',
   'Alstroemeria',
   'Clavel',
 ] as const;
@@ -82,17 +84,12 @@ const ESTADO_INICIAL_SC = 'Pendiente Aprobación';
 const MODELO_CARTA_COMUNIDAD_PDF_URL =
   '/assets/aistudio/Modelo_carta_solicitud_obsequio_de_flor_para_la_comunidad_069a67d8.pdf';
 
-function getProductosPermitidosPorSede(sede: string): string[] {
-  switch (sede) {
-    case 'MG':
-      return [...ROSA_VARIANTES_SC];
-    case 'HA':
-      return ['Alstroemeria'];
-    case 'SC':
-      return ['Clavel'];
-    default:
-      return [];
-  }
+function inferirSedePorProducto(producto: string): string {
+  const p = String(producto || '').trim().toLowerCase();
+  if (p === 'alstroemeria') return 'HA';
+  if (p === 'clavel') return 'SC';
+  if (p.includes('rosa') || p === 'bouquet' || p.includes('gypso')) return 'MG';
+  return '';
 }
 
 const EMAIL_ITEM_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -210,10 +207,18 @@ export const SolicitudComunidadForm: React.FC<SolicitudComunidadFormProps> = ({
 }) => {
   const fechaSolicitud = getTodayString();
 
-  // Entidad, Sede, Lugar
-  const [entidad, setEntidad] = useState('');
-  const [sede, setSede] = useState('');
-  const [lugar, setLugar] = useState('');
+  // Entidades con persistencia para opciones agregadas
+  const [entidadesPersonalizadas, setEntidadesPersonalizadas] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_ENTIDADES_SC_KEY);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [entidadSeleccionada, setEntidadSeleccionada] = useState('');
+  const [mostrandoInputEntidad, setMostrandoInputEntidad] = useState(false);
+  const [nuevaEntidadInput, setNuevaEntidadInput] = useState('');
 
   // Productos y cantidades
   const [productosCantidades, setProductosCantidades] = useState<Record<string, string>>({});
@@ -259,6 +264,15 @@ export const SolicitudComunidadForm: React.FC<SolicitudComunidadFormProps> = ({
   const [dropdownProductoAbierto, setDropdownProductoAbierto] = useState(false);
   const dropdownProductoRef = useRef<HTMLDivElement | null>(null);
   const [recargandoTabla, setRecargandoTabla] = useState(false);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        STORAGE_ENTIDADES_SC_KEY,
+        JSON.stringify(entidadesPersonalizadas)
+      );
+    } catch {}
+  }, [entidadesPersonalizadas]);
 
   useEffect(() => {
     try {
@@ -310,6 +324,25 @@ export const SolicitudComunidadForm: React.FC<SolicitudComunidadFormProps> = ({
     }, 0);
   }, [productosSeleccionadosOrdenados, productosCantidades]);
 
+  const opcionesEntidadVisibles = useMemo(() => {
+    const mapa = new Map<string, string>();
+    const agregar = (val?: string) => {
+      const limpio = String(val || '').trim();
+      if (!limpio) return;
+      const clave = limpio.toLowerCase();
+      if (!mapa.has(clave)) mapa.set(clave, limpio);
+    };
+    ENTIDADES_BASE_SC.forEach(agregar);
+    entidadesPersonalizadas.forEach(agregar);
+    solicitudesComunidad.forEach((s) => agregar(s.entidad));
+    return Array.from(mapa.values());
+  }, [entidadesPersonalizadas, solicitudesComunidad]);
+
+  const entidadFinal =
+    mostrandoInputEntidad && nuevaEntidadInput.trim()
+      ? nuevaEntidadInput.trim()
+      : entidadSeleccionada.trim();
+
   const opcionesMotivoVisibles = useMemo(() => {
     const set = new Set<string>([...MOTIVOS_BASE_SC, ...motivosPersonalizados]);
     return Array.from(set);
@@ -326,30 +359,18 @@ export const SolicitudComunidadForm: React.FC<SolicitudComunidadFormProps> = ({
   const rosaTieneSeleccion = rosaColorActivo || rosaRojaActivo || bouquetActivo;
   const rosaExpandido = rosaAbierto || rosaTieneSeleccion;
 
-  const handleSeleccionarSede = (nuevaSede: string) => {
-    if (sede === nuevaSede) return;
-    setSede(nuevaSede);
-    const permitidos = new Set(getProductosPermitidosPorSede(nuevaSede));
-    setProductosCantidades((prev) => {
-      const next: Record<string, string> = {};
-      for (const [prod, cant] of Object.entries(prev)) {
-        if (permitidos.has(prod)) {
-          next[prod] = cant;
-        }
-      }
-      return next;
-    });
-    setRosaAbierto(nuevaSede === 'MG');
+  const handleAgregarEntidadPersonalizada = () => {
+    const limpio = nuevaEntidadInput.trim();
+    if (!limpio) return;
+    if (!opcionesEntidadVisibles.some((ent) => ent.toLowerCase() === limpio.toLowerCase())) {
+      setEntidadesPersonalizadas((prev) => [...prev, limpio]);
+    }
+    setEntidadSeleccionada(limpio);
+    setNuevaEntidadInput('');
+    setMostrandoInputEntidad(false);
     setErrores((prev) => {
       const next = { ...prev };
-      delete next.sede;
-      delete next.producto;
-      delete next.cantidad;
-      for (const key of Object.keys(next)) {
-        if (key.startsWith('cant_') && !permitidos.has(key.slice(5))) {
-          delete next[key];
-        }
-      }
+      delete next.entidad;
       return next;
     });
   };
@@ -454,34 +475,15 @@ export const SolicitudComunidadForm: React.FC<SolicitudComunidadFormProps> = ({
   const validarFormulario = (): boolean => {
     const errs: Record<string, string> = {};
 
-    if (!entidad) {
-      errs.entidad = 'Seleccione la entidad de la solicitud.';
-    }
-    if (!sede) {
-      errs.sede = 'Seleccione la sede (MG, HA o SC).';
-    }
-    if (!lugar.trim()) {
-      errs.lugar = 'Ingrese el lugar de la entrega o evento.';
+    if (!entidadFinal) {
+      errs.entidad = 'Seleccione o agregue la entidad de la solicitud.';
     }
 
-    const permitidosSede = new Set(getProductosPermitidosPorSede(sede));
-    const seleccionadosValidos = productosSeleccionadosOrdenados.filter((p) =>
-      permitidosSede.has(p)
-    );
-
-    if (!sede) {
-      errs.producto = 'Seleccione primero una sede (MG, HA o SC) para elegir el producto.';
-    } else if (seleccionadosValidos.length === 0) {
-      if (sede === 'MG') {
-        errs.producto =
-          'Seleccione al menos un producto de Rosa (Rosa (Color), Rosa (Roja) y/o Bouquet).';
-      } else if (sede === 'HA') {
-        errs.producto = 'Seleccione Alstroemeria e ingrese la cantidad.';
-      } else {
-        errs.producto = 'Seleccione Clavel e ingrese la cantidad.';
-      }
+    if (productosSeleccionadosOrdenados.length === 0) {
+      errs.producto =
+        'Seleccione al menos un producto (Rosa, Gypso, Alstroemeria o Clavel) e ingrese la cantidad.';
     } else {
-      for (const prod of seleccionadosValidos) {
+      for (const prod of productosSeleccionadosOrdenados) {
         const cantNum = Number(productosCantidades[prod]);
         if (!productosCantidades[prod] || Number.isNaN(cantNum) || cantNum < 1) {
           errs[`cant_${prod}`] = `Ingrese una cantidad válida (mínimo 1) para ${prod}.`;
@@ -526,9 +528,9 @@ export const SolicitudComunidadForm: React.FC<SolicitudComunidadFormProps> = ({
   };
 
   const limpiarFormulario = () => {
-    setEntidad('');
-    setSede('');
-    setLugar('');
+    setEntidadSeleccionada('');
+    setMostrandoInputEntidad(false);
+    setNuevaEntidadInput('');
     setProductosCantidades({});
     setRosaAbierto(false);
     setMotivoSeleccionado('');
@@ -550,6 +552,13 @@ export const SolicitudComunidadForm: React.FC<SolicitudComunidadFormProps> = ({
     setErrores({});
 
     try {
+      if (mostrandoInputEntidad && nuevaEntidadInput.trim()) {
+        const entLimpia = nuevaEntidadInput.trim();
+        if (!opcionesEntidadVisibles.some((ent) => ent.toLowerCase() === entLimpia.toLowerCase())) {
+          setEntidadesPersonalizadas((prev) => [...prev, entLimpia]);
+        }
+      }
+
       if (mostrandoInputMotivo && nuevoMotivoInput.trim()) {
         const mLimpio = nuevoMotivoInput.trim();
         if (!opcionesMotivoVisibles.some((m) => m.toLowerCase() === mLimpio.toLowerCase())) {
@@ -567,10 +576,9 @@ export const SolicitudComunidadForm: React.FC<SolicitudComunidadFormProps> = ({
         id: `SC-${year}-${String(siguienteNumeroId + idx).padStart(3, '0')}`,
         fechaSolicitud,
         usuario: sesion.nombre.trim(),
-        entidad,
+        entidad: entidadFinal,
         motivo: motivoFinal,
-        lugar: lugar.trim(),
-        sede,
+        sede: inferirSedePorProducto(prod),
         producto: prod,
         cantidad: Math.max(1, Math.floor(Number(productosCantidades[prod]) || 1)),
         semana: semanaStr,
@@ -687,7 +695,6 @@ export const SolicitudComunidadForm: React.FC<SolicitudComunidadFormProps> = ({
         (s.usuario || '').toLowerCase().includes(q) ||
         s.entidad.toLowerCase().includes(q) ||
         s.motivo.toLowerCase().includes(q) ||
-        s.lugar.toLowerCase().includes(q) ||
         s.sede.toLowerCase().includes(q) ||
         s.producto.toLowerCase().includes(q) ||
         (s.correoConfirmacion || '').toLowerCase().includes(q) ||
@@ -718,7 +725,6 @@ export const SolicitudComunidadForm: React.FC<SolicitudComunidadFormProps> = ({
       Usuario: s.usuario,
       Entidad: s.entidad,
       Motivo: s.motivo,
-      Lugar: s.lugar,
       Sede: s.sede,
       Producto: s.producto,
       Cantidad: s.cantidad,
@@ -916,14 +922,6 @@ export const SolicitudComunidadForm: React.FC<SolicitudComunidadFormProps> = ({
               <div className="flex justify-between">
                 <span className="text-slate-500">Entidad:</span>
                 <span className="font-bold text-[#0a2958]">{primeraExitosa.entidad}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Lugar:</span>
-                <span className="font-bold text-slate-900 text-right">{primeraExitosa.lugar}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Sede:</span>
-                <span className="font-bold text-slate-900">{primeraExitosa.sede}</span>
               </div>
 
               {solicitudesExitosas.length === 1 ? (
@@ -1129,13 +1127,13 @@ export const SolicitudComunidadForm: React.FC<SolicitudComunidadFormProps> = ({
         )}
 
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
-          {/* 1. ENTIDAD, SEDE Y LUGAR */}
+          {/* 1. DATOS DE ENTIDAD */}
           <div className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-100">
               <div className="flex items-center gap-2">
-                <MapPin className="w-4 h-4 text-[#0a2958]" />
+                <Building2 className="w-4 h-4 text-[#0a2958]" />
                 <h3 className="text-sm font-extrabold text-[#0a2958] uppercase tracking-wider">
-                  1. DATOS DE ENTIDAD, SEDE Y LUGAR
+                  1. DATOS DE ENTIDAD
                 </h3>
               </div>
               <span className="text-[11px] font-semibold text-slate-500">
@@ -1143,103 +1141,106 @@ export const SolicitudComunidadForm: React.FC<SolicitudComunidadFormProps> = ({
               </span>
             </div>
 
-            {/* Entidad */}
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-2">
+            {/* Entidad (listar y permitir agregar) */}
+            <div className="max-w-md">
+              <label
+                htmlFor="select-entidad-sc"
+                className="block text-xs font-bold text-slate-700 mb-1.5"
+              >
                 Entidad <span className="text-[#E60000]">*</span>
               </label>
-              <div className="flex flex-wrap gap-2">
-                {ENTIDADES_SC.map((ent) => {
-                  const activa = entidad === ent;
-                  return (
-                    <button
-                      key={ent}
-                      type="button"
-                      onClick={() => {
-                        setEntidad(ent);
-                        setErrores((prev) => {
-                          const next = { ...prev };
-                          delete next.entidad;
-                          return next;
-                        });
-                      }}
-                      className={`px-4 py-2 rounded-xl border text-xs font-bold transition cursor-pointer ${
-                        activa
-                          ? 'bg-[#0a2958] text-white border-[#0a2958] shadow-xs'
-                          : 'bg-white text-slate-700 border-slate-200 hover:border-[#0a2958]/40'
-                      }`}
-                    >
-                      {ent}
-                    </button>
-                  );
-                })}
-              </div>
-              {errores.entidad && (
-                <p className="text-[11px] text-[#E60000] font-semibold mt-1">{errores.entidad}</p>
-              )}
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Sede */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-2">
-                  Sede <span className="text-[#E60000]">*</span>
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  {SEDES_SC.map((sd) => {
-                    const activa = sede === sd;
-                    return (
-                      <button
-                        key={sd}
-                        type="button"
-                        onClick={() => handleSeleccionarSede(sd)}
-                        className={`py-2.5 px-3 rounded-xl border text-xs font-extrabold transition cursor-pointer ${
-                          activa
-                            ? 'bg-[#0a2958] text-white border-[#0a2958] shadow-xs'
-                            : 'bg-white text-slate-700 border-slate-200 hover:border-[#0a2958]/40'
-                        }`}
-                      >
-                        {sd}
-                      </button>
-                    );
-                  })}
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1 min-w-0">
+                  <select
+                    id="select-entidad-sc"
+                    value={mostrandoInputEntidad ? '__AGREGAR__' : entidadSeleccionada}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === '__AGREGAR__') {
+                        setMostrandoInputEntidad(true);
+                      } else {
+                        setEntidadSeleccionada(val);
+                        setMostrandoInputEntidad(false);
+                      }
+                      setErrores((prev) => {
+                        const next = { ...prev };
+                        delete next.entidad;
+                        return next;
+                      });
+                    }}
+                    className={`w-full appearance-none pl-3.5 pr-9 py-2.5 text-xs rounded-xl border font-bold bg-white outline-hidden cursor-pointer truncate ${
+                      errores.entidad
+                        ? 'border-rose-400 bg-rose-50/40 text-slate-900'
+                        : 'border-slate-300 focus:border-[#0a2958] text-slate-800'
+                    }`}
+                  >
+                    <option value="">Seleccione una entidad…</option>
+                    {opcionesEntidadVisibles.map((ent) => (
+                      <option key={ent} value={ent}>
+                        {ent}
+                      </option>
+                    ))}
+                    <option value="__AGREGAR__">+ Agregar otra entidad…</option>
+                  </select>
+                  <ChevronDown className="w-4 h-4 text-slate-500 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                 </div>
-                {errores.sede && (
-                  <p className="text-[11px] text-[#E60000] font-semibold mt-1">{errores.sede}</p>
-                )}
-              </div>
-
-              {/* Lugar */}
-              <div>
-                <label
-                  htmlFor="sc-lugar"
-                  className="block text-xs font-bold text-slate-700 mb-2"
-                >
-                  Lugar <span className="text-[#E60000]">*</span>
-                </label>
-                <input
-                  id="sc-lugar"
-                  type="text"
-                  value={lugar}
-                  onChange={(e) => {
-                    setLugar(e.target.value);
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMostrandoInputEntidad((prev) => !prev);
                     setErrores((prev) => {
                       const next = { ...prev };
-                      delete next.lugar;
+                      delete next.entidad;
                       return next;
                     });
                   }}
-                  placeholder="Ingrese el lugar, parroquia, institución o dirección…"
-                  className={`w-full px-3.5 py-2.5 text-xs rounded-xl border font-semibold outline-hidden ${
-                    errores.lugar
-                      ? 'border-rose-400 bg-rose-50/40 text-slate-900'
-                      : 'border-slate-300 focus:border-[#0a2958] text-slate-900'
+                  title="Agregar otra entidad"
+                  aria-label="Agregar otra entidad"
+                  className={`p-2.5 rounded-xl border transition cursor-pointer shrink-0 ${
+                    mostrandoInputEntidad
+                      ? 'bg-[#E60000]/10 text-[#E60000] border-[#E60000]/40'
+                      : 'bg-slate-50 text-slate-700 border-slate-300 hover:border-[#0a2958] hover:text-[#0a2958]'
                   }`}
-                />
-                {errores.lugar && (
-                  <p className="text-[11px] text-[#E60000] font-semibold mt-1">{errores.lugar}</p>
-                )}
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
               </div>
+
+              {mostrandoInputEntidad && (
+                <div className="flex gap-2 pt-2">
+                  <input
+                    type="text"
+                    value={nuevaEntidadInput}
+                    onChange={(e) => {
+                      setNuevaEntidadInput(e.target.value);
+                      setErrores((prev) => {
+                        const next = { ...prev };
+                        delete next.entidad;
+                        return next;
+                      });
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAgregarEntidadPersonalizada();
+                      }
+                    }}
+                    placeholder="Escriba la nueva entidad…"
+                    className="flex-1 min-w-0 px-3 py-2 text-xs rounded-xl border border-slate-300 focus:border-[#0a2958] outline-hidden font-medium"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAgregarEntidadPersonalizada}
+                    className="px-3.5 py-2 rounded-xl bg-[#0a2958] text-white text-xs font-bold hover:bg-[#0d346e] cursor-pointer shrink-0"
+                  >
+                    Agregar
+                  </button>
+                </div>
+              )}
+
+              {errores.entidad && (
+                <p className="text-[11px] text-[#E60000] font-semibold mt-1">{errores.entidad}</p>
+              )}
             </div>
           </div>
 
@@ -1267,202 +1268,186 @@ export const SolicitudComunidadForm: React.FC<SolicitudComunidadFormProps> = ({
               <label className="block text-xs font-bold text-slate-700 mb-2">
                 Producto <span className="text-[#E60000]">*</span>{' '}
                 <span className="text-[11px] font-normal text-slate-500">
-                  {!sede
-                    ? '(Seleccione primero una sede para mostrar los productos disponibles)'
-                    : sede === 'MG'
-                    ? '(Sede MG: productos de Rosa — puede seleccionar varios; cada uno se guarda por separado)'
-                    : sede === 'HA'
-                    ? '(Sede HA: producto disponible Alstroemeria)'
-                    : '(Sede SC: producto disponible Clavel)'}
+                  (Puede seleccionar varios productos; cada uno se guarda por separado)
                 </span>
               </label>
 
-              {!sede ? (
-                <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/70 px-4 py-4 text-xs font-medium text-slate-500 flex items-center gap-2.5">
-                  <MapPin className="w-4 h-4 text-[#0a2958] shrink-0" />
-                  <span>
-                    Seleccione una <strong>Sede</strong> (MG, HA o SC) en la sección anterior para ver los productos habilitados.
-                  </span>
-                </div>
-              ) : sede === 'MG' ? (
-                <div className="max-w-md">
-                  {/* Tarjeta Rosa con subopciones Rosa (Color), Rosa (Roja) y Bouquet */}
-                  <div
-                    className={`rounded-xl border p-3 transition ${
-                      rosaExpandido
-                        ? 'border-[#0a2958] bg-[#0a2958]/[0.04] shadow-xs'
-                        : 'border-slate-200 bg-white hover:border-[#0a2958]/40'
-                    }`}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-start">
+                {/* Tarjeta Rosa con subopciones Rosa (Color), Rosa (Roja) y Bouquet */}
+                <div
+                  className={`rounded-xl border p-3 transition ${
+                    rosaExpandido
+                      ? 'border-[#0a2958] bg-[#0a2958]/[0.04] shadow-xs'
+                      : 'border-slate-200 bg-white hover:border-[#0a2958]/40'
+                  }`}
+                >
+                  <button
+                    type="button"
+                    onClick={toggleRosaPrincipal}
+                    aria-pressed={rosaExpandido}
+                    className="w-full flex items-center justify-between gap-2 text-left cursor-pointer"
                   >
-                    <button
-                      type="button"
-                      onClick={toggleRosaPrincipal}
-                      aria-pressed={rosaExpandido}
-                      className="w-full flex items-center justify-between gap-2 text-left cursor-pointer"
+                    <span
+                      className={`text-xs font-extrabold ${
+                        rosaExpandido ? 'text-[#0a2958]' : 'text-slate-700'
+                      }`}
                     >
-                      <span
-                        className={`text-xs font-extrabold ${
-                          rosaExpandido ? 'text-[#0a2958]' : 'text-slate-700'
-                        }`}
-                      >
-                        Rosa
-                      </span>
-                      <span
-                        className={`w-5 h-5 rounded-md flex items-center justify-center border transition ${
-                          rosaExpandido
-                            ? 'bg-[#0a2958] border-[#0a2958] text-white'
-                            : 'border-slate-300 bg-white'
-                        }`}
-                      >
-                        {rosaExpandido && <Check className="w-3.5 h-3.5" />}
-                      </span>
-                    </button>
+                      Rosa
+                    </span>
+                    <span
+                      className={`w-5 h-5 rounded-md flex items-center justify-center border transition ${
+                        rosaExpandido
+                          ? 'bg-[#0a2958] border-[#0a2958] text-white'
+                          : 'border-slate-300 bg-white'
+                      }`}
+                    >
+                      {rosaExpandido && <Check className="w-3.5 h-3.5" />}
+                    </span>
+                  </button>
 
-                    {rosaExpandido && (
-                      <div className="mt-3 pt-2.5 border-t border-slate-200/80 space-y-2">
-                        {ROSA_VARIANTES_SC.map((variante) => {
-                          const activoVar = Object.prototype.hasOwnProperty.call(
-                            productosCantidades,
-                            variante
-                          );
-                          const cantValorVar = productosCantidades[variante] ?? '';
-                          const errCantVar = errores[`cant_${variante}`];
+                  {rosaExpandido && (
+                    <div className="mt-3 pt-2.5 border-t border-slate-200/80 space-y-2">
+                      {ROSA_VARIANTES_SC.map((variante) => {
+                        const activoVar = Object.prototype.hasOwnProperty.call(
+                          productosCantidades,
+                          variante
+                        );
+                        const cantValorVar = productosCantidades[variante] ?? '';
+                        const errCantVar = errores[`cant_${variante}`];
 
-                          return (
-                            <div
-                              key={variante}
-                              className={`rounded-lg border p-2 transition ${
-                                activoVar
-                                  ? 'border-[#0a2958]/60 bg-white shadow-2xs'
-                                  : 'border-slate-200 bg-white/80 hover:border-[#0a2958]/30'
-                              }`}
+                        return (
+                          <div
+                            key={variante}
+                            className={`rounded-lg border p-2 transition ${
+                              activoVar
+                                ? 'border-[#0a2958]/60 bg-white shadow-2xs'
+                                : 'border-slate-200 bg-white/80 hover:border-[#0a2958]/30'
+                            }`}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => toggleProducto(variante)}
+                              aria-pressed={activoVar}
+                              className="w-full flex items-center justify-between gap-2 text-left cursor-pointer"
                             >
-                              <button
-                                type="button"
-                                onClick={() => toggleProducto(variante)}
-                                aria-pressed={activoVar}
-                                className="w-full flex items-center justify-between gap-2 text-left cursor-pointer"
+                              <span
+                                className={`text-[11px] font-bold ${
+                                  activoVar ? 'text-[#0a2958]' : 'text-slate-700'
+                                }`}
                               >
-                                <span
-                                  className={`text-[11px] font-bold ${
-                                    activoVar ? 'text-[#0a2958]' : 'text-slate-700'
+                                {variante}
+                              </span>
+                              <span
+                                className={`w-4 h-4 rounded flex items-center justify-center border transition shrink-0 ${
+                                  activoVar
+                                    ? 'bg-[#0a2958] border-[#0a2958] text-white'
+                                    : 'border-slate-300 bg-white'
+                                }`}
+                              >
+                                {activoVar && <Check className="w-3 h-3" />}
+                              </span>
+                            </button>
+
+                            {activoVar && (
+                              <div className="mt-2 pt-2 border-t border-slate-100">
+                                <label className="block text-[10px] font-bold text-slate-600 mb-1">
+                                  Cantidad <span className="text-[#E60000]">*</span>
+                                </label>
+                                <input
+                                  type="text"
+                                  inputMode="numeric"
+                                  pattern="[0-9]*"
+                                  value={cantValorVar}
+                                  onChange={(e) => cambiarCantidadProducto(variante, e.target.value)}
+                                  placeholder="Ej: 1"
+                                  className={`w-full px-2.5 py-1 text-xs rounded-lg border font-mono font-bold text-[#0a2958] bg-white outline-hidden ${
+                                    errCantVar
+                                      ? 'border-rose-400 bg-rose-50/40'
+                                      : 'border-slate-300 focus:border-[#0a2958]'
                                   }`}
-                                >
-                                  {variante}
-                                </span>
-                                <span
-                                  className={`w-4 h-4 rounded flex items-center justify-center border transition shrink-0 ${
-                                    activoVar
-                                      ? 'bg-[#0a2958] border-[#0a2958] text-white'
-                                      : 'border-slate-300 bg-white'
-                                  }`}
-                                >
-                                  {activoVar && <Check className="w-3 h-3" />}
-                                </span>
-                              </button>
-
-                              {activoVar && (
-                                <div className="mt-2 pt-2 border-t border-slate-100">
-                                  <label className="block text-[10px] font-bold text-slate-600 mb-1">
-                                    Cantidad <span className="text-[#E60000]">*</span>
-                                  </label>
-                                  <input
-                                    type="text"
-                                    inputMode="numeric"
-                                    pattern="[0-9]*"
-                                    value={cantValorVar}
-                                    onChange={(e) => cambiarCantidadProducto(variante, e.target.value)}
-                                    placeholder="Ej: 1"
-                                    className={`w-full px-2.5 py-1 text-xs rounded-lg border font-mono font-bold text-[#0a2958] bg-white outline-hidden ${
-                                      errCantVar
-                                        ? 'border-rose-400 bg-rose-50/40'
-                                        : 'border-slate-300 focus:border-[#0a2958]'
-                                    }`}
-                                  />
-                                  {errCantVar && (
-                                    <p className="text-[10px] text-[#E60000] font-semibold mt-1">
-                                      {errCantVar}
-                                    </p>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ) : (
-                <div className="max-w-md">
-                  {getProductosPermitidosPorSede(sede).map((prod) => {
-                    const activo = Object.prototype.hasOwnProperty.call(productosCantidades, prod);
-                    const cantValor = productosCantidades[prod] ?? '';
-                    const errCant = errores[`cant_${prod}`];
-
-                    return (
-                      <div
-                        key={prod}
-                        className={`rounded-xl border p-3 transition ${
-                          activo
-                            ? 'border-[#0a2958] bg-[#0a2958]/[0.04] shadow-xs'
-                            : 'border-slate-200 bg-white hover:border-[#0a2958]/40'
-                        }`}
-                      >
-                        <button
-                          type="button"
-                          onClick={() => toggleProducto(prod)}
-                          aria-pressed={activo}
-                          className="w-full flex items-center justify-between gap-2 text-left cursor-pointer"
-                        >
-                          <span
-                            className={`text-xs font-extrabold ${
-                              activo ? 'text-[#0a2958]' : 'text-slate-700'
-                            }`}
-                          >
-                            {prod}
-                          </span>
-                          <span
-                            className={`w-5 h-5 rounded-md flex items-center justify-center border transition ${
-                              activo
-                                ? 'bg-[#0a2958] border-[#0a2958] text-white'
-                                : 'border-slate-300 bg-white'
-                            }`}
-                          >
-                            {activo && <Check className="w-3.5 h-3.5" />}
-                          </span>
-                        </button>
-
-                        {activo && (
-                          <div className="mt-3 pt-2.5 border-t border-slate-200/80">
-                            <label className="block text-[11px] font-bold text-slate-600 mb-1">
-                              Cantidad <span className="text-[#E60000]">*</span>
-                            </label>
-                            <input
-                              type="text"
-                              inputMode="numeric"
-                              pattern="[0-9]*"
-                              value={cantValor}
-                              onChange={(e) => cambiarCantidadProducto(prod, e.target.value)}
-                              placeholder="Ej: 1"
-                              className={`w-full px-3 py-1.5 text-xs rounded-lg border font-mono font-bold text-[#0a2958] bg-white outline-hidden ${
-                                errCant
-                                  ? 'border-rose-400 bg-rose-50/40'
-                                  : 'border-slate-300 focus:border-[#0a2958]'
-                              }`}
-                            />
-                            {errCant && (
-                              <p className="text-[10px] text-[#E60000] font-semibold mt-1">
-                                {errCant}
-                              </p>
+                                />
+                                {errCantVar && (
+                                  <p className="text-[10px] text-[#E60000] font-semibold mt-1">
+                                    {errCantVar}
+                                  </p>
+                                )}
+                              </div>
                             )}
                           </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
-              )}
+
+                {/* Gypso, Alstroemeria, Clavel */}
+                {PRODUCTOS_RESTO_SC.map((prod) => {
+                  const activo = Object.prototype.hasOwnProperty.call(productosCantidades, prod);
+                  const cantValor = productosCantidades[prod] ?? '';
+                  const errCant = errores[`cant_${prod}`];
+
+                  return (
+                    <div
+                      key={prod}
+                      className={`rounded-xl border p-3 transition ${
+                        activo
+                          ? 'border-[#0a2958] bg-[#0a2958]/[0.04] shadow-xs'
+                          : 'border-slate-200 bg-white hover:border-[#0a2958]/40'
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => toggleProducto(prod)}
+                        aria-pressed={activo}
+                        className="w-full flex items-center justify-between gap-2 text-left cursor-pointer"
+                      >
+                        <span
+                          className={`text-xs font-extrabold ${
+                            activo ? 'text-[#0a2958]' : 'text-slate-700'
+                          }`}
+                        >
+                          {prod}
+                        </span>
+                        <span
+                          className={`w-5 h-5 rounded-md flex items-center justify-center border transition ${
+                            activo
+                              ? 'bg-[#0a2958] border-[#0a2958] text-white'
+                              : 'border-slate-300 bg-white'
+                          }`}
+                        >
+                          {activo && <Check className="w-3.5 h-3.5" />}
+                        </span>
+                      </button>
+
+                      {activo && (
+                        <div className="mt-3 pt-2.5 border-t border-slate-200/80">
+                          <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                            Cantidad <span className="text-[#E60000]">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            pattern="[0-9]*"
+                            value={cantValor}
+                            onChange={(e) => cambiarCantidadProducto(prod, e.target.value)}
+                            placeholder="Ej: 1"
+                            className={`w-full px-3 py-1.5 text-xs rounded-lg border font-mono font-bold text-[#0a2958] bg-white outline-hidden ${
+                              errCant
+                                ? 'border-rose-400 bg-rose-50/40'
+                                : 'border-slate-300 focus:border-[#0a2958]'
+                            }`}
+                          />
+                          {errCant && (
+                            <p className="text-[10px] text-[#E60000] font-semibold mt-1">
+                              {errCant}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
               {errores.producto && (
                 <p className="text-[11px] text-[#E60000] font-semibold mt-1.5">
                   {errores.producto}
@@ -1950,7 +1935,7 @@ export const SolicitudComunidadForm: React.FC<SolicitudComunidadFormProps> = ({
                 type="text"
                 value={busquedaTabla}
                 onChange={(e) => setBusquedaTabla(e.target.value)}
-                placeholder="Buscar por ID, usuario, entidad, lugar, motivo, sede o correo…"
+                placeholder="Buscar por ID, usuario, entidad, motivo, sede o correo…"
                 className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg border border-slate-200 focus:border-[#0a2958] outline-hidden font-medium"
               />
             </div>
@@ -2068,7 +2053,6 @@ export const SolicitudComunidadForm: React.FC<SolicitudComunidadFormProps> = ({
                 <th className="py-2.5 px-3">Usuario</th>
                 <th className="py-2.5 px-3">Entidad</th>
                 <th className="py-2.5 px-3">Motivo</th>
-                <th className="py-2.5 px-3">Lugar</th>
                 <th className="py-2.5 px-3">Sede</th>
                 <th className="py-2.5 px-3">Producto</th>
                 <th className="py-2.5 px-3 text-right">Cantidad</th>
@@ -2083,7 +2067,7 @@ export const SolicitudComunidadForm: React.FC<SolicitudComunidadFormProps> = ({
             <tbody className="divide-y divide-slate-100">
               {solicitudesFiltradas.length === 0 ? (
                 <tr>
-                  <td colSpan={15} className="py-8 text-center text-slate-400">
+                  <td colSpan={14} className="py-8 text-center text-slate-400">
                     {solicitudesComunidad.length === 0
                       ? 'No hay registros en Solicitud Comunidad todavía.'
                       : 'No hay registros que coincidan con los filtros seleccionados.'}
@@ -2107,7 +2091,6 @@ export const SolicitudComunidadForm: React.FC<SolicitudComunidadFormProps> = ({
                       <td className="py-2.5 px-3 font-medium text-slate-700">{s.usuario}</td>
                       <td className="py-2.5 px-3 font-bold text-[#0a2958]">{s.entidad}</td>
                       <td className="py-2.5 px-3">{s.motivo}</td>
-                      <td className="py-2.5 px-3 font-medium text-slate-800">{s.lugar}</td>
                       <td className="py-2.5 px-3 font-bold whitespace-nowrap">{s.sede}</td>
                       <td className="py-2.5 px-3 font-semibold">{s.producto}</td>
                       <td className="py-2.5 px-3 text-right font-mono tabular-nums font-bold text-[#0a2958]">

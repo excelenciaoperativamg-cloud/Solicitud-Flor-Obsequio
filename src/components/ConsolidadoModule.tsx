@@ -50,6 +50,7 @@ const PRODUCTOS_BASE = [
   'Bouquet',
   'Alstroemeria',
   'Clavel',
+  'Gypso',
 ] as const;
 
 interface ConsolidadoItem {
@@ -92,6 +93,7 @@ function normalizarProductoConsolidado(raw: string): string {
   if (lower.includes('bouquet')) return 'Bouquet';
   if (lower.includes('alstroemeria')) return 'Alstroemeria';
   if (lower.includes('clavel')) return 'Clavel';
+  if (lower.includes('gypso')) return 'Gypso';
   if (lower.includes('rosa')) {
     if (lower.includes('color')) return 'Rosa (Color)';
     if (lower.includes('roja') || lower.includes('rojo')) return 'Rosa (Roja)';
@@ -171,7 +173,6 @@ export const ConsolidadoModule: React.FC<ConsolidadoModuleProps> = ({
 }) => {
   const [filtroSemana, setFiltroSemana] = useState<string>('todas');
   const [productosSeleccionados, setProductosSeleccionados] = useState<string[]>([]);
-  const [moduloActivo, setModuloActivo] = useState<'todos' | ModuloConsolidadoKey>('todos');
   const [busqueda, setBusqueda] = useState('');
   const [dropdownProductoAbierto, setDropdownProductoAbierto] = useState(false);
   const [actualizando, setActualizando] = useState(false);
@@ -211,7 +212,12 @@ export const ConsolidadoModule: React.FC<ConsolidadoModuleProps> = ({
         sede: normalizarSedeCorta(r.sede),
         solicitante: r.nombre || '—',
         codigoOCedula: r.cedula || '—',
-        detalle: r.usuario ? `Registrado por: ${r.usuario}` : '',
+        detalle: [
+          r.color ? `Color: ${r.color}` : '',
+          r.usuario ? `Registrado por: ${r.usuario}` : '',
+        ]
+          .filter(Boolean)
+          .join(' · '),
         productoRaw: r.producto || '',
         productoNorm: prodNorm,
         cantidad: Math.max(0, Number(r.cantidad) || 0),
@@ -316,7 +322,7 @@ export const ConsolidadoModule: React.FC<ConsolidadoModuleProps> = ({
     for (const r of solicitudesComunidad) {
       const sem = extraerSemana(r.semana, r.fechaEntrega || r.fechaSolicitud);
       const prodNorm = normalizarProductoConsolidado(r.producto);
-      const detalleComunidad = [r.entidad || '', r.lugar || ''].filter(Boolean).join(' · ');
+      const detalleComunidad = r.lugar ? String(r.lugar).trim() : '';
       lista.push({
         uid: `sc-${r.id}`,
         id: r.id,
@@ -431,11 +437,8 @@ export const ConsolidadoModule: React.FC<ConsolidadoModuleProps> = ({
     });
   }, [registrosPorSemana, productosSeleccionados, busqueda]);
 
-  // Registros finales mostrados (aplicando también el filtro por formulario seleccionado)
-  const registrosFiltrados = useMemo(() => {
-    if (moduloActivo === 'todos') return registrosSemanaProductoBusqueda;
-    return registrosSemanaProductoBusqueda.filter((r) => r.moduloKey === moduloActivo);
-  }, [registrosSemanaProductoBusqueda, moduloActivo]);
+  // Registros finales mostrados (Todos)
+  const registrosFiltrados = registrosSemanaProductoBusqueda;
 
   // Métricas consolidadas de la vista filtrada actual
   const resumenGeneral = useMemo(() => {
@@ -514,13 +517,11 @@ export const ConsolidadoModule: React.FC<ConsolidadoModuleProps> = ({
   const hayFiltrosActivos =
     filtroSemana !== 'todas' ||
     productosSeleccionados.length > 0 ||
-    moduloActivo !== 'todos' ||
     busqueda.trim().length > 0;
 
   const limpiarFiltros = () => {
     setFiltroSemana('todas');
     setProductosSeleccionados([]);
-    setModuloActivo('todos');
     setBusqueda('');
   };
 
@@ -773,49 +774,19 @@ export const ConsolidadoModule: React.FC<ConsolidadoModuleProps> = ({
           </div>
         </div>
 
-        {/* Pestañas interactivas por formulario */}
+        {/* Vista unificada Todos */}
         <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
-          <div className="flex flex-wrap items-center gap-1.5" role="tablist" aria-label="Filtrar por formulario">
-            <button
-              type="button"
+          <div className="flex flex-wrap items-center gap-1.5" role="tablist" aria-label="Vista consolidada">
+            <span
               role="tab"
-              aria-selected={moduloActivo === 'todos'}
-              onClick={() => setModuloActivo('todos')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer whitespace-nowrap ${
-                moduloActivo === 'todos'
-                  ? 'bg-[#0a2958] text-white'
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200/70'
-              }`}
+              aria-selected={true}
+              className="px-3 py-1.5 rounded-lg text-xs font-bold bg-[#0a2958] text-white whitespace-nowrap inline-flex items-center"
             >
               Todos{' '}
               <span className="font-mono tabular-nums ml-1 opacity-85">
                 ({registrosSemanaProductoBusqueda.length})
               </span>
-            </button>
-
-            {MODULOS_CONSOLIDADO.map((mod) => {
-              const activo = moduloActivo === mod.key;
-              const stats = resumenPorModulo[mod.key];
-              return (
-                <button
-                  key={mod.key}
-                  type="button"
-                  role="tab"
-                  aria-selected={activo}
-                  onClick={() => setModuloActivo(mod.key)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer whitespace-nowrap ${
-                    activo
-                      ? 'bg-[#E60000] text-white'
-                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200/70'
-                  }`}
-                >
-                  {mod.label}{' '}
-                  <span className="font-mono tabular-nums ml-1 opacity-85">
-                    ({stats.solicitudes})
-                  </span>
-                </button>
-              );
-            })}
+            </span>
           </div>
 
           {hayFiltrosActivos && (
@@ -889,22 +860,17 @@ export const ConsolidadoModule: React.FC<ConsolidadoModuleProps> = ({
         <div className="border-t border-slate-200 bg-slate-50/70 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 divide-y sm:divide-y-0 sm:divide-x divide-slate-200">
           {MODULOS_CONSOLIDADO.map((m) => {
             const st = resumenPorModulo[m.key];
-            const esActivo = moduloActivo === m.key;
             return (
-              <button
+              <div
                 key={m.key}
-                type="button"
-                onClick={() => setModuloActivo(esActivo ? 'todos' : m.key)}
-                className={`px-4 py-2.5 text-left transition-colors cursor-pointer ${
-                  esActivo ? 'bg-[#0a2958]/5' : 'hover:bg-slate-100/70'
-                }`}
+                className="px-4 py-2.5 text-left"
               >
                 <p className="text-[11px] font-bold text-slate-600 truncate">{m.label}</p>
                 <p className="text-xs text-slate-500 mt-0.5 font-mono tabular-nums">
                   <span className="font-extrabold text-[#0a2958]">{st.solicitudes}</span> reg. ·{' '}
                   <span className="font-extrabold text-slate-800">{st.unidades}</span> unid.
                 </p>
-              </button>
+              </div>
             );
           })}
         </div>
@@ -931,7 +897,7 @@ export const ConsolidadoModule: React.FC<ConsolidadoModuleProps> = ({
               <p className="text-xs text-slate-500 max-w-md mx-auto">
                 {registrosConsolidados.length === 0
                   ? 'Aún no se han registrado solicitudes en Especiales Personal, Especiales Empresa, Ingresos Personal, Obsequio Visitantes o Solicitud Comunidad.'
-                  : 'Ninguna solicitud coincide con la combinación actual de Semana, Producto, Formulario o búsqueda.'}
+                  : 'Ninguna solicitud coincide con la combinación actual de Semana, Producto o búsqueda.'}
               </p>
             </div>
             {hayFiltrosActivos && (

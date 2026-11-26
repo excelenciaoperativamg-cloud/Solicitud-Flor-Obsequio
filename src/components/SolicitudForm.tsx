@@ -125,6 +125,7 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
     let bouquetUsados = 0;
     let clavelUsados = 0;
     let alstroemeriaUsados = 0;
+    let gypsoUsados = 0;
 
     for (const s of solicitudesEnSemana) {
       const cant = Number(s.cantidad) || 1;
@@ -135,6 +136,8 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
         clavelUsados += cant;
       } else if (prodLow.includes('alstroemeria') || s.florPrincipal === 'Alstroemeria') {
         alstroemeriaUsados += cant;
+      } else if (prodLow.includes('gypso') || s.florPrincipal === 'Gypso') {
+        gypsoUsados += cant;
       } else {
         rosaUsados += cant;
       }
@@ -144,18 +147,21 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
     const bouquetMax = CUPOS_POR_PRODUCTO.bouquetMax;
     const clavelMax = CUPOS_POR_PRODUCTO.clavelMax;
     const alstroemeriaMax = CUPOS_POR_PRODUCTO.alstroemeriaMax;
+    const gypsoMax = CUPOS_POR_PRODUCTO.gypsoMax;
 
     const rosaDisponibles = Math.max(0, rosaMax - rosaUsados);
     const bouquetDisponibles = Math.max(0, bouquetMax - bouquetUsados);
     const clavelDisponibles = Math.max(0, clavelMax - clavelUsados);
     const alstroemeriaDisponibles = Math.max(0, alstroemeriaMax - alstroemeriaUsados);
+    const gypsoDisponibles = Math.max(0, gypsoMax - gypsoUsados);
 
     const rosaAgotado = rosaUsados >= rosaMax;
     const bouquetAgotado = bouquetUsados >= bouquetMax;
     const clavelAgotado = clavelUsados >= clavelMax;
     const alstroemeriaAgotado = alstroemeriaUsados >= alstroemeriaMax;
+    const gypsoAgotado = gypsoUsados >= gypsoMax;
     const todosAgotados =
-      rosaAgotado && bouquetAgotado && clavelAgotado && alstroemeriaAgotado;
+      rosaAgotado && bouquetAgotado && clavelAgotado && alstroemeriaAgotado && gypsoAgotado;
 
     let estaAgotado = false;
     if (florRamo === 'Rosa' && opcionRosa === 'Bouquet') estaAgotado = bouquetAgotado;
@@ -163,6 +169,7 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
     else if (florRamo === 'Rosa') estaAgotado = rosaAgotado && bouquetAgotado;
     else if (florRamo === 'Clavel') estaAgotado = clavelAgotado;
     else if (florRamo === 'Alstroemeria') estaAgotado = alstroemeriaAgotado;
+    else if (florRamo === 'Gypso') estaAgotado = gypsoAgotado;
 
     return {
       rosaUsados,
@@ -181,6 +188,10 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
       alstroemeriaMax,
       alstroemeriaDisponibles,
       alstroemeriaAgotado,
+      gypsoUsados,
+      gypsoMax,
+      gypsoDisponibles,
+      gypsoAgotado,
       todosAgotados,
       estaAgotado,
     };
@@ -206,6 +217,8 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
       setFlorRamo(null);
     } else if (florRamo === 'Alstroemeria' && cuposSemana.alstroemeriaAgotado) {
       setFlorRamo(null);
+    } else if (florRamo === 'Gypso' && cuposSemana.gypsoAgotado) {
+      setFlorRamo(null);
     }
   }, [
     florRamo,
@@ -214,11 +227,13 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
     cuposSemana.bouquetAgotado,
     cuposSemana.clavelAgotado,
     cuposSemana.alstroemeriaAgotado,
+    cuposSemana.gypsoAgotado,
   ]);
 
   const productoCompleto =
     florRamo === 'Clavel' ||
     florRamo === 'Alstroemeria' ||
+    florRamo === 'Gypso' ||
     (florRamo === 'Rosa' && opcionRosa !== null);
 
   const descripcionProducto = useMemo(() => {
@@ -229,6 +244,7 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
       return `Rosa (${opcionRosa})`;
     }
     if (florRamo === 'Clavel') return 'Clavel';
+    if (florRamo === 'Gypso') return 'Gypso';
     return 'Alstroemeria';
   }, [florRamo, opcionRosa]);
 
@@ -413,7 +429,7 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
                 Disponibilidad agotada para todos los productos
               </h4>
               <p className="mt-0.5 leading-relaxed">
-                Se han agotado todas las disponibilidades para todos los productos (Rosa, Bouquet, Clavel y Alstroemeria) para la{' '}
+                Se han agotado todas las disponibilidades para todos los productos (Rosa, Bouquet, Clavel, Alstroemeria y Gypso) para la{' '}
                 <strong>{semanaEntrega}</strong> (entrega el <strong>{formatShortDate(fechaEntrega)}</strong>). No es posible registrar más solicitudes esta semana.
               </p>
             </div>
@@ -466,14 +482,16 @@ export const SolicitudForm: React.FC<SolicitudFormProps> = ({
               </div>
               <p className="text-xs text-slate-600 mt-1">Seleccione el producto de su interés.</p>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {(['Rosa', 'Clavel', 'Alstroemeria'] as FlowerType[]).map((f) => {
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              {(['Rosa', 'Clavel', 'Alstroemeria', 'Gypso'] as FlowerType[]).map((f) => {
                 const deshabilitado =
                   f === 'Rosa'
                     ? cuposSemana.rosaAgotado && cuposSemana.bouquetAgotado
                     : f === 'Clavel'
                     ? cuposSemana.clavelAgotado
-                    : cuposSemana.alstroemeriaAgotado;
+                    : f === 'Alstroemeria'
+                    ? cuposSemana.alstroemeriaAgotado
+                    : cuposSemana.gypsoAgotado;
                 return (
                   <div key={f} className="space-y-2">
                     <button
