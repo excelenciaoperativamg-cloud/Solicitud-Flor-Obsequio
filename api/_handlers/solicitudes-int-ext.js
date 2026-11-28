@@ -2,6 +2,7 @@ import {
   getSolicitudesIntExtStorage,
   saveSolicitudesIntExtStorage,
   getDriveConfigStorage,
+  getMaestroStorage,
   callAppsScript,
 } from '../_lib/storage.js';
 
@@ -18,6 +19,40 @@ function esDiaDeshabilitadoEspecialesEmpresaBogota(now = new Date()) {
     const day = now.getDay();
     return day === 5 || day === 6 || day === 0;
   }
+}
+
+function normalizarTextoComp(raw) {
+  return String(raw || '')
+    .toUpperCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function esCargoAdministrador(cargoRaw) {
+  const cargo = normalizarTextoComp(cargoRaw);
+  if (!cargo) return false;
+  if (cargo.includes('ANALISTA') && cargo.includes('GESTION') && cargo.includes('INFORMACION')) {
+    return true;
+  }
+  return cargo === 'ADMINISTRADOR' || cargo.startsWith('ADMINISTRADOR ');
+}
+
+function verificarEsAdministrador(usuarioCodigo, usuarioCargo) {
+  const cod = String(usuarioCodigo || '').trim().toUpperCase();
+  if (cod) {
+    const maestro = getMaestroStorage();
+    if (Array.isArray(maestro) && maestro.length > 0) {
+      const encontrado = maestro.find(
+        (w) => String(w?.codigo || '').trim().toUpperCase() === cod
+      );
+      if (encontrado) {
+        return esCargoAdministrador(encontrado.cargo);
+      }
+    }
+  }
+  return esCargoAdministrador(usuarioCargo);
 }
 
 function normalizarHoraEntrega(raw) {
@@ -202,19 +237,23 @@ export default async function handler(req, res) {
         }
       }
 
-      if (esDiaDeshabilitadoEspecialesEmpresaBogota()) {
+      const itemsInput = Array.isArray(body?.items)
+        ? body.items
+        : Array.isArray(body)
+        ? body
+        : [body];
+
+      const codigoSolicitante = String(body?.usuarioCodigo || itemsInput[0]?.codigo || '').trim();
+      const cargoSolicitante = String(body?.usuarioCargo || '').trim();
+      const esAdminAutorizado = verificarEsAdministrador(codigoSolicitante, cargoSolicitante);
+
+      if (esDiaDeshabilitadoEspecialesEmpresaBogota() && !esAdminAutorizado) {
         return res.status(403).json({
           success: false,
           error:
             'Los ramos se deben solicitar antes del jueves de cada semana para la siguiente. El formulario de Especiales Empresa está deshabilitado los días viernes, sábado y domingo.',
         });
       }
-
-      const itemsInput = Array.isArray(body?.items)
-        ? body.items
-        : Array.isArray(body)
-        ? body
-        : [body];
 
       if (itemsInput.length === 0) {
         return res.status(400).json({

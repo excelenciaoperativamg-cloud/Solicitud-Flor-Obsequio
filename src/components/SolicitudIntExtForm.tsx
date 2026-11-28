@@ -25,6 +25,7 @@ import confetti from 'canvas-confetti';
 import * as XLSX from 'xlsx';
 import { SolicitudIntExt, TrabajadorMaestro } from '../types';
 import { EmailNotificationResult, retryEmailIntExtApi } from '../services/apiClient';
+import { esAdministradorSistema } from '../utils/roles';
 import {
   getTodayString,
   formatDateSpanish,
@@ -131,7 +132,8 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
 }) => {
   const fechaSolicitud = getTodayString();
   const ventanaEmpresa = useMemo(() => getVentanaEspecialesEmpresa(), []);
-  const formularioHabilitado = ventanaEmpresa.abierto;
+  const esAdminSistema = useMemo(() => esAdministradorSistema(sesion), [sesion]);
+  const formularioHabilitado = ventanaEmpresa.abierto || esAdminSistema;
 
   // Mapa con máximo 1 producto seleccionado -> cantidad ingresada como string
   const [productosCantidades, setProductosCantidades] = useState<Record<string, string>>({});
@@ -824,6 +826,14 @@ export const SolicitudIntExtForm: React.FC<SolicitudIntExtFormProps> = ({
             <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
             <p className="font-extrabold text-[#0a2958]">{ventanaEmpresa.mensajeNota}</p>
           </div>
+          {!ventanaEmpresa.abierto && esAdminSistema && (
+            <div className="p-3.5 rounded-xl bg-blue-50 border border-blue-200 text-[#0a2958] text-xs flex items-center gap-2.5">
+              <Sparkles className="w-4 h-4 text-[#0a2958] shrink-0" />
+              <p className="font-bold">
+                Acceso de administrador ({ventanaEmpresa.nombreDia}): este formulario está habilitado todos los días para su perfil.
+              </p>
+            </div>
+          )}
 
           {/* 1. PRODUCTO Y CANTIDAD */}
           <div className="space-y-4">

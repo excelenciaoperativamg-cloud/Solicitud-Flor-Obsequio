@@ -101,7 +101,8 @@ export const fetchSolicitudesIntExtApi = async (): Promise<{
 export const createSolicitudIntExtApi = async (
   solicitudOrList: SolicitudIntExt | SolicitudIntExt[],
   correoNotificacion?: string,
-  fotoCarta?: { base64: string; mimeType: string; fileName: string } | null
+  fotoCarta?: { base64: string; mimeType: string; fileName: string } | null,
+  usuarioInfo?: { codigo?: string; cargo?: string }
 ): Promise<{
   solicitud: SolicitudIntExt;
   solicitudes: SolicitudIntExt[];
@@ -113,8 +114,18 @@ export const createSolicitudIntExtApi = async (
   emailNotification?: EmailNotificationResult;
 }> => {
   const basePayload = Array.isArray(solicitudOrList)
-    ? { items: solicitudOrList, correoNotificacion: correoNotificacion || '' }
-    : { ...solicitudOrList, correoNotificacion: correoNotificacion || '' };
+    ? {
+        items: solicitudOrList,
+        correoNotificacion: correoNotificacion || '',
+        usuarioCodigo: usuarioInfo?.codigo || '',
+        usuarioCargo: usuarioInfo?.cargo || '',
+      }
+    : {
+        ...solicitudOrList,
+        correoNotificacion: correoNotificacion || '',
+        usuarioCodigo: usuarioInfo?.codigo || '',
+        usuarioCargo: usuarioInfo?.cargo || '',
+      };
 
   const payload = fotoCarta
     ? {

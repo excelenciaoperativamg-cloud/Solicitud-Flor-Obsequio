@@ -233,7 +233,7 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
       return [];
     }
   });
-  const [colorSeleccionado, setColorSeleccionado] = useState('');
+  const [coloresSeleccionados, setColoresSeleccionados] = useState<string[]>([]);
   const [mostrandoInputColor, setMostrandoInputColor] = useState(false);
   const [nuevoColorInput, setNuevoColorInput] = useState('');
 
@@ -459,6 +459,10 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
     [productosCantidades]
   );
 
+  const soloRosaRoja =
+    productosSeleccionadosOrdenados.length === 1 &&
+    productosSeleccionadosOrdenados[0] === 'Rosa (Roja)';
+
   const totalRamosSeleccionados = useMemo(() => {
     return productosSeleccionadosOrdenados.reduce((acc, prod) => {
       const n = Number(productosCantidades[prod]);
@@ -469,10 +473,13 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
   const opcionesColorVisibles = useMemo(() => {
     const mapa = new Map<string, string>();
     const agregar = (val?: string) => {
-      const limpio = String(val || '').trim();
-      if (!limpio) return;
-      const clave = limpio.toLowerCase();
-      if (!mapa.has(clave)) mapa.set(clave, limpio);
+      const partes = String(val || '').split(/[,;]+/);
+      for (const parte of partes) {
+        const limpio = parte.trim();
+        if (!limpio) continue;
+        const clave = limpio.toLowerCase();
+        if (!mapa.has(clave)) mapa.set(clave, limpio);
+      }
     };
     COLORES_BASE_EP.forEach(agregar);
     coloresPersonalizados.forEach(agregar);
@@ -480,10 +487,36 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
     return Array.from(mapa.values());
   }, [coloresPersonalizados, solicitudesEspecialesPersonal]);
 
-  const colorFinal =
-    mostrandoInputColor && nuevoColorInput.trim()
-      ? nuevoColorInput.trim()
-      : colorSeleccionado.trim();
+  const coloresFinales = useMemo(() => {
+    const mapa = new Map<string, string>();
+    const agregar = (val?: string) => {
+      const partes = String(val || '').split(/[,;]+/);
+      for (const parte of partes) {
+        const limpio = parte.trim();
+        if (!limpio) continue;
+        const clave = limpio.toLowerCase();
+        if (!mapa.has(clave)) mapa.set(clave, limpio);
+      }
+    };
+    coloresSeleccionados.forEach(agregar);
+    if (mostrandoInputColor && nuevoColorInput.trim()) {
+      agregar(nuevoColorInput);
+    }
+    return Array.from(mapa.values());
+  }, [coloresSeleccionados, mostrandoInputColor, nuevoColorInput]);
+
+  const colorFinal = coloresFinales.join(', ');
+
+  useEffect(() => {
+    if (soloRosaRoja) {
+      setErrores((prev) => {
+        if (!prev.color) return prev;
+        const next = { ...prev };
+        delete next.color;
+        return next;
+      });
+    }
+  }, [soloRosaRoja]);
 
   const opcionesMotivoVisibles = useMemo(() => {
     const set = new Set<string>([...MOTIVOS_BASE_EP, ...motivosPersonalizados]);
@@ -562,13 +595,51 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
     });
   };
 
+  const toggleColor = (color: string) => {
+    const clave = color.trim().toLowerCase();
+    setColoresSeleccionados((prev) => {
+      const existe = prev.some((c) => c.trim().toLowerCase() === clave);
+      if (existe) {
+        return prev.filter((c) => c.trim().toLowerCase() !== clave);
+      }
+      return [...prev, color];
+    });
+    setErrores((prev) => {
+      const next = { ...prev };
+      delete next.color;
+      return next;
+    });
+  };
+
   const handleAgregarColorPersonalizado = () => {
-    const limpio = nuevoColorInput.trim();
-    if (!limpio) return;
-    if (!opcionesColorVisibles.some((c) => c.toLowerCase() === limpio.toLowerCase())) {
-      setColoresPersonalizados((prev) => [...prev, limpio]);
+    const partes = nuevoColorInput
+      .split(/[,;]+/)
+      .map((p) => p.trim())
+      .filter(Boolean);
+    if (partes.length === 0) return;
+
+    const nuevosPersonalizados: string[] = [];
+    for (const limpio of partes) {
+      const existeEnOpciones =
+        opcionesColorVisibles.some((c) => c.toLowerCase() === limpio.toLowerCase()) ||
+        nuevosPersonalizados.some((c) => c.toLowerCase() === limpio.toLowerCase());
+      if (!existeEnOpciones) {
+        nuevosPersonalizados.push(limpio);
+      }
     }
-    setColorSeleccionado(limpio);
+    if (nuevosPersonalizados.length > 0) {
+      setColoresPersonalizados((prev) => [...prev, ...nuevosPersonalizados]);
+    }
+
+    setColoresSeleccionados((prev) => {
+      const next = [...prev];
+      for (const limpio of partes) {
+        if (!next.some((c) => c.trim().toLowerCase() === limpio.toLowerCase())) {
+          next.push(limpio);
+        }
+      }
+      return next;
+    });
     setNuevoColorInput('');
     setMostrandoInputColor(false);
     setErrores((prev) => {
@@ -616,7 +687,7 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
       }
     }
 
-    if (!colorFinal) {
+    if (!soloRosaRoja && !colorFinal) {
       errs.color = 'Especifique el color que requiere.';
     }
 
@@ -650,7 +721,7 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
     setCedulaManual('');
     setProductosCantidades({});
     setRosaAbierto(false);
-    setColorSeleccionado('');
+    setColoresSeleccionados([]);
     setMostrandoInputColor(false);
     setNuevoColorInput('');
     setMotivoSeleccionado('');
@@ -682,11 +753,18 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
     setErrores({});
 
     try {
-      // Si había un color nuevo escrito sin haber presionado "Agregar", guardarlo
-      if (mostrandoInputColor && nuevoColorInput.trim()) {
-        const cLimpio = nuevoColorInput.trim();
-        if (!opcionesColorVisibles.some((c) => c.toLowerCase() === cLimpio.toLowerCase())) {
-          setColoresPersonalizados((prev) => [...prev, cLimpio]);
+      // Si había colores nuevos escritos sin haber presionado "Agregar", guardarlos
+      if (!soloRosaRoja && mostrandoInputColor && nuevoColorInput.trim()) {
+        const nuevos = nuevoColorInput
+          .split(/[,;]+/)
+          .map((p) => p.trim())
+          .filter(Boolean)
+          .filter(
+            (cLimpio) =>
+              !opcionesColorVisibles.some((c) => c.toLowerCase() === cLimpio.toLowerCase())
+          );
+        if (nuevos.length > 0) {
+          setColoresPersonalizados((prev) => [...prev, ...nuevos]);
         }
       }
 
@@ -701,6 +779,7 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
       const correoPersonal = normalizarCorreoIndividual(correoConfirmacion).correo;
       const year = new Date().getFullYear();
       const semanaStr = String(semanaCalculada);
+      const colorAGuardar = soloRosaRoja ? '' : colorFinal;
 
       const listaSolicitudes: EspecialPersonal[] = productosSeleccionadosOrdenados.map((prod, idx) => ({
         id: `SEP-${year}-${String(siguienteNumeroId + idx).padStart(3, '0')}`,
@@ -709,7 +788,7 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
         nombre: nombreBeneficiario,
         sede: sedeBeneficiario,
         producto: prod,
-        color: colorFinal,
+        color: colorAGuardar,
         cantidad: Math.max(1, Math.floor(Number(productosCantidades[prod]) || 1)),
         motivo: motivoFinal,
         semana: semanaStr,
@@ -1042,9 +1121,11 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
                 </div>
               )}
 
-              <div className="flex justify-between">
-                <span className="text-slate-500">Color:</span>
-                <span className="font-bold text-[#0a2958]">{primeraExitosa.color || '—'}</span>
+              <div className="flex justify-between gap-3">
+                <span className="text-slate-500 shrink-0">Color:</span>
+                <span className="font-bold text-[#0a2958] text-right">
+                  {primeraExitosa.color || '—'}
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Motivo:</span>
@@ -1562,110 +1643,117 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
               )}
             </div>
 
-            {/* Color después de Producto */}
-            <div className="max-w-md pt-1">
-              <label
-                htmlFor="select-color-ep"
-                className="block text-xs font-bold text-slate-700 mb-0.5"
-              >
-                Color <span className="text-[#E60000]">*</span>
-              </label>
-              <p className="text-[11px] text-slate-600 font-medium mb-1.5">
-                Especifique el color que requiere.
-              </p>
-              <div className="flex items-center gap-2">
-                <div className="relative flex-1 min-w-0">
-                  <select
-                    id="select-color-ep"
-                    value={mostrandoInputColor ? '__AGREGAR__' : colorSeleccionado}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (val === '__AGREGAR__') {
-                        setMostrandoInputColor(true);
-                      } else {
-                        setColorSeleccionado(val);
-                        setMostrandoInputColor(false);
-                      }
-                      setErrores((prev) => {
-                        const next = { ...prev };
-                        delete next.color;
-                        return next;
-                      });
-                    }}
-                    className={`w-full appearance-none pl-3.5 pr-9 py-2.5 text-xs rounded-xl border font-bold bg-white outline-hidden cursor-pointer truncate ${
-                      errores.color
-                        ? 'border-rose-400 bg-rose-50/40 text-slate-900'
-                        : 'border-slate-300 focus:border-[#0a2958] text-slate-800'
-                    }`}
-                  >
-                    <option value="">Seleccione un color…</option>
-                    {opcionesColorVisibles.map((col) => (
-                      <option key={col} value={col}>
-                        {col}
-                      </option>
-                    ))}
-                    <option value="__AGREGAR__">+ Agregar otro…</option>
-                  </select>
-                  <ChevronDown className="w-4 h-4 text-slate-500 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            {/* Color después de Producto (selección múltiple; oculto si solo selecciona Rosa Roja) */}
+            {!soloRosaRoja && (
+              <div className="pt-1">
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-0.5">
+                  <label className="block text-xs font-bold text-slate-700">
+                    Color <span className="text-[#E60000]">*</span>
+                  </label>
+                  {coloresFinales.length > 0 && (
+                    <span className="text-[11px] font-bold text-[#0a2958]">
+                      {coloresFinales.length === 1
+                        ? `1 seleccionado: ${colorFinal}`
+                        : `${coloresFinales.length} seleccionados: ${colorFinal}`}
+                    </span>
+                  )}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMostrandoInputColor((prev) => !prev);
-                    setErrores((prev) => {
-                      const next = { ...prev };
-                      delete next.color;
-                      return next;
-                    });
-                  }}
-                  title="Agregar otro color"
-                  aria-label="Agregar otro color"
-                  className={`p-2.5 rounded-xl border transition cursor-pointer shrink-0 ${
-                    mostrandoInputColor
-                      ? 'bg-[#E60000]/10 text-[#E60000] border-[#E60000]/40'
-                      : 'bg-slate-50 text-slate-700 border-slate-300 hover:border-[#0a2958] hover:text-[#0a2958]'
-                  }`}
-                >
-                  <Plus className="w-4 h-4" />
-                </button>
-              </div>
+                <p className="text-[11px] text-slate-600 font-medium mb-2">
+                  Especifique el color que requiere. Puede seleccionar uno o varios colores.
+                </p>
 
-              {mostrandoInputColor && (
-                <div className="flex gap-2 pt-2">
-                  <input
-                    type="text"
-                    value={nuevoColorInput}
-                    onChange={(e) => {
-                      setNuevoColorInput(e.target.value);
-                      setErrores((prev) => {
-                        const next = { ...prev };
-                        delete next.color;
-                        return next;
-                      });
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        handleAgregarColorPersonalizado();
-                      }
-                    }}
-                    placeholder="Escriba el color requerido…"
-                    className="flex-1 min-w-0 px-3 py-2 text-xs rounded-xl border border-slate-300 focus:border-[#0a2958] outline-hidden font-medium"
-                  />
+                <div className="flex flex-wrap items-center gap-2">
+                  {opcionesColorVisibles.map((col) => {
+                    const activo = coloresSeleccionados.some(
+                      (c) => c.trim().toLowerCase() === col.trim().toLowerCase()
+                    );
+                    return (
+                      <button
+                        key={col}
+                        type="button"
+                        onClick={() => toggleColor(col)}
+                        aria-pressed={activo}
+                        className={`px-3 py-2 rounded-xl border text-xs font-bold inline-flex items-center gap-2 transition cursor-pointer ${
+                          activo
+                            ? 'border-[#0a2958] bg-[#0a2958]/5 text-[#0a2958] ring-2 ring-[#0a2958]/10'
+                            : errores.color
+                            ? 'border-rose-300 bg-rose-50/30 text-slate-700 hover:border-[#0a2958]/50'
+                            : 'border-slate-200 bg-white text-slate-700 hover:border-[#0a2958]/50 hover:bg-slate-50'
+                        }`}
+                      >
+                        <span
+                          className={`w-4 h-4 rounded flex items-center justify-center border transition shrink-0 ${
+                            activo
+                              ? 'bg-[#0a2958] border-[#0a2958] text-white'
+                              : 'border-slate-300 bg-white'
+                          }`}
+                        >
+                          {activo && <Check className="w-3 h-3" />}
+                        </span>
+                        <span>{col}</span>
+                      </button>
+                    );
+                  })}
+
                   <button
                     type="button"
-                    onClick={handleAgregarColorPersonalizado}
-                    className="px-3.5 py-2 rounded-xl bg-[#0a2958] text-white text-xs font-bold hover:bg-[#0d346e] cursor-pointer shrink-0"
+                    onClick={() => {
+                      setMostrandoInputColor((prev) => !prev);
+                      setErrores((prev) => {
+                        const next = { ...prev };
+                        delete next.color;
+                        return next;
+                      });
+                    }}
+                    aria-expanded={mostrandoInputColor}
+                    className={`px-3 py-2 rounded-xl border text-xs font-bold inline-flex items-center gap-1.5 transition cursor-pointer ${
+                      mostrandoInputColor
+                        ? 'bg-[#E60000]/10 text-[#E60000] border-[#E60000]/40'
+                        : 'bg-slate-50 text-slate-700 border-slate-300 border-dashed hover:border-[#0a2958] hover:text-[#0a2958]'
+                    }`}
                   >
-                    Agregar
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Agregar otro</span>
                   </button>
                 </div>
-              )}
 
-              {errores.color && (
-                <p className="text-[11px] text-[#E60000] font-semibold mt-1">{errores.color}</p>
-              )}
-            </div>
+                {mostrandoInputColor && (
+                  <div className="flex gap-2 pt-2.5 max-w-md">
+                    <input
+                      type="text"
+                      value={nuevoColorInput}
+                      onChange={(e) => {
+                        setNuevoColorInput(e.target.value);
+                        setErrores((prev) => {
+                          const next = { ...prev };
+                          delete next.color;
+                          return next;
+                        });
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAgregarColorPersonalizado();
+                        }
+                      }}
+                      placeholder="Escriba el color requerido…"
+                      className="flex-1 min-w-0 px-3 py-2 text-xs rounded-xl border border-slate-300 focus:border-[#0a2958] outline-hidden font-medium"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAgregarColorPersonalizado}
+                      className="px-3.5 py-2 rounded-xl bg-[#0a2958] text-white text-xs font-bold hover:bg-[#0d346e] cursor-pointer shrink-0"
+                    >
+                      Agregar
+                    </button>
+                  </div>
+                )}
+
+                {errores.color && (
+                  <p className="text-[11px] text-[#E60000] font-semibold mt-1.5">{errores.color}</p>
+                )}
+              </div>
+            )}
           </div>
 
           {/* 3. MOTIVO, ENTREGA Y NOTIFICACIÓN */}
@@ -2185,7 +2273,10 @@ export const EspecialesPersonalForm: React.FC<EspecialesPersonalFormProps> = ({
                       <td className="py-2.5 px-3 font-semibold text-slate-800">{s.nombre}</td>
                       <td className="py-2.5 px-3 font-bold whitespace-nowrap">{s.sede}</td>
                       <td className="py-2.5 px-3 font-semibold">{s.producto}</td>
-                      <td className="py-2.5 px-3 font-semibold text-[#0a2958] whitespace-nowrap">
+                      <td
+                        className="py-2.5 px-3 font-semibold text-[#0a2958] min-w-[120px] max-w-[220px]"
+                        title={s.color || ''}
+                      >
                         {s.color || '—'}
                       </td>
                       <td className="py-2.5 px-3 text-right font-mono tabular-nums font-bold text-[#0a2958]">

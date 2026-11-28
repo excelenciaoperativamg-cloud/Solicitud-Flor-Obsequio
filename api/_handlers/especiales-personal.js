@@ -469,6 +469,10 @@ export default async function handler(req, res) {
 
       const rawCorreo = CORREO_NOTIFICADO_FIJO_EP;
 
+      const esSoloRosaRoja =
+        itemsInput.length === 1 &&
+        normalizarTextoComp(itemsInput[0]?.producto) === 'ROSA (ROJA)';
+
       for (const item of itemsInput) {
         if (
           !item ||
@@ -485,7 +489,7 @@ export default async function handler(req, res) {
           });
         }
 
-        if (!String(item.color || '').trim()) {
+        if (!esSoloRosaRoja && !String(item.color || '').trim()) {
           return res.status(400).json({
             success: false,
             error: 'Especifique el color que requiere.',

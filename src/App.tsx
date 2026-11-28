@@ -458,7 +458,15 @@ export default function App() {
     emailNotification?: EmailNotificationResult;
   }> => {
     try {
-      const res = await createSolicitudIntExtApi(nuevaOLista, correoNotificacion);
+      const res = await createSolicitudIntExtApi(
+        nuevaOLista,
+        correoNotificacion,
+        undefined,
+        {
+          codigo: sesion?.codigo || '',
+          cargo: sesion?.cargo || '',
+        }
+      );
       const guardadas = res.solicitudes.length > 0 ? res.solicitudes : [res.solicitud];
       const idsGuardados = new Set(guardadas.map((g) => g.id));
       setSolicitudesIntExt((prev) => [
